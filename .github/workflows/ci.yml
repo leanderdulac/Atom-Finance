@@ -1,0 +1,87 @@
+name: ATOM CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Backend: pytest + mypy ────────────────────────────────────────────────────
+  backend:
+    name: Backend Tests & Type Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest (unit tests — no external APIs)
+        env:
+          ATOM_ENV: test
+          SECRET_KEY: ci-test-secret-key-not-for-production
+        run: |
+          python -m pytest tests/ \
+            --tb=short \
+            -q \
+            --ignore=tests/test_neural_sde.py \
+            -x
+
+      - name: Type check (mypy — core modules)
+        env:
+          ATOM_ENV: test
+          SECRET_KEY: ci-test-secret-key-not-for-production
+        run: |
+          pip install mypy types-requests
+          python -m mypy app/core/ app/db/ \
+            --ignore-missing-imports \
+            --no-error-summary \
+            || true   # non-blocking until full type coverage is achieved
+
+  # ── Frontend: TypeScript check + build ───────────────────────────────────────
+  frontend:
+    name: Frontend Type Check & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Build production bundle (Vite)
+        run: npm run build
+        env:
+          VITE_API_BASE: /api
+
+      - name: Check bundle size
+        run: |
+          echo "=== Bundle sizes ==="
+          du -sh dist/
+          find dist -name "*.js" | xargs wc -c | sort -n | tail -5
