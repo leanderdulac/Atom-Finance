@@ -249,3 +249,18 @@ class BrapiService:
         except Exception as exc:
             logger.warning("brapi prime-rate failed: %s", exc)
             return None
+
+    @staticmethod
+    def health_check() -> dict:
+        """Verify API token and connectivity with a lightweight call."""
+        token = _token()
+        if not token:
+            return {"status": "error", "message": "BRAPI_TOKEN not set"}
+        try:
+            # list_tickers uses /quote/list which is light
+            tickers = BrapiService.list_tickers()
+            if tickers:
+                return {"status": "healthy", "ticker_count": len(tickers)}
+            return {"status": "degraded", "message": "No tickers returned"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}

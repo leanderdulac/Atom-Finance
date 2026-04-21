@@ -14,8 +14,9 @@ from functools import partial
 from typing import Optional
 
 import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from app.core.limiter import limiter
 from pydantic import BaseModel, Field
 
 from app.models.capm import CAPMAnalyzer
@@ -591,7 +592,8 @@ class AnalysisRequest(BaseModel):
 
 
 @router.post("/ai-analysis")
-async def ai_analysis(req: AnalysisRequest):
+@limiter.limit("10/hour")
+async def ai_analysis(request: Request, req: AnalysisRequest):
     """
     Full AI-powered analysis: fetches market data, runs all quant models,
     and returns a BUY CALL / BUY PUT / STRADDLE recommendation with holding period.
@@ -603,7 +605,8 @@ async def ai_analysis(req: AnalysisRequest):
 
 
 @router.post("/ai-analysis/stream")
-async def ai_analysis_stream(req: AnalysisRequest):
+@limiter.limit("10/hour")
+async def ai_analysis_stream(request: Request, req: AnalysisRequest):
     """
     Streaming version of ai-analysis using Server-Sent Events.
     Emits progress events during analysis.

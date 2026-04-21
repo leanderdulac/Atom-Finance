@@ -7,8 +7,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Query, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.core.limiter import limiter
 
 from app.models.pricing import BlackScholes
 from app.services.brapi_service import BrapiService, _is_br_ticker
@@ -18,7 +17,7 @@ from app.services.openbb_service import OpenBBService
 router = APIRouter()
 
 # Market data endpoints hit external APIs — limit to 30 req/min per IP.
-_limiter = Limiter(key_func=get_remote_address)
+# (Using shared limiter from app.core.limiter)
 
 ProviderName = Literal["auto", "openbb", "openbb_yfinance", "openbb_cboe", "yfinance", "brapi", "synthetic"]
 
@@ -267,7 +266,7 @@ async def b3_macro():
 
 
 @router.get("/quote/{ticker}")
-@_limiter.limit("30/minute")
+@limiter.limit("30/minute")
 async def get_quote(request: Request, ticker: str, provider: ProviderName = Query(default="auto")):
     """Get quote — brapi (BR tickers) → OpenBB → Yahoo Finance → synthetic fallback."""
     is_br = _is_br_ticker(ticker)
@@ -292,7 +291,7 @@ async def get_quote(request: Request, ticker: str, provider: ProviderName = Quer
 
 
 @router.get("/history/{ticker}")
-@_limiter.limit("20/minute")
+@limiter.limit("20/minute")
 async def get_history(
     request: Request,
     ticker: str,
@@ -431,7 +430,7 @@ async def get_returns(ticker: str, period: str = "1y"):
 
 
 @router.get("/options-chain/{ticker}")
-@_limiter.limit("10/minute")
+@limiter.limit("10/minute")
 async def get_options_chain(request: Request, ticker: str, provider: ProviderName = Query(default="auto")):
     """Get options chain with provider fallbacks."""
     if provider in {"auto", "openbb", "openbb_cboe"}:

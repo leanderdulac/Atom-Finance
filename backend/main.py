@@ -4,14 +4,16 @@ Main FastAPI Application
 """
 import logging
 import os
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+
+from app.core.limiter import limiter
 
 load_dotenv()
 
@@ -40,6 +42,8 @@ from app.api import (  # noqa: E402
     ai_proxy_router,
 )
 from app.core.cache import Cache  # noqa: E402
+from app.services.brapi_service import BrapiService
+from app.db.database import list_reports as _db_check
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,8 +51,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Rate limiter (shared instance imported by routers) ────────────────────────
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+# Shared rate limiter instance
+# (Moved to app.core.limiter to allow router imports)
 
 
 def _parse_origins() -> list[str]:
@@ -81,6 +85,7 @@ app = FastAPI(
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
 app.state.limiter = limiter
+from slowapi import _rate_limit_exceeded_handler
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
@@ -118,9 +123,44 @@ app.include_router(ai_proxy_router,        prefix="/api/ai",            tags=["A
 
 @app.get("/api/health")
 async def health_check():
+    """Deep health check — verifies DB, Cache, and API configuration."""
+    # 1. Check Database (SQLite)
+    db_status = "healthy"
+    try:
+        # Just try to list 1 report to see if DB is alive
+        _db_check(limit=1)
+    except Exception as e:
+        logger.error(f"Health Check: DB failure: {e}")
+        db_status = f"unhealthy: {str(e)}"
+
+    # 2. Check Cache (Redis/Memory)
+    cache_type = "redis" if Cache.is_redis_available() else "memory"
+    
+    # 3. Check Brapi (B3 Data)
+    brapi_status = BrapiService.health_check()
+
+    # 4. Check AI Keys (Presence check)
+    def mask(key: str | None) -> str:
+        if not key: return "MISSING"
+        if len(key) < 8: return "SET (Too Short)"
+        return f"{key[:4]}...{key[-4:]}"
+
+    ai_keys = {
+        "anthropic": mask(os.getenv("ANTHROPIC_API_KEY")),
+        "openai":    mask(os.getenv("OPENAI_API_KEY")),
+        "perplexity": mask(os.getenv("PERPLEXITY_API_KEY")),
+        "gemini":    mask(os.getenv("GOOGLE_API_KEY")),
+    }
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "healthy" and brapi_status["status"] == "healthy" else "degraded",
         "app": "ATOM",
         "version": "1.0.0",
-        "cache": "redis" if Cache.is_redis_available() else "memory",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "dependencies": {
+            "database": db_status,
+            "cache": cache_type,
+            "brapi": brapi_status,
+        },
+        "ai_configuration": ai_keys
     }

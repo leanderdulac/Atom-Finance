@@ -13,6 +13,7 @@ import {
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { api } from '../services/api';
+import { Timer, HourglassEmpty } from '@mui/icons-material';
 
 // ── Score gauge ────────────────────────────────────────────────────────────
 
@@ -175,6 +176,10 @@ const STEPS = [
   { icon: <AutoGraph />, label: 'Gerando relatório com IA...' },
 ];
 
+    </Box>
+  );
+}
+
 function LoadingSteps({ step }: { step: number }) {
   return (
     <Box sx={{ py: 4 }}>
@@ -190,6 +195,35 @@ function LoadingSteps({ step }: { step: number }) {
         </Box>
       ))}
     </Box>
+  );
+}
+
+// ── Rate Limit Cool Down ───────────────────────────────────────────────────
+
+function RateLimitCoolDown() {
+  return (
+    <Card sx={{ 
+      border: '2px solid #fbbf24', 
+      bgcolor: 'rgba(251, 191, 36, 0.05)',
+      textAlign: 'center', 
+      py: 6 
+    }}>
+      <CardContent>
+        <HourglassEmpty sx={{ fontSize: 64, color: '#fbbf24', mb: 2 }} />
+        <Typography variant="h5" sx={{ fontWeight: 900, color: '#fbbf24', mb: 1 }}>
+          LIMITE DE FREQUÊNCIA ATINGIDO
+        </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3, maxWidth: 500, mx: 'auto' }}>
+          Para garantir a estabilidade do sistema e o controle de custos das IAs, o ATOM limita a geração de relatórios profundos.
+        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, alignItems: 'center' }}>
+          <Chip icon={<Timer fontSize="small" />} label="Reseta em 1 hora" variant="outlined" sx={{ borderColor: '#fbbf24', color: '#fbbf24' }} />
+          <Typography variant="caption" color="text.secondary">
+            Dica: Use o histórico para ver relatórios recentes sem custo extra.
+          </Typography>
+        </Box>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -397,6 +431,7 @@ export default function AIReportPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
+  const [rateLimited, setRateLimited] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ step: number; total: number; message: string } | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
 
@@ -407,6 +442,7 @@ export default function AIReportPage() {
     setLoading(true);
     setResult(null);
     setError('');
+    setRateLimited(false);
     setStreamProgress({ step: 0, total: 6, message: 'Iniciando análise...' });
 
     if (abortRef.current) abortRef.current();
@@ -415,7 +451,15 @@ export default function AIReportPage() {
       sym,
       (step, total, message) => setStreamProgress({ step, total, message }),
       (data) => { setResult(data); setLoading(false); setStreamProgress(null); },
-      (msg) => { setError(msg); setLoading(false); setStreamProgress(null); },
+      (msg) => { 
+        if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) {
+          setRateLimited(true);
+        } else {
+          setError(msg);
+        }
+        setLoading(false); 
+        setStreamProgress(null); 
+      },
     );
   };
 
@@ -470,6 +514,7 @@ export default function AIReportPage() {
       </Card>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {rateLimited && <Box sx={{ mb: 3 }}><RateLimitCoolDown /></Box>}
 
       {/* Loading */}
       {loading && (
