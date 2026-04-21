@@ -1,0 +1,29 @@
+[Unit]
+Description=ATOM Backend (FastAPI + Uvicorn)
+After=network.target
+PartOf=atom.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/exp/Downloads/ATOM/backend
+ExecStart=/home/exp/Downloads/ATOM/backend/venv/bin/python -m uvicorn main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --log-level info
+
+# Reinicia automaticamente se cair (exceto por stop manual)
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=5
+
+# Logs via journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atom-backend
+
+# Variáveis de ambiente (opcional — descomente e edite se precisar)
+# EnvironmentFile=/home/exp/Downloads/ATOM/.env
+
+[Install]
+WantedBy=atom.target

@@ -1,0 +1,23 @@
+[Unit]
+Description=ATOM Frontend (Vite Dev Server)
+After=atom-backend.service
+PartOf=atom.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/exp/Downloads/ATOM
+ExecStart=/usr/local/bin/npm run dev -- --port 5174 --host
+
+# Reinicia automaticamente se cair
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=5
+
+# Logs via journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atom-frontend
+
+[Install]
+WantedBy=atom.target

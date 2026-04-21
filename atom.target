@@ -1,0 +1,7 @@
+[Unit]
+Description=ATOM — Quantitative Finance Platform (Backend + Frontend)
+Wants=atom-backend.service atom-frontend.service
+After=atom-backend.service atom-frontend.service
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://atom:atom@postgres:5432/atom_db
+      - MONGODB_URL=mongodb://mongo:27017/atom_realtime
+      - REDIS_URL=redis://redis:6379/0
+      - FRONTEND_URL=http://localhost:5173
+    depends_on:
+      - postgres
+      - mongo
+      - redis
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+    command: npm run dev -- --host 0.0.0.0
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atom
+      POSTGRES_PASSWORD: atom
+      POSTGRES_DB: atom_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+  mongo_data:
