@@ -102,7 +102,6 @@ if [[ -f "$PROD_ENV" ]]; then
     warn ".env.prod already exists — skipping generation. Edit manually if needed."
 else
     SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    PG_PASS=$(python3 -c "import secrets; print(secrets.token_hex(16))")
 
     cat > "$PROD_ENV" << EOF
 # ── ATOM Production Environment ──────────────────────────────────
@@ -113,7 +112,6 @@ ATOM_ENV=production
 
 # Security (auto-generated — do NOT change after first start)
 SECRET_KEY=${SECRET}
-POSTGRES_PASSWORD=${PG_PASS}
 
 # Domain (update to your actual domain)
 FRONTEND_URL=https://atom.yourdomain.com
@@ -129,8 +127,7 @@ XAI_API_KEY=
 PERPLEXITY_API_KEY=
 BRIDGEWISE_TOKEN=
 
-# Database (auto-configured via docker internal network)
-DATABASE_URL=postgresql+asyncpg://atom:${PG_PASS}@postgres:5432/atom_db
+# Redis (auto-configured via docker internal network)
 REDIS_URL=redis://redis:6379/0
 ACCESS_TOKEN_EXPIRE_HOURS=24
 EOF
