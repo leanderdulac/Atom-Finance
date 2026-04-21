@@ -1,20 +1,24 @@
 [Unit]
-Description=ATOM Frontend (Vite Dev Server)
+Description=ATOM Frontend (Nginx — production static build)
 After=atom-backend.service
 PartOf=atom.target
 
 [Service]
 Type=simple
 WorkingDirectory=/home/exp/Downloads/ATOM
-ExecStart=/usr/local/bin/npm run dev -- --port 5174 --host
 
-# Reinicia automaticamente se cair
+# Serve o build estático do Vite via nginx na porta 5174
+# Certifique-se de ter rodado 'npm run build' antes de iniciar o serviço.
+# Ou use: systemctl restart atom-frontend após um novo deploy.
+ExecStartPre=/usr/bin/nginx -t -c /home/exp/Downloads/ATOM/docker/nginx-local.conf
+ExecStart=/usr/bin/nginx -g "daemon off;" -c /home/exp/Downloads/ATOM/docker/nginx-local.conf
+ExecReload=/bin/kill -HUP $MAINPID
+
 Restart=on-failure
 RestartSec=5
 StartLimitInterval=60
 StartLimitBurst=5
 
-# Logs via journald
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=atom-frontend

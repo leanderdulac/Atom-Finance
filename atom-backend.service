@@ -9,6 +9,7 @@ WorkingDirectory=/home/exp/Downloads/ATOM/backend
 ExecStart=/home/exp/Downloads/ATOM/backend/venv/bin/python -m uvicorn main:app \
     --host 127.0.0.1 \
     --port 8000 \
+    --workers 2 \
     --log-level info
 
 # Reinicia automaticamente se cair (exceto por stop manual)
@@ -22,8 +23,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=atom-backend
 
-# Variáveis de ambiente (opcional — descomente e edite se precisar)
-# EnvironmentFile=/home/exp/Downloads/ATOM/.env
+# Carrega as variáveis de ambiente do arquivo .env
+EnvironmentFile=/home/exp/Downloads/ATOM/.env
 
 [Install]
 WantedBy=atom.target
