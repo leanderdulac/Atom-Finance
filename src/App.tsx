@@ -8,9 +8,12 @@ import {
   ShowChart, Assessment, AccountBalance, Psychology, Water, Warning,
   Timeline, Speed, DarkMode, LightMode, Menu as MenuIcon, Waves, Terminal, AutoGraph,
   FindInPage, Functions, TrendingUp, MonetizationOn, CallMerge, RocketLaunch, AutoFixHigh,
-  CurrencyExchange
+  CurrencyExchange, Logout,
 } from '@mui/icons-material';
 import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import LoginPage from './pages/LoginPage';
+import DisclaimerBanner from './components/DisclaimerBanner';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -120,6 +123,7 @@ function AppLayout() {
               {mode === 'dark' ? <LightMode /> : <DarkMode />}
             </IconButton>
           </Tooltip>
+          <AuthStatusButton />
         </Toolbar>
       </AppBar>
 
@@ -206,7 +210,9 @@ function AppLayout() {
           <Route path="/neural-sde" element={<NeuralSDEPage />} />
           <Route path="/backtesting" element={<BacktestingPage />} />
           <Route path="/terminal" element={<TerminalPage />} />
-          <Route path="/ai-report" element={<AIReportPage />} />
+          <Route path="/ai-report"    element={<ProtectedRoute><AIReportPage /></ProtectedRoute>} />
+          <Route path="/autopilot"    element={<ProtectedRoute><AutopilotPage /></ProtectedRoute>} />
+          <Route path="/ai-screener"  element={<ProtectedRoute><AIAlphaScreener /></ProtectedRoute>} />
           <Route path="/paper-crawler" element={<PaperCrawlerPage />} />
           <Route path="/csqa" element={<CSQAPage />} />
           <Route path="/spy-momentum" element={<SPYIntradayPage />} />
@@ -222,12 +228,39 @@ function AppLayout() {
   );
 }
 
+function AuthStatusButton() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  if (!user) return null;
+  return (
+    <Tooltip title={`Sair (${user.username})`}>
+      <IconButton onClick={() => { logout(); navigate('/login'); }} sx={{ color: 'text.secondary' }}>
+        <Logout sx={{ fontSize: 20 }} />
+      </IconButton>
+    </Tooltip>
+  );
+}
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, loading } = useAuth();
+  const navigate = useNavigate();
+  React.useEffect(() => {
+    if (!loading && !isAuthenticated) navigate('/login', { replace: true });
+  }, [loading, isAuthenticated, navigate]);
+  if (loading || !isAuthenticated) return null;
+  return <>{children}</>;
+}
+
 function AppRouter() {
   const location = useLocation();
   
   // Show landing page on root path only
   if (location.pathname === '/') {
     return <LandingPage />;
+  }
+
+  if (location.pathname === '/login') {
+    return <LoginPage />;
   }
   
   // Show app layout for all other routes
@@ -237,9 +270,12 @@ function AppRouter() {
 export default function App() {
   return (
     <ThemeProvider>
-      <BrowserRouter>
-        <AppRouter />
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRouter />
+          <DisclaimerBanner />
+        </BrowserRouter>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

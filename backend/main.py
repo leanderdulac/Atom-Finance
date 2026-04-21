@@ -37,6 +37,7 @@ from app.api import (  # noqa: E402
     pricing_router,
     reports_router,
     risk_router,
+    ai_proxy_router,
 )
 from app.core.cache import Cache  # noqa: E402
 
@@ -112,6 +113,7 @@ app.include_router(ai_report_router,       prefix="/api/reports",       tags=["A
 app.include_router(ai_screener_router,     prefix="/api/screener",      tags=["AI Screener"])
 app.include_router(autopilot_router,       prefix="/api/autopilot",     tags=["Autopilot"])
 app.include_router(binance_router,         prefix="/api/binance",       tags=["Binance Crypto"])
+app.include_router(ai_proxy_router,        prefix="/api/ai",            tags=["AI Proxy"])
 
 
 @app.get("/api/health")

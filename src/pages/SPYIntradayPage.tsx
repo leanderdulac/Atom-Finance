@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { api } from "../services/api";
 
 // Funções de simulação visual UI
 function simulateIntradayCurve(length = 78) { // 78 barras de 5m (6,5 horas)
@@ -158,7 +159,6 @@ if __name__ == "__main__":
 
 export default function SPYIntradayPage() {
   const [code, setCode] = useState(DEFAULT_PYTHON);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("perplexity_key") || "");
   const [loading, setLoading] = useState(false);
   const [curve, setCurve] = useState<number[]>([]);
 
@@ -172,29 +172,13 @@ export default function SPYIntradayPage() {
   };
 
   const callPerplexityRefine = async () => {
-    if (!apiKey) return alert("Insira sua API Key Perplexity para refinar com Inteligência Artificial.");
     setLoading(true);
     try {
-      const response = await fetch("/perplexity-api/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "sonar-pro",
-          messages: [
-            { role: "system", "content": "Você é um Quantitative Researcher construindo um algoritmo Intraday Momentum. Forneça o código revisado em versão de alto nível, apenas o script python sem tags markdown." },
-            { role: "user", "content": "Implemente melhorias profissionais focadas em slippage e transaction costs neste script:\\n" + code }
-          ],
-        }),
-      });
-
-      if (!response.ok) throw new Error("Erro na requisição da Perplexity. Verifique a chave.");
-      const d = await response.json();
-      const text = d.choices?.[0]?.message?.content || "";
-      const cleaned = text.replace(/```python|```/g, "").trim();
-      setCode(cleaned);
+      const result = await api.aiRefine(
+        code,
+        "Implemente melhorias profissionais focadas em slippage e transaction costs. Retorne apenas o script Python puro."
+      );
+      setCode(result.refined_code);
     } catch (e: any) {
       alert("Falha na automação IA: " + e.message);
     }
@@ -241,16 +225,10 @@ export default function SPYIntradayPage() {
             </div>
           </div>
           
-          {/* AI KEY OVERRIDE */}
+          {/* AI SECURE PROXY NOTE */}
           <div style={{ background: "#0d1b2a", border: "1px solid #3a5a7c", borderRadius: 8, padding: 16 }}>
-             <div style={{ color: "#7eb8f7", fontWeight: "bold", fontSize: 11, marginBottom: 8 }}>🔑 Refinamento com Perplexity AI</div>
-             <input 
-              type="password" 
-              value={apiKey} 
-              onChange={e => { setApiKey(e.target.value); localStorage.setItem("perplexity_key", e.target.value); }}
-              placeholder="API Key Perplexity..." 
-              style={{ width: "100%", background: "#050a14", border: "1px solid #1e3a5f", color: "#c8d8e8", padding: "8px 12px", borderRadius: 4, fontFamily: "monospace", fontSize: 10 }} 
-            />
+             <div style={{ color: "#7eb8f7", fontWeight: "bold", fontSize: 11, marginBottom: 8 }}>✦ Refinamento com Perplexity AI (Servidor Seguro)</div>
+             <div style={{ color: "#5a7a9c", fontSize: 10 }}>Chamadas processadas no backend — chave de API nunca exposta ao browser.</div>
           </div>
 
         </div>

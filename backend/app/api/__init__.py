@@ -19,6 +19,7 @@ from app.api.copulas import router as copulas_router
 from app.api.ibovespa import router as ibovespa_router
 from app.api.options_api import router as options_router
 from app.api.binance import router as binance_router
+from app.api.ai_proxy import router as ai_proxy_router
 
 __all__ = [
     "hedge_router",
@@ -42,4 +43,5 @@ __all__ = [
     "ibovespa_router",
     "options_router",
     "binance_router",
+    "ai_proxy_router",
 ]

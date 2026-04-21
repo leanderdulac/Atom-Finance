@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { api } from "../services/api";
 
 const MODULES = [
   { id: 1, name: "Coleta de dados", desc: "coletar_dados() via yfinance B3 (.SA)", color: "#7eb8f7" },
@@ -155,7 +156,6 @@ if __name__ == "__main__":
 
 export default function PaperCrawlerPage() {
   const [code, setCode] = useState(DEFAULT_PYTHON);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("perplexity_key") || "");
   const [loading, setLoading] = useState(false);
   
   const handleCopy = () => {
@@ -164,29 +164,13 @@ export default function PaperCrawlerPage() {
   };
 
   const callPerplexityRefine = async () => {
-    if (!apiKey) return alert("Insira sua API Key Perplexity para utilizar a IA.");
     setLoading(true);
     try {
-      const response = await fetch("/perplexity-api/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "sonar-pro",
-          messages: [
-            { role: "system", "content": "Você é um arquiteto Python Senior focando em finanças quantitativas para B3. Altere o código enviado e forneça apenas o código em python puro, sem marcações." },
-            { role: "user", "content": "Implemente melhorias profissionais e vetorizadas em cima deste código B3 Quant:\\n" + code }
-          ],
-        }),
-      });
-
-      if (!response.ok) throw new Error("Erro na requisição. Verifique sua chave.");
-      const d = await response.json();
-      const text = d.choices?.[0]?.message?.content || "";
-      const cleaned = text.replace(/```python|```/g, "").trim();
-      setCode(cleaned);
+      const result = await api.aiRefine(
+        code,
+        "Implemente melhorias profissionais e vetorizadas em cima deste código B3 Quant. Retorne apenas código Python puro."
+      );
+      setCode(result.refined_code);
     } catch (e: any) {
       alert("Falha na formatação via IA: " + e.message);
     }
@@ -208,14 +192,8 @@ export default function PaperCrawlerPage() {
         {/* PARAMS PORTAL */}
         <div>
           <div style={{ background: "#0d1b2a", border: "1px solid #c084fc", borderRadius: 8, padding: 16, marginBottom: 20 }}>
-            <div style={{ color: "#c084fc", fontWeight: "bold", fontSize: 13, marginBottom: 8 }}>🔑 PERPLEXITY_API_KEY</div>
-            <input 
-              type="password" 
-              value={apiKey} 
-              onChange={e => { setApiKey(e.target.value); localStorage.setItem("perplexity_key", e.target.value); }}
-              placeholder="Apenas para refinamento avançado IA..." 
-              style={{ width: "100%", background: "#050a14", border: "1px solid #1e3a5f", color: "#c8d8e8", padding: "10px 14px", borderRadius: 4, fontFamily: "monospace" }} 
-            />
+            <div style={{ color: "#c084fc", fontWeight: "bold", fontSize: 13, marginBottom: 8 }}>✦ Refinamento com Perplexity (via servidor seguro)</div>
+            <div style={{ color: "#5a7a9c", fontSize: 11 }}>A chave de API está protegida no servidor — nunca exposta ao browser.</div>
           </div>
 
           <div style={{ background: "#07101f", border: "1px solid #1e3a5f", borderRadius: 8, padding: 20 }}>

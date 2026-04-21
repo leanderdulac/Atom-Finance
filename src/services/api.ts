@@ -1,8 +1,14 @@
 const API_BASE = '/api';
+const TOKEN_KEY = 'atom_jwt';
+
+function getAuthHeader(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     ...options,
   });
   if (!res.ok) {
@@ -142,4 +148,16 @@ export const api = {
   binanceKellySizing: (data: any) => request<any>('/binance/kelly-sizing', { method: 'POST', body: JSON.stringify(data) }),
   binanceFuturesAccount: () => request<any>('/binance/futures/account'),
   binanceFuturesPrice: (symbol: string) => request<any>(`/binance/futures/price/${symbol}`),
+
+  // Report History
+  reportHistory: (limit = 20) => request<any[]>(`/reports/history?limit=${limit}`),
+  reportHistoryTicker: (ticker: string, limit = 10) => request<any[]>(`/reports/history/${ticker}?limit=${limit}`),
+  reportDetail: (id: number) => request<any>(`/reports/history/detail/${id}`),
+
+  // AI Proxy (Perplexity via backend — key never exposed to client)
+  aiRefine: (code: string, instruction?: string) =>
+    request<{ refined_code: string; model_used: string; tokens_used: number }>(
+      '/ai/perplexity/refine',
+      { method: 'POST', body: JSON.stringify({ code, instruction }) },
+    ),
 };

@@ -32,6 +32,7 @@ from app.core.ai_factory import AIFactory
 from app.services.news_monitor import NewsMonitor
 from app.models.bridgewise_b3 import BridgewiseB3
 from app.models.kelly_derivatives import kelly_derivatives as compute_kelly
+from app.db.database import save_report as _db_save, list_reports as _db_list, get_report_by_id as _db_get
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -595,7 +596,10 @@ async def ai_analysis(req: AnalysisRequest):
     Full AI-powered analysis: fetches market data, runs all quant models,
     and returns a BUY CALL / BUY PUT / STRADDLE recommendation with holding period.
     """
-    return await _full_analysis(req.ticker)
+    result = await _full_analysis(req.ticker)
+    # Persist asynchronously (fire-and-forget, never blocks the response)
+    asyncio.create_task(asyncio.to_thread(_db_save, req.ticker.upper(), result))
+    return result
 
 
 @router.post("/ai-analysis/stream")
@@ -619,6 +623,28 @@ async def ai_analysis_stream(req: AnalysisRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/history")
+async def reports_history(limit: int = 20):
+    """Returns the most recent AI analysis reports (all tickers)."""
+    return await asyncio.to_thread(_db_list, None, limit)
+
+
+@router.get("/history/{ticker}")
+async def reports_history_ticker(ticker: str, limit: int = 10):
+    """Returns recent AI analysis reports for a specific ticker."""
+    return await asyncio.to_thread(_db_list, ticker, limit)
+
+
+@router.get("/history/detail/{report_id}")
+async def report_detail(report_id: int):
+    """Returns the full saved report JSON for a given report ID."""
+    report = await asyncio.to_thread(_db_get, report_id)
+    if report is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Report {report_id} not found.")
+    return report
 
 
 async def _full_analysis_streaming(ticker: str):
