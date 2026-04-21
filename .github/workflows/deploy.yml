@@ -1,0 +1,44 @@
+name: ATOM Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    name: Deploy to DigitalOcean
+    runs-on: ubuntu-latest
+    # Only deploy from main branch, never from PRs
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -euo pipefail
+            echo "=== ATOM Auto-Deploy triggered by GitHub Actions ==="
+            echo "Commit: ${{ github.sha }}"
+            echo "By: ${{ github.actor }}"
+            bash /opt/atom/scripts/deploy.sh
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ Deploy successful!"
+          echo "Commit: ${{ github.sha }}"
+          echo "Deployed by: ${{ github.actor }}"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Deploy FAILED for commit ${{ github.sha }}"
+          echo "Check server logs: ssh ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} 'docker compose -f /opt/atom/docker-compose.prod.yml logs --tail=50'"
