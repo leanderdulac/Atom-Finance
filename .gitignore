@@ -21,4 +21,9 @@ scratch/
 Kronos_temp/
 venv_test/
 Downloads/
+
+# Runtime databases (generated, not versioned)
+*.db
+*.db-shm
+*.db-wal
 node_modules
