@@ -106,7 +106,7 @@ export default function ClientOptionsHub() {
         <p style={{ color: "#5a7a9c", fontSize: 15, marginTop: 8 }}>Mecânica de Kolmogorov e Lema de Itô acoplados no motor para identificar operações OTM estruturalmente vantajosas.</p>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 24, '@media (min-width: 1024px)': { flexDirection: "row" } as any }}>
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
         
         {/* PARAMS ROW */}
         <div style={{ background: "#0a1628", borderRadius: 16, padding: "24px 30px", border: "1px solid #1e3a5f", display: "flex", flexWrap: "wrap", gap: 30 }}>

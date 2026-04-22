@@ -122,7 +122,7 @@ const BinanceDashboard: React.FC = () => {
 
       <Grid container spacing={3}>
         {/* Market Watchlist (Left) */}
-        <Grid item xs={12} lg={4}>
+        <Grid size={{ xs: 12, lg: 4 }}>
           <Card sx={{ height: '100%', overflow: 'hidden' }}>
             <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -160,10 +160,10 @@ const BinanceDashboard: React.FC = () => {
         </Grid>
 
         {/* Main Analysis (Middle & Right) */}
-        <Grid item xs={12} lg={8}>
+        <Grid size={{ xs: 12, lg: 8 }}>
           <Grid container spacing={3}>
             {/* Price & Depth Info */}
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card sx={{ 
                 background: 'linear-gradient(135deg, rgba(20, 20, 40, 0.4) 0%, rgba(10, 10, 20, 0.4) 100%)',
                 backdropFilter: 'blur(10px)',
@@ -223,7 +223,7 @@ const BinanceDashboard: React.FC = () => {
             </Grid>
 
             {/* Kelly Criterion Section */}
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Card sx={{ border: '1px solid rgba(99, 102, 241, 0.2)' }}>
                 <CardContent>
                    <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
@@ -231,7 +231,7 @@ const BinanceDashboard: React.FC = () => {
                   </Typography>
 
                   <Grid container spacing={2}>
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <TextField 
                         fullWidth 
                         label="Probabilidade de Lucro (win_prob)" 
@@ -242,7 +242,7 @@ const BinanceDashboard: React.FC = () => {
                         inputProps={{ step: 0.01, min: 0, max: 1 }}
                       />
                     </Grid>
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <TextField 
                         fullWidth 
                         label="Payout Ratio (Risk/Reward)" 
@@ -252,7 +252,7 @@ const BinanceDashboard: React.FC = () => {
                         helperText="Ex: lucro de 1.5x do valor arriscado"
                       />
                     </Grid>
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <TextField 
                         fullWidth 
                         label="Fração de Kelly (0.25 = Quarter)" 
@@ -262,7 +262,7 @@ const BinanceDashboard: React.FC = () => {
                         helperText="Recomendado 0.25 para mitigar ruína (Taleb)"
                       />
                     </Grid>
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <Button 
                         fullWidth 
                         variant="contained" 
@@ -299,7 +299,7 @@ const BinanceDashboard: React.FC = () => {
             </Grid>
 
             {/* AI Insights & Futures Monitor */}
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Card sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>

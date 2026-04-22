@@ -95,7 +95,7 @@ const AIAlphaScreener: React.FC = () => {
 
       <Grid container spacing={3}>
         {results.map((res, idx) => (
-          <Grid xs={12} md={6} lg={4} key={res.ticker}>
+          <Grid size={{ xs: 12, md: 6, lg: 4 }} key={res.ticker}>
             <Zoom in style={{ transitionDelay: `${idx * 100}ms` }}>
               <Card sx={{ 
                 bgcolor: 'rgba(30, 30, 50, 0.8)', 

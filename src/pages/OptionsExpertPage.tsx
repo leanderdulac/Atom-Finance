@@ -149,7 +149,7 @@ const OptionsExpertPage: React.FC = () => {
       {result && (
         <Grid container spacing={4}>
           {/* Left Column: Recommendations */}
-          <Grid xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 700, display: "flex", alignItems: "center", gap: 1 }}>
               <CheckCircleOutline sx={{ color: "#00ff88" }} /> Recomendações do Dia
             </Typography>
@@ -201,35 +201,35 @@ const OptionsExpertPage: React.FC = () => {
           </Grid>
 
           {/* Right Column: Deep Analysis */}
-          <Grid xs={12} md={8}>
+          <Grid size={{ xs: 12, md: 8 }}>
             {selectedTrade && (
               <Box>
                 <Card sx={{ background: "#0d1421", borderRadius: "16px", border: "1px solid #1e293b", p: 2 }}>
                   <CardContent>
                     <Grid container spacing={3}>
-                      <Grid xs={12} md={6}>
+                      <Grid size={{ xs: 12, md: 6 }}>
                         <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>{selectedTrade.ticker} — {selectedTrade.action}</Typography>
                         <Typography variant="body1" sx={{ color: "#8a99af", mb: 3 }}>
                           {selectedTrade.reasoning}
                         </Typography>
                         
                         <Grid container spacing={2}>
-                          <Grid xs={4}>
+                          <Grid size={{ xs: 4 }}>
                             <Typography variant="caption" sx={{ color: "#5c6d84", display: "block" }}>STRIKE</Typography>
                             <Typography variant="h6">R$ {selectedTrade.strike.toFixed(2)}</Typography>
                           </Grid>
-                          <Grid xs={4}>
+                          <Grid size={{ xs: 4 }}>
                             <Typography variant="caption" sx={{ color: "#5c6d84", display: "block" }}>CUSTO</Typography>
                             <Typography variant="h6">R$ {selectedTrade.cost_brl.toFixed(2)}</Typography>
                           </Grid>
-                          <Grid xs={4}>
+                          <Grid size={{ xs: 4 }}>
                             <Typography variant="caption" sx={{ color: "#5c6d84", display: "block" }}>IV</Typography>
                             <Typography variant="h6">{(selectedTrade.iv * 100).toFixed(1)}%</Typography>
                           </Grid>
                         </Grid>
                       </Grid>
 
-                      <Grid xs={12} md={6}>
+                      <Grid size={{ xs: 12, md: 6 }}>
                         <Box sx={{ height: 260, width: "100%" }}>
                           <Typography variant="subtitle2" sx={{ mb: 1, color: "#8a99af", textAlign: "center" }}>Simulação de Payoff no Vencimento</Typography>
                           <ResponsiveContainer width="100%" height="100%">

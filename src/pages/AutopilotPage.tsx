@@ -378,7 +378,7 @@ export default function AutopilotPage() {
             {/* Operation Cards */}
             <Grid container spacing={3} sx={{ maxWidth: 1200, mx: 'auto' }}>
               {result.operations.map((op, idx) => (
-                <Grid xs={12} md={4} key={op.profile}>
+                <Grid size={{ xs: 12, md: 4 }} key={op.profile}>
                   <OperationCard op={op} idx={idx} />
                 </Grid>
               ))}
