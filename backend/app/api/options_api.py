@@ -1,7 +1,6 @@
 """
 AI Options Expert API — Scan B3 for the best trades.
 """
-from __future__ import annotations
 import logging
 import os
 import json

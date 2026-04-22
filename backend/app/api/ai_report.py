@@ -2,7 +2,6 @@
 AI Analysis Report — crosses all quant models and generates a recommendation.
 Endpoint: POST /api/reports/ai-analysis
 """
-from __future__ import annotations
 
 import asyncio
 import json

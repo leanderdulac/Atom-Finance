@@ -2,7 +2,6 @@
 Authentication API — JWT with bcrypt password hashing, backed by SQLite.
 Users persist across restarts via the shared ATOM database.
 """
-from __future__ import annotations
 
 import asyncio
 import logging

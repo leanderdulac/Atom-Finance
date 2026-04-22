@@ -2,7 +2,6 @@
 AI Proxy — Routes AI calls through the backend so API keys never leave the server.
 Supports Perplexity code refinement used by PaperCrawler & SPYIntraday pages.
 """
-from __future__ import annotations
 
 import logging
 import os

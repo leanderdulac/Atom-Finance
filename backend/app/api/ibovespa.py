@@ -3,7 +3,6 @@ Ibovespa Dashboard API
 =======================
 Endpoints para simulação GBM + otimização RL (CEM) dos 18 ativos Ibovespa.
 """
-from __future__ import annotations
 
 import asyncio
 from functools import partial
