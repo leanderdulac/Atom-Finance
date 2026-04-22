@@ -1,5 +1,4 @@
 """Market Data API with OpenBB, Yahoo Finance and synthetic fallbacks."""
-from __future__ import annotations
 
 from datetime import date, timedelta
 from typing import Literal
