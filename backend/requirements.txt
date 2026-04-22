@@ -49,6 +49,7 @@ textblob==0.18.0.post0
 # Visualization & Reports
 matplotlib==3.9.2
 reportlab==4.2.4
+openpyxl>=3.1.5
 
 # Utilities
 python-dotenv==1.0.1
