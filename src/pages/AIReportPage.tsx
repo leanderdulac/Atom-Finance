@@ -176,10 +176,6 @@ const STEPS = [
   { icon: <AutoGraph />, label: 'Gerando relatório com IA...' },
 ];
 
-    </Box>
-  );
-}
-
 function LoadingSteps({ step }: { step: number }) {
   return (
     <Box sx={{ py: 4 }}>
