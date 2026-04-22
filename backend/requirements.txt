@@ -25,9 +25,7 @@ arch==7.1.0
 yfinance>=0.2.58
 requests==2.32.3
 websockets==13.1
-openbb
-openbb-yfinance
-openbb-cboe
+
 
 # Machine Learning
 scikit-learn==1.5.2
