@@ -12,8 +12,8 @@ from app.core.cache import Cache
 logger = logging.getLogger(__name__)
 
 class BinanceService:
-    BASE_URL = "https://api.binance.com"
-    FUTURES_URL = "https://fapi.binance.com"
+    BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
+    FUTURES_URL = os.getenv("BINANCE_FUTURES_URL", "https://fapi.binance.com")
     CACHE_TTL = 30  # seconds for price data
 
     @staticmethod
