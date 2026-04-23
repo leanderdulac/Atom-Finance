@@ -23,6 +23,7 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           port: 22
           script_stop: true
+          command_timeout: 30m
           script: |
             set -euo pipefail
             echo "=== ATOM Auto-Deploy triggered by GitHub Actions ==="
