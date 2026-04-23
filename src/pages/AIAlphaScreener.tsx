@@ -48,7 +48,7 @@ const AIAlphaScreener: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.get('http://127.0.0.1:8000/api/screener/top-picks');
+      const response = await axios.get('/api/screener/top-picks');
       setResults(response.data);
     } catch (err) {
       setError('Falha ao processar screening multi-IA. Verifique as chaves de API.');

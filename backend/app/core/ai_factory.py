@@ -33,12 +33,12 @@ class LLMProvider(ABC):
 
 class ClaudeProvider(LLMProvider):
     def __init__(self, api_key: str):
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.client = anthropic.AsyncAnthropic(api_key=api_key)
         self.model = "claude-3-5-sonnet-20241022"
 
     async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
         try:
-            message = self.client.messages.create(
+            message = await self.client.messages.create(
                 model=self.model,
                 max_tokens=kwargs.get("max_tokens", 1024),
                 system=system_prompt if system_prompt else "Você é um analista financeiro sênior.",
@@ -59,12 +59,12 @@ class ClaudeProvider(LLMProvider):
 
 class GPTProvider(LLMProvider):
     def __init__(self, api_key: str):
-        self.client = openai.OpenAI(api_key=api_key)
+        self.client = openai.AsyncOpenAI(api_key=api_key)
         self.model = "gpt-4o" # Placeholder for latest GPT
 
     async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt if system_prompt else "Você é um estrategista quantitativo."},
@@ -95,7 +95,7 @@ class GeminiProvider(LLMProvider):
         try:
             # Gemini handles system instructions in the model constructor or as a prefix
             full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-            response = self.model.generate_content(full_prompt)
+            response = await self.model.generate_content_async(full_prompt)
             return response.text
         except Exception as e:
             logger.error(f"Gemini error: {e}")
@@ -104,12 +104,12 @@ class GeminiProvider(LLMProvider):
 class GrokProvider(LLMProvider):
     def __init__(self, api_key: str):
         # xAI is OpenAI compatible
-        self.client = openai.OpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
+        self.client = openai.AsyncOpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
         self.model = "grok-3"
 
     async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt if system_prompt else "Você é o Grok, um assistente com inteligência em tempo real."},
@@ -125,12 +125,12 @@ class GrokProvider(LLMProvider):
 class PerplexityProvider(LLMProvider):
     def __init__(self, api_key: str):
         # Perplexity is OpenAI compatible
-        self.client = openai.OpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
+        self.client = openai.AsyncOpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
         self.model = "sonar-pro"
 
     async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt if system_prompt else "Você é um pesquisador web especializado em finanças."},
