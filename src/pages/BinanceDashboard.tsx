@@ -41,6 +41,10 @@ const BinanceDashboard: React.FC = () => {
   const [kellyResult, setKellyResult] = useState<any>(null);
   const [calculatingKelly, setCalculatingKelly] = useState(false);
 
+  // Futures Account State
+  const [futuresAccount, setFuturesAccount] = useState<any>(null);
+  const [loadingAccount, setLoadingAccount] = useState(false);
+
   // Load Initial Tickers
   const loadTickerList = async () => {
     try {
@@ -67,6 +71,18 @@ const BinanceDashboard: React.FC = () => {
     }
   };
 
+  const loadFuturesAccount = async () => {
+    setLoadingAccount(true);
+    try {
+      const data = await api.binanceFuturesAccount();
+      setFuturesAccount(data);
+    } catch (e) {
+      console.error('Failed to load futures account', e);
+    } finally {
+      setLoadingAccount(false);
+    }
+  };
+
   const handleCalculateKelly = async () => {
     setCalculatingKelly(true);
     try {
@@ -77,6 +93,8 @@ const BinanceDashboard: React.FC = () => {
         fraction: fraction
       });
       setKellyResult(res);
+      // Auto-refresh account if we just calculated sizing
+      loadFuturesAccount();
     } catch (e) {
       console.error('Kelly calculation failed', e);
     } finally {
@@ -86,7 +104,11 @@ const BinanceDashboard: React.FC = () => {
 
   useEffect(() => {
     loadTickerList();
-    const interval = setInterval(loadTickerList, 10000);
+    loadFuturesAccount();
+    const interval = setInterval(() => {
+      loadTickerList();
+      loadFuturesAccount();
+    }, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -309,9 +331,41 @@ const BinanceDashboard: React.FC = () => {
                     <Typography variant="body2" color="text.secondary" gutterBottom>
                       Status da Conta Futuros
                     </Typography>
-                    <Alert severity="info" variant="outlined" sx={{ borderRadius: 2 }}>
-                      Requisição autenticada pendente da Secret Key no .env. Use o simulador para testes.
-                    </Alert>
+                    {loadingAccount ? (
+                      <LinearProgress sx={{ borderRadius: 1, height: 8 }} />
+                    ) : futuresAccount?.error ? (
+                      <Alert severity="info" variant="outlined" sx={{ borderRadius: 2 }}>
+                        {futuresAccount.error === "API Secret missing" 
+                          ? "Requisição autenticada pendente da Secret Key no .env. Use o simulador para testes."
+                          : `Erro: ${futuresAccount.error}`}
+                      </Alert>
+                    ) : futuresAccount ? (
+                      <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2" color="text.secondary">Saldo Total:</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 800, color: BINANCE_YELLOW }}>
+                            $ {parseFloat(futuresAccount.totalWalletBalance || '0').toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2" color="text.secondary">Margem Disponível:</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                            $ {parseFloat(futuresAccount.availableBalance || '0').toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="body2" color="text.secondary">Posições Ativas:</Typography>
+                          <Chip 
+                            size="small" 
+                            label={(futuresAccount.positions || []).filter((p: any) => parseFloat(p.positionAmt) !== 0).length} 
+                            color="primary"
+                            sx={{ height: 20, fontSize: '0.7rem' }}
+                          />
+                        </Box>
+                      </Box>
+                    ) : (
+                      <Typography variant="body2" color="error">Sem dados da conta.</Typography>
+                    )}
                   </Box>
 
                   <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
