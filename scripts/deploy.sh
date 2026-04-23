@@ -69,7 +69,7 @@ if [[ "$MODE" == "docker" ]]; then
     sleep 5
 
     RETRIES=0
-    until $COMPOSE exec backend curl -sf http://localhost:8000/api/health > /dev/null 2>&1; do
+    until $COMPOSE exec backend python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" > /dev/null 2>&1; do
         RETRIES=$((RETRIES + 1))
         [[ $RETRIES -ge 15 ]] && error "Backend health check failed. Logs: docker compose logs backend"
         info "Waiting for backend... (${RETRIES}/15)"
