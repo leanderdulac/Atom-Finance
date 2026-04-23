@@ -59,7 +59,7 @@ if [[ "$MODE" == "docker" ]]; then
     [[ -f "$PROD_ENV" ]]     || error ".env.prod not found at ${PROD_ENV}. Run setup-server.sh first."
 
     info "2/5 Building Docker images..."
-    $COMPOSE build --no-cache backend frontend
+    $COMPOSE build backend frontend
     success "Images built."
 
     info "3/5 Database auto-migrated at startup (SQLite)."
