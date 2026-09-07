@@ -41,6 +41,7 @@ import OptionsExpertPage from './pages/OptionsExpertPage';
 import AIAlphaScreener from './pages/AIAlphaScreener';
 import AutopilotPage from './pages/AutopilotPage';
 import BinanceDashboard from './pages/BinanceDashboard';
+import EarningsPredictionPage from './pages/EarningsPredictionPage';
 
 const DRAWER_WIDTH = 260;
 
@@ -49,6 +50,7 @@ const navItems = [
   { label: 'AUTOPILOT', path: '/autopilot', icon: <RocketLaunch /> },
   { label: 'B3 AI Alpha Screener', path: '/ai-screener', icon: <AutoFixHigh /> },
   { label: 'Especialista em Opções', path: '/options-expert', icon: <Psychology /> },
+  { label: 'Earnings Predictor', path: '/earnings-predictor', icon: <Assessment /> },
   { label: 'Alpha Engine', path: '/alpha-engine', icon: <CallMerge /> },
   { label: 'Dashboard', path: '/dashboard', icon: <Speed /> },
   { label: 'Simulador Cliente (Opções)', path: '/client-options', icon: <MonetizationOn /> },
@@ -218,6 +220,7 @@ function AppLayout() {
           <Route path="/spy-momentum" element={<SPYIntradayPage />} />
           <Route path="/client-options" element={<ClientOptionsHub />} />
           <Route path="/options-expert" element={<OptionsExpertPage />} />
+          <Route path="/earnings-predictor" element={<ProtectedRoute><EarningsPredictionPage /></ProtectedRoute>} />
           <Route path="/ai-screener" element={<AIAlphaScreener />} />
           <Route path="/autopilot" element={<AutopilotPage />} />
           <Route path="/alpha-engine" element={<AlphaCombinationPage />} />

@@ -22,7 +22,7 @@ export default defineConfig({
       },
     },
     watch: {
-      ignored: ['**/backend/**', '**/node_modules/**'],
+      ignored: ['**/backend/**', '**/node_modules/**', '**/venv/**', '**/.venv/**', '**/venv_test/**', '**/venv_test2/**'],
     },
   },
 })

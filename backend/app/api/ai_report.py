@@ -590,6 +590,128 @@ class AnalysisRequest(BaseModel):
     ticker: str = Field(..., min_length=1, max_length=10, description="Stock ticker (e.g. PETR4, AAPL, MSFT)")
 
 
+class FinancialPeriod(BaseModel):
+    revenue: float
+    gross_profit: float
+    operating_income: float
+    interest_expense: float
+    net_income: float
+    cfo: float
+    cash_equivalents: float
+    current_assets: float
+    current_liabilities: float
+    inventory: float
+    accounts_receivable: float
+    total_assets: float
+    total_debt: float
+    total_equity: float
+
+class OptionsData(BaseModel):
+    S: float = Field(..., description="Preço do Ativo Subjacente")
+    K: float = Field(..., description="Preço de Exercício")
+    T: float = Field(..., description="Tempo até o Vencimento em anos")
+    r: float = Field(..., description="Taxa Livre de Risco")
+    C: float = Field(..., description="Preço de Mercado da Opção")
+
+class EarningsPredictionRequest(BaseModel):
+    current_period: FinancialPeriod
+    previous_period: FinancialPeriod
+    options: Optional[OptionsData] = None
+
+@router.post("/earnings-prediction")
+@limiter.limit("5/hour")
+async def earnings_prediction(request: Request, req: EarningsPredictionRequest):
+    """
+    Executes the directional earnings prediction based on Kim et al. 2024
+    and Schadner 2026 analytical models via LLM Agent.
+    """
+    prompt = "DADOS FORNECIDOS:\\n\\nPERÍODO ANTERIOR:\\n"
+    for k, v in req.previous_period.dict().items():
+        prompt += f"- {k}: {v}\\n"
+    prompt += "\\nPERÍODO ATUAL:\\n"
+    for k, v in req.current_period.dict().items():
+        prompt += f"- {k}: {v}\\n"
+        
+    if req.options:
+        prompt += "\\nDADOS DE OPÇÕES (CALL EUROPEIA):\\n"
+        for k, v in req.options.dict().items():
+            prompt += f"- {k}: {v}\\n"
+            
+    prompt += "\\nPor favor, execute a análise completa conforme suas instruções de sistema."
+    
+    result = await AIFactory.predict_earnings_directional(prompt)
+    return {"analysis": result}
+
+@router.get("/ticker-financials/{ticker}")
+async def get_ticker_financials(ticker: str):
+    """
+    Fetches the last 2 years of financial statements (Income Stmt, Balance Sheet, Cash Flow)
+    via yfinance and maps them to the 14 required metrics.
+    """
+    import yfinance as yf
+    import pandas as pd
+    
+    # Heuristic for B3
+    symbol = ticker.upper()
+    if len(symbol) >= 5 and symbol[:4].isalpha() and symbol[4:].isdigit():
+        if not symbol.endswith(".SA"):
+            symbol += ".SA"
+            
+    try:
+        t = yf.Ticker(symbol)
+        income = t.income_stmt
+        bs = t.balance_sheet
+        cf = t.cash_flow
+        
+        if income.empty or bs.empty or cf.empty:
+            raise HTTPException(status_code=404, detail="Dados financeiros não encontrados para este ticker.")
+
+        def get_val(df, keys, col_idx):
+            if df.empty or col_idx >= len(df.columns): return 0
+            col = df.columns[col_idx]
+            for k in keys:
+                if k in df.index:
+                    val = df.loc[k, col]
+                    return float(val) if not pd.isna(val) else 0
+            return 0
+
+        # Mapping tables
+        map_inc = {
+            "revenue": ["Total Revenue", "Operating Revenue"],
+            "gross_profit": ["Gross Profit"],
+            "operating_income": ["Operating Income", "EBIT"],
+            "interest_expense": ["Interest Expense", "Interest Expense Non Operating"],
+            "net_income": ["Net Income", "Net Income Common Stockholders"]
+        }
+        map_bs = {
+            "cash_equivalents": ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"],
+            "current_assets": ["Total Current Assets"],
+            "current_liabilities": ["Total Current Liabilities"],
+            "inventory": ["Inventory", "Inventories"],
+            "accounts_receivable": ["Receivables", "Accounts Receivable"],
+            "total_assets": ["Total Assets"],
+            "total_debt": ["Total Debt"],
+            "total_equity": ["Stockholders Equity", "Total Equity Gross Minority Interest"]
+        }
+        map_cf = {
+            "cfo": ["Cash Flow From Continued Operating Activities", "Operating Cash Flow"]
+        }
+
+        def build_period(idx):
+            res = {}
+            for k, keys in map_inc.items(): res[k] = get_val(income, keys, idx)
+            for k, keys in map_bs.items(): res[k] = get_val(bs, keys, idx)
+            for k, keys in map_cf.items(): res[k] = get_val(cf, keys, idx)
+            return res
+
+        return {
+            "current": build_period(0),
+            "previous": build_period(1)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching ticker financials for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/ai-analysis")
 @limiter.limit("10/hour")
 async def ai_analysis(request: Request, req: AnalysisRequest):

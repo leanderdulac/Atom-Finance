@@ -115,6 +115,7 @@ export const api = {
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -134,6 +135,7 @@ export const api = {
             if (event === 'progress') onProgress(parsed.step, parsed.total, parsed.message);
             else if (event === 'result') onResult(parsed);
             else if (event === 'error') onError(parsed.message);
+          // eslint-disable-next-line no-empty
           } catch {}
         }
       }
@@ -160,4 +162,10 @@ export const api = {
       '/ai/perplexity/refine',
       { method: 'POST', body: JSON.stringify({ code, instruction }) },
     ),
+
+  // Earnings Directional Prediction (Kim et al., Schadner)
+  earningsPrediction: (data: any) => request<{ analysis: string }>('/reports/earnings-prediction', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Fetch financials from ticker (yfinance)
+  getTickerFinancials: (ticker: string) => request<{ current: any, previous: any }>(`/reports/ticker-financials/${ticker}`),
 };

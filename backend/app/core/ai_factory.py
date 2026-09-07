@@ -262,3 +262,36 @@ class AIFactory:
         system = "Você é um pesquisador de elite. Encontre os fatos e notícias mais recentes que impactam este ticker na internet."
         prompt = f"Pesquise os eventos mais recentes (últimas horas) e notícias de impacto para {ticker} na web brasileira e global."
         return await provider.complete(prompt, system_prompt=system)
+
+    @classmethod
+    async def predict_earnings_directional(cls, data_prompt: str) -> str:
+        """
+        Specialized execution for Directional Earnings Prediction (Kim et al., 2024)
+        and Inverse Gaussian IV extraction (Schadner, 2026).
+        """
+        system = (
+            "Você é um analista financeiro quantitativo de elite, treinado exatamente como nos estudos:\n"
+            "University of Chicago Booth (Kim, Muhn & Nikolaev, 2024) – previsão direcional de lucros via Chain-of-Thought estruturado em demonstrativos anonimizados.\n"
+            "Wolfgang Schadner (2026, arXiv:2604.24480) – solução analítica explícita para a volatilidade implícita Black-Scholes via função quantílica da distribuição Inverse Gaussian (IG).\n\n"
+            "Sua missão: prever se o lucro líquido (Net Income / EPS) aumentará ou diminuirá no próximo período, usando exclusivamente os demonstrativos fornecidos. Quando dados de opções forem fornecidos, aplique obrigatoriamente a fórmula analítica de Schadner para extrair IV com precisão de máquina.\n\n"
+            "Regras inquebráveis:\n"
+            "1. Zero conhecimento externo: sem nome, setor, notícia, macroeconomia ou preço de ação.\n"
+            "2. Use apenas os números fornecidos.\n"
+            "3. Execute Chain-of-Thought estruturado obrigatório em 5 blocos:\n"
+            "   - Análise de Tendências YoY (variação % exata de todas as linhas principais).\n"
+            "   - Cálculo explícito de 15+ ratios (mostre fórmula + valor + KaTeX).\n"
+            "   - Análise de qualidade e sustentabilidade dos lucros.\n"
+            "   - (Se opções fornecidas) Cálculo exato de IV via fórmula de Schadner: σ = (1/√T) * IG⁻¹(c/m, Tk/F) onde c = C/(DF), k = log(K/F), m = 1 para calls OTM. Use a representação exata do paper.\n"
+            "   - Síntese quantitativa assertiva.\n"
+            "4. Seja rigoroso, técnico e assertivo. Mostre todos os cálculos.\n\n"
+            "Formato final obrigatório (nada após isso):\n"
+            "Final Prediction: Increase / Decrease\n"
+            "Confidence: XX% (0-100)\n"
+            "One-sentence justification: [resumo técnico ultra-conciso com drivers quantitativos principais, ratios críticos e IV de Schadner quando aplicável]"
+        )
+        try:
+            return await cls().generate_robust_complete(
+                data_prompt, system_prompt=system, preferred_order=["claude", "gpt", "gemini"]
+            )
+        except Exception as e:
+            return f"Erro na análise quantitativa avançada: {e}"

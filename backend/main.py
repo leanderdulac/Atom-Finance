@@ -20,7 +20,7 @@ load_dotenv()
 from app.api import (  # noqa: E402
     ai_screener_router,
     ai_report_router,
-    autopilot_router,
+    # autopilot_router,
     auth_router,
     binance_router,
     backtesting_router,
@@ -32,8 +32,7 @@ from app.api import (  # noqa: E402
     ibovespa_router,
     ghost_liquidity_router,
     market_data_router,
-    ml_router,
-    neural_sde_router,
+    # neural_sde_router,
     options_router,
     portfolio_router,
     pricing_router,
@@ -102,8 +101,8 @@ app.include_router(pricing_router,         prefix="/api/pricing",       tags=["O
 app.include_router(risk_router,            prefix="/api/risk",          tags=["Risk Analysis"])
 app.include_router(hedge_router,           prefix="/api/hedge",         tags=["Dynamic Hedge"])
 app.include_router(portfolio_router,       prefix="/api/portfolio",     tags=["Portfolio Optimisation"])
-app.include_router(ml_router,              prefix="/api/ml",            tags=["Machine Learning"])
-app.include_router(neural_sde_router,      prefix="/api/neural-sde",    tags=["Neural SDE"])
+# app.include_router(ml_router,              prefix="/api/ml",            tags=["Machine Learning"])
+# app.include_router(neural_sde_router,      prefix="/api/neural-sde",    tags=["Neural SDE"])
 app.include_router(ghost_liquidity_router, prefix="/api/ghost-liquidity", tags=["Ghost Liquidity"])
 app.include_router(black_swan_router,      prefix="/api/black-swan",    tags=["Black Swan Detection"])
 app.include_router(market_data_router,     prefix="/api/market-data",   tags=["Market Data"])
@@ -116,7 +115,7 @@ app.include_router(evt_router,             prefix="/api/evt",           tags=["E
 app.include_router(copulas_router,         prefix="/api/copulas",       tags=["Copulas"])
 app.include_router(ai_report_router,       prefix="/api/reports",       tags=["AI Analysis"])
 app.include_router(ai_screener_router,     prefix="/api/screener",      tags=["AI Screener"])
-app.include_router(autopilot_router,       prefix="/api/autopilot",     tags=["Autopilot"])
+# app.include_router(autopilot_router,       prefix="/api/autopilot",     tags=["Autopilot"])
 app.include_router(binance_router,         prefix="/api/binance",       tags=["Binance Crypto"])
 app.include_router(ai_proxy_router,        prefix="/api/ai",            tags=["AI Proxy"])
 

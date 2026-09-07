@@ -20,6 +20,7 @@ logs/
 scratch/
 Kronos_temp/
 venv_test/
+venv_test2/
 Downloads/
 
 # Runtime databases (generated, not versioned)

@@ -91,7 +91,7 @@ export default function ClientOptionsHub() {
     const optionsBought = Math.floor(capital / initialOptPrice); // Comprar lotes inteiros
     const finalCapital = optionsBought * targetOptPrice;
     
-    let profit = finalCapital - capital;
+    const profit = finalCapital - capital;
     const profitPct = (profit / capital) * 100;
 
     return { ...lvl, K, initialOptPrice, targetOptPrice, optionsBought, finalCapital, profit, profitPct, pop };
