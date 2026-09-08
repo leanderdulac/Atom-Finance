@@ -1,55 +1,63 @@
-"""Machine Learning API endpoints."""
-
+"""Evidence-first financial ML research; no unvalidated forecast endpoints."""
 import asyncio
-from functools import partial
+from datetime import date
+from typing import Annotated, Literal
 
-import numpy as np
-from fastapi import APIRouter
-from pydantic import BaseModel, Field
-from app.models.ml_models import ARIMAForecast, LSTMPredictor, RandomForestPredictor, TradingDQN
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.core.limiter import limiter
+from app.core.security import get_current_user
+from app.models.research_validation import FEATURES, POLICY_VERSION, evaluate_experiment
 
-router = APIRouter()
-
-
-class MLPredictionRequest(BaseModel):
-    prices: list[float] = Field(..., min_length=60)
-    forecast_days: int = Field(30, ge=1, le=365)
-    model: str = Field("lstm", pattern="^(lstm|random_forest|arima|dqn)$")
+router = APIRouter(dependencies=[Depends(get_current_user)])
+PositivePrice = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
-class ARIMARequest(BaseModel):
-    prices: list[float] = Field(..., min_length=30)
-    p: int = Field(5, ge=1, le=20)
-    d: int = Field(1, ge=0, le=2)
-    q: int = Field(0, ge=0, le=5)
-    forecast_days: int = Field(30, ge=1, le=365)
+class ExperimentRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    prices: list[PositivePrice] = Field(min_length=400, max_length=5000)
+    dates: list[date] = Field(min_length=400, max_length=5000)
+    model: Literal['ridge', 'random_forest'] = 'ridge'
+    hypothesis: str = Field(min_length=30, max_length=2000)
+    data_source: str = Field(min_length=3, max_length=200)
+    price_basis: Literal['adjusted', 'unverified'] = 'unverified'
+    commission_bps: float = Field(default=5, ge=0, le=100, allow_inf_nan=False)
+    slippage_bps: float = Field(default=5, ge=0, le=100, allow_inf_nan=False)
+    target_volatility: float = Field(default=0.10, gt=0, le=0.50, allow_inf_nan=False)
+    max_drawdown: float = Field(default=0.20, gt=0, le=0.50, allow_inf_nan=False)
+    n_splits: int = Field(default=4, ge=3, le=6)
+    gap_groups: int = Field(default=1, ge=1, le=3)
+
+    @model_validator(mode='after')
+    def chronological(self):
+        if len(self.prices) != len(self.dates):
+            raise ValueError('Datas e preços devem ter o mesmo tamanho.')
+        if any(a >= b for a, b in zip(self.dates, self.dates[1:])):
+            raise ValueError('Datas devem ser únicas e estritamente crescentes.')
+        if self.dates[-1] > date.today():
+            raise ValueError('Não é permitido enviar observações futuras.')
+        return self
 
 
-async def _run_in_thread(func, *args, **kwargs):
-    """Execute a CPU-bound function in a thread pool to avoid blocking the event loop."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, partial(func, *args, **kwargs))
+@router.get('/policy')
+async def policy():
+    return {'version': POLICY_VERSION, 'features': FEATURES, 'eligible_for_live_trading': False,
+            'rules': ['Hipótese econômica antes do modelo.', 'Treino cronológico com purga e intervalo entre grupos.',
+                      'Comparação OOS com baselines, custos, turnover e risco.',
+                      'Dados sintéticos explicitamente identificados.', 'Revisão independente antes de qualquer promoção.']}
 
 
-@router.post("/predict")
-async def predict(req: MLPredictionRequest):
-    prices = np.array(req.prices)
-    if req.model == "lstm":
-        return await _run_in_thread(LSTMPredictor().predict, prices, req.forecast_days)
-    elif req.model == "random_forest":
-        return await _run_in_thread(RandomForestPredictor().predict, prices, req.forecast_days)
-    elif req.model == "arima":
-        return await _run_in_thread(ARIMAForecast.forecast, prices, forecast_days=req.forecast_days)
-    elif req.model == "dqn":
-        return await _run_in_thread(TradingDQN.generate_signals, prices)
+@router.post('/evaluate')
+@limiter.limit('5/minute')
+async def evaluate(request: Request, req: ExperimentRequest):
+    try:
+        return await asyncio.to_thread(evaluate_experiment, **req.model_dump(mode='json'))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
 
 
-@router.post("/arima")
-async def arima_forecast(req: ARIMARequest):
-    prices = np.array(req.prices)
-    return await _run_in_thread(ARIMAForecast.forecast, prices, req.p, req.d, req.q, req.forecast_days)
-
-
-@router.post("/trading-signals")
-async def trading_signals(prices: list[float]):
-    return await _run_in_thread(TradingDQN.generate_signals, np.array(prices))
+@router.post('/predict')
+@router.post('/arima')
+@router.post('/trading-signals')
+async def legacy_forecast():
+    raise HTTPException(410, 'Simulações legadas sem validação foram retiradas. Use /api/ml/evaluate para pesquisa fora da amostra.')

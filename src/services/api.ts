@@ -28,7 +28,20 @@ export interface ResearchPaper {
 }
 export interface ResearchSummary { id: string; title: string; created_at: string }
 
+export interface QuantMetrics {
+  gross_return_pct: number; net_return_pct: number; sharpe_net: number;
+  annualized_volatility_pct: number; max_drawdown_pct: number; turnover_total: number;
+  cost_paid_pct_initial: number; mse_oos?: number; equity: number[];
+}
+export interface QuantExperiment {
+  experiment_id: string; policy_version: string; assessment: string;
+  config: { model: string }; reasons: string[]; limitations: string[];
+  results: Record<string, QuantMetrics>;
+  folds: { fold: number; train_end: string; last_train_label_end: string; test_start: string; test_end: string; test_count: number; net_return_pct: number }[];
+}
 export const api = {
+  researchMarketHistory: (ticker: string) => request<{close: number[]; dates: string[]; provider?: string; source?: string}>(`/market-data/history/${encodeURIComponent(ticker)}?days=1825&period=5y&provider=yfinance`),
+  quantEvaluate: (data: object) => request<QuantExperiment>('/ml/evaluate', { method: 'POST', body: JSON.stringify(data) }),
   researchHistory: () => request<ResearchSummary[]>('/research/papers'),
   researchPaper: (id: string) => request<ResearchPaper>(`/research/papers/${encodeURIComponent(id)}`),
   researchExtract: (kind: 'text' | 'arxiv', content: string) => request<ResearchPaper>('/research/papers', { method: 'POST', body: JSON.stringify({ kind, content }) }),
@@ -60,9 +73,6 @@ export const api = {
   maxSharpe: (data: any) => request('/portfolio/max-sharpe', { method: 'POST', body: JSON.stringify(data) }),
   riskParity: (data: any) => request('/portfolio/risk-parity', { method: 'POST', body: JSON.stringify(data) }),
   blackLitterman: (data: any) => request('/portfolio/black-litterman', { method: 'POST', body: JSON.stringify(data) }),
-
-  // ML
-  predict: (data: any) => request('/ml/predict', { method: 'POST', body: JSON.stringify(data) }),
 
   // Ghost Liquidity
   ghostLiquidity: (data?: any) => request('/ghost-liquidity/analyze', { method: 'POST', body: JSON.stringify(data || {}) }),

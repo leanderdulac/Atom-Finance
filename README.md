@@ -36,10 +36,11 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 - **Black-Litterman** — Bayesian views-based allocation
 
 ### Machine Learning
-- **LSTM** — Sequence prediction for price forecasting
-- **Random Forest** — Ensemble-based directional prediction
-- **ARIMA** — Autoregressive time series modeling
-- **DQN (Reinforcement Learning)** — Trading signal generation
+- **Laboratório Quant** — Hipótese econômica, features causais de retornos e risco
+- **Ridge e Random Forest reais** — Comparação com previsão zero e momentum
+- **Validação purgada por grupos** — Walk-forward mensal, intervalo antes do teste e normalização apenas no treino
+- **Risco líquido** — Drawdown, alvo de volatilidade, custos, turnover e estabilidade por janela
+- **Uso de pesquisa** — Sem autorização automática de execução; veja [regras de negócio](docs/RESEARCH-POLICY.md)
 
 ### Ghost Liquidity Analysis
 - Cross-venue duplicate detection
@@ -147,7 +148,7 @@ ATOM/
 │           ├── volatility.py      # GARCH, Heston, EWMA
 │           ├── risk.py            # VaR, CVaR, Stress Test
 │           ├── portfolio.py       # Portfolio optimization
-│           ├── ml_models.py       # LSTM, RF, ARIMA, DQN
+│           ├── research_validation.py # Purged walk-forward, real estimators, net risk
 │           ├── ghost_liquidity.py # Ghost liquidity analyzer
 │           ├── black_swan.py      # Black swan detector
 │           └── backtesting.py     # Backtesting engine
@@ -191,7 +192,9 @@ ATOM/
 | `/api/risk/stress-test` | POST | Stress testing |
 | `/api/risk/garch` | POST | GARCH volatility |
 | `/api/portfolio/optimize` | POST | Portfolio optimization |
-| `/api/ml/predict` | POST | ML price prediction |
+| `/api/ml/evaluate` | POST | Out-of-sample research protocol (auth) |
+| `/api/ml/policy` | GET | Research policy and allowed features |
+| `/api/research/papers` | GET/POST | QuantMind paper history and extraction (auth) |
 | `/api/ghost-liquidity/analyze` | POST | Ghost liquidity analysis |
 | `/api/black-swan/analyze` | POST | Black swan detection |
 | `/api/backtesting/run` | POST | Run backtest |

@@ -156,8 +156,8 @@ export default function Dashboard() {
                 {[
                   'OpenBB', 'Black-Scholes', 'Monte Carlo', 'Binomial Tree', 'Finite Difference',
                   'GARCH', 'Heston Model', 'VaR/CVaR', 'Markowitz',
-                  'Risk Parity', 'Black-Litterman', 'LSTM', 'Random Forest',
-                  'ARIMA', 'DQN Trading', 'Ghost Liquidity', 'Black Swan Detection',
+                  'Risk Parity', 'Black-Litterman', 'Ridge', 'Random Forest',
+                  'Purged Walk-Forward', 'Net Risk', 'Ghost Liquidity', 'Black Swan Detection',
                   'Greeks', 'IV Surface', 'Straddle', 'Iron Condor', 'Butterfly',
                   'Backtesting', 'Stress Testing', 'NLP Sentiment',
                 ].map((cap) => (

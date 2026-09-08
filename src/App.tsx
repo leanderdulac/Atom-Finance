@@ -65,7 +65,7 @@ const navItems = [
   { label: 'Strategies', path: '/strategies', icon: <Timeline /> },
   { label: 'Risk Analysis', path: '/risk', icon: <Assessment /> },
   { label: 'Portfolio', path: '/portfolio', icon: <AccountBalance /> },
-  { label: 'ML Predictions', path: '/ml', icon: <Psychology /> },
+  { label: 'Laboratório Quant', path: '/ml', icon: <Psychology /> },
   { label: 'Simulação B3', path: '/simulacao-b3', icon: <ShowChart /> },
   { label: 'Perfil Investidor', path: '/perfil-investidor', icon: <AccountBalance /> },
   { label: 'Ibovespa 18 + RL', path: '/ibovespa', icon: <AutoGraph /> },
@@ -205,7 +205,7 @@ function AppLayout() {
           <Route path="/strategies" element={<StrategiesPage />} />
           <Route path="/risk" element={<RiskPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
-          <Route path="/ml" element={<MLPage />} />
+          <Route path="/ml" element={<ProtectedRoute><MLPage /></ProtectedRoute>} />
           <Route path="/ghost-liquidity" element={<GhostLiquidityPage />} />
           <Route path="/black-swan" element={<BlackSwanPage />} />
           <Route path="/simulacao-b3" element={<SimulacaoB3Page />} />

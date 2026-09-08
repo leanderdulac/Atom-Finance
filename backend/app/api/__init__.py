@@ -2,7 +2,7 @@ from app.api.pricing import router as pricing_router
 from app.api.hedge import router as hedge_router
 from app.api.risk import router as risk_router
 from app.api.portfolio import router as portfolio_router
-# from app.api.ml import router as ml_router
+from app.api.ml import router as ml_router
 from app.api.ghost_liquidity import router as ghost_liquidity_router
 from app.api.black_swan import router as black_swan_router
 from app.api.market_data import router as market_data_router

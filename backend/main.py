@@ -33,6 +33,7 @@ from app.api import (  # noqa: E402
     ghost_liquidity_router,
     market_data_router,
     # neural_sde_router,
+    ml_router,
     options_router,
     portfolio_router,
     pricing_router,
@@ -76,7 +77,7 @@ app = FastAPI(
     title="ATOM - Quantitative Finance Platform",
     description=(
         "Advanced quantitative finance tools: options pricing, risk analysis, "
-        "portfolio optimisation, ML forecasting, Neural SDE, "
+        "portfolio optimisation, purged walk-forward research, Neural SDE, "
         "ghost liquidity & black swan detection."
     ),
     version="1.0.0",
@@ -104,7 +105,7 @@ app.include_router(pricing_router,         prefix="/api/pricing",       tags=["O
 app.include_router(risk_router,            prefix="/api/risk",          tags=["Risk Analysis"])
 app.include_router(hedge_router,           prefix="/api/hedge",         tags=["Dynamic Hedge"])
 app.include_router(portfolio_router,       prefix="/api/portfolio",     tags=["Portfolio Optimisation"])
-# app.include_router(ml_router,              prefix="/api/ml",            tags=["Machine Learning"])
+app.include_router(ml_router,              prefix="/api/ml",            tags=["Machine Learning"])
 # app.include_router(neural_sde_router,      prefix="/api/neural-sde",    tags=["Neural SDE"])
 app.include_router(ghost_liquidity_router, prefix="/api/ghost-liquidity", tags=["Ghost Liquidity"])
 app.include_router(black_swan_router,      prefix="/api/black-swan",    tags=["Black Swan Detection"])
