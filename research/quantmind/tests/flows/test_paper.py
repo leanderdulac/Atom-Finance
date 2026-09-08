@@ -273,7 +273,8 @@ class PaperFlowTests(unittest.IsolatedAsyncioTestCase):
             _patch_runner(_stub_paper()),
         ):
             await paper_flow(RawText(text="x"), output_type=MyPaper)
-        self.assertIs(seen["output_type"], MyPaper)
+        self.assertIs(seen["output_type"].output_type, MyPaper)
+        self.assertFalse(seen["output_type"].is_strict_json_schema())
 
     async def test_extra_tools_and_guardrails_forwarded(self) -> None:
         seen: dict[str, Any] = {}
@@ -357,3 +358,14 @@ class PaperFlowTests(unittest.IsolatedAsyncioTestCase):
         ):
             await paper_flow(RawText(text="x"))
         self.assertNotIn("model_settings", seen)
+
+
+class PaperSchemaTests(unittest.TestCase):
+    def test_sdk_schema_accepts_dynamic_node_ids(self) -> None:
+        from agents import AgentOutputSchema
+
+        schema = AgentOutputSchema(Paper, strict_json_schema=False)
+        paper = _stub_paper()
+        restored = schema.validate_json(paper.model_dump_json())
+        self.assertEqual(restored, paper)
+        self.assertIn("nodes", schema.json_schema()["properties"])

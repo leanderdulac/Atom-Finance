@@ -40,6 +40,7 @@ from app.api import (  # noqa: E402
     risk_router,
     ai_proxy_router,
 )
+from app.api.research import router as research_router
 from app.core.cache import Cache  # noqa: E402
 from app.services.brapi_service import BrapiService
 from app.db.database import list_reports as _db_check
@@ -94,6 +95,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(research_router, prefix="/api/research", tags=["Research"])
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth_router,            prefix="/api/auth",          tags=["Authentication"])

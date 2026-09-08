@@ -13,12 +13,25 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'API Error');
+    throw new Error(Array.isArray(err.detail) ? err.detail.map((item: { msg: string }) => item.msg).join('; ') : (err.detail || 'API Error'));
   }
   return res.json();
 }
 
+export interface ResearchPaper {
+  id: string;
+  root_node_id: string;
+  nodes: Record<string, { node_id: string; title: string; summary: string; content?: string; citations: { source_id: string; quote?: string; page?: number }[] }>;
+  authors: string[];
+  asset_classes: string[];
+  as_of: string;
+}
+export interface ResearchSummary { id: string; title: string; created_at: string }
+
 export const api = {
+  researchHistory: () => request<ResearchSummary[]>('/research/papers'),
+  researchPaper: (id: string) => request<ResearchPaper>(`/research/papers/${encodeURIComponent(id)}`),
+  researchExtract: (kind: 'text' | 'arxiv', content: string) => request<ResearchPaper>('/research/papers', { method: 'POST', body: JSON.stringify({ kind, content }) }),
   // Health
   health: () => request<{ status: string }>('/health'),
 

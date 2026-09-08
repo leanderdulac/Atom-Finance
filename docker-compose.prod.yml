@@ -18,6 +18,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      - QUANTMIND_URL=http://quantmind:8010
+      - QUANTMIND_SERVICE_TOKEN=${QUANTMIND_SERVICE_TOKEN:-}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - ATOM_DB_PATH=/data/atom_reports.db
       - REDIS_URL=redis://redis:6379/0
@@ -52,6 +54,23 @@ services:
       start_period: 20s
 
   # ── Frontend (Nginx serving Vite static build) ─────────────────
+  quantmind:
+    profiles: [research]
+    build:
+      context: ./research
+    restart: unless-stopped
+    environment:
+      - QUANTMIND_SERVICE_TOKEN=${QUANTMIND_SERVICE_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - QUANTMIND_MODEL=${QUANTMIND_MODEL:-gpt-4o-mini}
+      - QUANTMIND_DB_PATH=/data/research.db
+    volumes:
+      - research_data:/data
+    expose:
+      - "8010"
+    networks:
+      - internal
+
   frontend:
     build:
       context: .
@@ -90,3 +109,4 @@ networks:
 volumes:
   sqlite_data:
   redis_data:
+  research_data:

@@ -4,6 +4,10 @@ A comprehensive quantitative finance platform integrating pricing engines, risk 
 
 ![ATOM](public/atom.svg)
 
+## Integração QuantMind
+
+A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de artigos e histórico por usuário. A biblioteca está incorporada em `research/quantmind`, com ambiente independente. Consulte [análise da fusão e execução local](docs/LOCAL-MERGE.md).
+
 ## Features
 
 ### Options Pricing

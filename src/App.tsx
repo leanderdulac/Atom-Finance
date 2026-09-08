@@ -32,6 +32,7 @@ import AIReportPage from './pages/AIReportPage';
 import SimulacaoB3Page from './pages/SimulacaoB3Page';
 import PerfilInvestidorPage from './pages/PerfilInvestidorPage';
 import IbovespaDashboard from './pages/IbovespaDashboard';
+import ResearchPage from './pages/ResearchPage';
 import PaperCrawlerPage from './pages/PaperCrawlerPage';
 import CSQAPage from './pages/CSQAPage';
 import SPYIntradayPage from './pages/SPYIntradayPage';
@@ -56,6 +57,7 @@ const navItems = [
   { label: 'Simulador Cliente (Opções)', path: '/client-options', icon: <MonetizationOn /> },
   { label: 'SPY Intraday', path: '/spy-momentum', icon: <TrendingUp /> },
   { label: 'CSQA Math Engine', path: '/csqa', icon: <Functions /> },
+  { label: 'Pesquisa QuantMind', path: '/research', icon: <FindInPage /> },
   { label: 'Paper Crawler', path: '/paper-crawler', icon: <FindInPage /> },
   { label: 'Análise IA', path: '/ai-report', icon: <AutoGraph /> },
   { label: 'Quant Terminal', path: '/terminal', icon: <Terminal /> },
@@ -215,6 +217,7 @@ function AppLayout() {
           <Route path="/ai-report"    element={<ProtectedRoute><AIReportPage /></ProtectedRoute>} />
           <Route path="/autopilot"    element={<ProtectedRoute><AutopilotPage /></ProtectedRoute>} />
           <Route path="/ai-screener"  element={<ProtectedRoute><AIAlphaScreener /></ProtectedRoute>} />
+          <Route path="/research" element={<ProtectedRoute><ResearchPage /></ProtectedRoute>} />
           <Route path="/paper-crawler" element={<PaperCrawlerPage />} />
           <Route path="/csqa" element={<CSQAPage />} />
           <Route path="/spy-momentum" element={<SPYIntradayPage />} />

@@ -132,7 +132,7 @@ export default function EarningsPredictionPage() {
           </Typography>
           <Grid container spacing={1}>
             {group.keys.map((k) => (
-              <Grid item xs={6} key={k}>
+              <Grid size={{ xs: 6 }} key={k}>
                 <TextField
                   label={labels[k].label}
                   value={data[k]}
@@ -173,7 +173,7 @@ export default function EarningsPredictionPage() {
 
       <Paper sx={{ ...glassStyle, p: 3, mb: 4, bgcolor: isDark ? 'rgba(20,25,35,0.6)' : 'rgba(255,255,255,0.8)' }}>
         <Grid container spacing={2} alignItems="center" sx={{ mb: 4 }}>
-          <Grid item xs={12} sm={6} md={5}>
+          <Grid size={{ xs: 12, sm: 6, md: 5 }} >
             <TextField
               fullWidth
               label="Autocompletar via Ticker"
@@ -200,7 +200,7 @@ export default function EarningsPredictionPage() {
               }}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={7} sx={{ textAlign: 'right' }}>
+          <Grid size={{ xs: 12, sm: 6, md: 7 }} sx={{ textAlign: 'right' }}>
             <Button variant="outlined" color="inherit" onClick={fillTestData} startIcon={<AutoFixHigh />} sx={{ opacity: 0.7 }}>
               Dados de Simulação
             </Button>
@@ -208,10 +208,10 @@ export default function EarningsPredictionPage() {
         </Grid>
 
         <Grid container spacing={4}>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }} >
             {renderGroupedInputs(previous, setPrevious, "Ano Anterior (T-1)")}
           </Grid>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }} >
             {renderGroupedInputs(current, setCurrent, "Trimestre Atual (T-0)")}
           </Grid>
         </Grid>
@@ -228,7 +228,7 @@ export default function EarningsPredictionPage() {
         {useOptions && (
           <Grid container spacing={2} sx={{ mb: 4 }}>
             {Object.keys(initialOptions).map((k) => (
-              <Grid item xs={6} sm={4} md={2.4} key={k}>
+              <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={k}>
                 <TextField
                   label={optionsLabels[k]}
                   value={options[k]}
@@ -269,7 +269,6 @@ export default function EarningsPredictionPage() {
         <Paper 
           sx={{ 
             p: 4, 
-            borderRadius: 4,
             ...glassStyle,
             bgcolor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.9)',
             borderLeft: '10px solid',

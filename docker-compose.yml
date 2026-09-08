@@ -8,6 +8,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - QUANTMIND_URL=http://quantmind:8010
+      - QUANTMIND_SERVICE_TOKEN=${QUANTMIND_SERVICE_TOKEN:-}
       - DATABASE_URL=postgresql+asyncpg://atom:atom@postgres:5432/atom_db
       - MONGODB_URL=mongodb://mongo:27017/atom_realtime
       - REDIS_URL=redis://redis:6379/0
@@ -19,6 +21,21 @@ services:
     volumes:
       - ./backend:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  quantmind:
+    profiles: [research]
+    build:
+      context: ./research
+    restart: unless-stopped
+    environment:
+      - QUANTMIND_SERVICE_TOKEN=${QUANTMIND_SERVICE_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - QUANTMIND_MODEL=${QUANTMIND_MODEL:-gpt-4o-mini}
+      - QUANTMIND_DB_PATH=/data/research.db
+    volumes:
+      - research_data:/data
+    expose:
+      - "8010"
 
   frontend:
     build:
@@ -57,3 +74,4 @@ services:
 volumes:
   postgres_data:
   mongo_data:
+  research_data:
