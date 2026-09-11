@@ -56,7 +56,10 @@ Relatório em Português (Brasil). Máximo 300 palavras."""
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
-        return msg.content[0].text
+        block = msg.content[0]
+        if not isinstance(block, anthropic.types.TextBlock):
+            return "Erro ao gerar narrativa de IA. Verifique as configurações."
+        return block.text
     except Exception as e:
         logger.warning("Agent narrative failed: %s", e)
         return "Erro ao gerar narrativa de IA. Verifique as configurações."

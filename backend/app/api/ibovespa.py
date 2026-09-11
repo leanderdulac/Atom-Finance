@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.models.ibovespa import (
     IBOVESPA_ASSETS,
+    RLOptimizeResult,
     cem_optimize,
     generate_excel_report,
     refresh_ibovespa_params,
@@ -100,7 +101,7 @@ async def rl_optimize(req: RLRequest):
     daily_returns = sim_raw.pop("_daily_returns")
 
     # 2. Optimise
-    rl: object = await _run(
+    rl: RLOptimizeResult = await _run(
         cem_optimize,
         daily_returns,
         req.profile,

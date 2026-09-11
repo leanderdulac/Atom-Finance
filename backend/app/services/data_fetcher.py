@@ -159,7 +159,10 @@ class DataFetcher:
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return {
-            symbol: (result if not isinstance(result, Exception) else None)
+            # BaseException, not Exception: gather(return_exceptions=True) can
+            # surface asyncio.CancelledError, which is a BaseException and
+            # would otherwise leak through as if it were a valid quote dict.
+            symbol: (result if not isinstance(result, BaseException) else None)
             for symbol, result in zip(symbols, results, strict=False)
         }
 

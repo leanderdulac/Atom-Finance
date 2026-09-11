@@ -254,7 +254,7 @@ async def copula_demo():
     # Build comparison table
     comparison = {}
     for name, res in results.items():
-        if name == "best_copula":
+        if name == "best_copula" or not isinstance(res, dict):
             continue
         if "error" not in res:
             comparison[name] = {

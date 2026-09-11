@@ -3,7 +3,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from decimal import ROUND_UP, Decimal
-from typing import Literal
+from typing import Literal, NoReturn
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -71,7 +71,7 @@ def money(value):
     return float(value.quantize(Decimal('0.01')))
 
 
-def reject(detail, code=422):
+def reject(detail, code=422) -> NoReturn:
     raise HTTPException(code, detail)
 
 
@@ -168,9 +168,11 @@ def observe(request: Request, trade_id: UUID, req: Observation, owner: str = Dep
                     reject('Livro insuficiente para simular todas as pernas; não há preenchimento parcial.')
                 fills.append({'symbol':leg['symbol'], 'price':price, 'quantity':leg['quantity'], 'side':'buy' if buying else 'sell'})
             multiplier = D(plan['multiplier'])
-            fees = sum(D(l['quantity']) * D(context['fee_per_contract_side']) for l in fills)
+            # start=D(0): sum() over an empty sequence otherwise returns the
+            # literal int 0, not Decimal(0), and breaks .quantize() downstream.
+            fees = sum((D(l['quantity']) * D(context['fee_per_contract_side']) for l in fills), start=D(0))
             # Open: debit; close/mark: liquidation credit (can be negative).
-            cash = sum(D(l['price']) * D(l['quantity']) * multiplier * (1 if l['side'] == ('buy' if req.action == 'open' else 'sell') else -1) for l in fills)
+            cash = sum((D(l['price']) * D(l['quantity']) * multiplier * (1 if l['side'] == ('buy' if req.action == 'open' else 'sell') else -1) for l in fills), start=D(0))
             result.update(fills=fills, fees_brl=money(fees))
             if req.action == 'open':
                 if now > datetime.fromisoformat(plan['entry']['quote_valid_until']):
@@ -200,7 +202,7 @@ def observe(request: Request, trade_id: UUID, req: Observation, owner: str = Dep
             else:
                 entry = next(e['result'] for e in record['events'] if e['kind'] == 'open')
                 # Recompute the exact entry cost from immutable per-leg fills, avoiding intermediate rounding.
-                debit = sum(D(l['price'])*D(l['quantity'])*multiplier*(1 if l['side']=='buy' else -1) for l in entry['fills'])
+                debit = sum((D(l['price'])*D(l['quantity'])*multiplier*(1 if l['side']=='buy' else -1) for l in entry['fills']), start=D(0))
                 pnl = cash - debit - 2 * fees
                 result.update(liquidation_credit_brl=money(cash), net_pnl_brl=money(pnl),
                               pnl_kind='realized_simulated' if req.action == 'close' else 'estimated_if_closed')

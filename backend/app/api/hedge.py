@@ -185,7 +185,7 @@ async def estimate_tail_risk(req: TailRiskRequest):
         req.drift_annual,
         req.horizon_hours,
         req.n_paths,
-        req.n_steps if hasattr(req, "n_steps") else 480,
+        req.n_steps if hasattr(req, "n_steps") else 480,  # pyright: ignore[reportAttributeAccessIssue]
         req.seed,
     )
     return result

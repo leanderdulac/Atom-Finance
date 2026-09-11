@@ -24,3 +24,22 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Fixtures are imported and then re-declared as parameter names — standard pytest pattern.
 "tests/*" = ["B018", "F811"]
+
+[tool.basedpyright]
+include = ["app", "main.py"]
+exclude = ["app/models/kronos", "**/__pycache__"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+# This codebase predates type annotations; "Unknown"-type noise from untyped
+# legacy code isn't actionable and would drown out real findings.
+reportMissingTypeArgument = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportUnknownParameterType = false
+reportUnknownLambdaType = false
+reportMissingParameterType = false
+reportUnnecessaryIsInstance = false
+# openbb is an optional, lazily-imported dependency (see openbb_service.py) —
+# not installed by default, so its imports are expected to be unresolved.
+reportMissingImports = false

@@ -128,10 +128,13 @@ class NeuralSDE:
 
         with torch.no_grad():
             # trajectories shape: (n_steps, batch, state_size)
-            trajectories = torchsde.sdeint(sde, y0_tensor, ts, method=method)
+            # torchsde is a hard dependency (see requirements.txt); the
+            # _TORCHSDE_AVAILABLE guard above is defensive, but the type
+            # checker can't correlate that flag with this name's binding.
+            trajectories = torchsde.sdeint(sde, y0_tensor, ts, method=method)  # pyright: ignore[reportPossiblyUnboundVariable]
 
         # Extract first state dimension → (n_steps, n_paths)
-        traj_np: np.ndarray = trajectories[:, :, 0].cpu().numpy()
+        traj_np: np.ndarray = trajectories[:, :, 0].cpu().numpy()  # pyright: ignore[reportCallIssue,reportArgumentType]
 
         time_list = ts.cpu().numpy().tolist()
 

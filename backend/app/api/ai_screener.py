@@ -45,7 +45,7 @@ async def get_top_picks():
 
         valid_results = []
         for ticker, res in zip(tickers, results, strict=False):
-            if isinstance(res, Exception):
+            if isinstance(res, BaseException):
                 logger.error(f"Error screening {ticker}: {res}")
                 continue
 

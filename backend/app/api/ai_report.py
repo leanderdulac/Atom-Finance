@@ -361,13 +361,13 @@ async def _full_analysis(ticker: str) -> dict:
     )
 
     # Handle exceptions gracefully
-    if isinstance(ml_result, Exception):
+    if isinstance(ml_result, BaseException):
         logger.warning("ML forecast failed for %s: %s", ticker, ml_result)
         ml_result = {"predictions": [price] * 30, "predicted_return": 0}
-    if isinstance(var_result, Exception):
+    if isinstance(var_result, BaseException):
         logger.warning("VaR failed for %s: %s", ticker, var_result)
         var_result = {"var_percentage": 2.0}
-    if isinstance(swan_result, Exception):
+    if isinstance(swan_result, BaseException):
         logger.warning("Black Swan failed for %s: %s", ticker, swan_result)
         swan_result = {"combined_score": 50.0}
 
@@ -415,7 +415,7 @@ async def _full_analysis(ticker: str) -> dict:
     garch_vol = float(np.std(rets[-30:]) * math.sqrt(252)) if len(rets) >= 30 else iv
 
     # ── 3. Build scores ──────────────────────────────────────────────────
-    ml_return_pct = float(getattr(ml_result, "get", lambda k, d=None: d)("predicted_return", 0)) if isinstance(ml_result, dict) else 0
+    ml_return_pct = float(ml_result.get("predicted_return", 0) or 0) if isinstance(ml_result, dict) else 0
     var_pct = float(var_result.get("var_percentage", 2.0)) if isinstance(var_result, dict) else 2.0
     swan_score = float(swan_result.get("combined_score", 50.0)) if isinstance(swan_result, dict) else 50.0
     momentum = _momentum_score(closes)
@@ -531,11 +531,11 @@ async def _full_analysis(ticker: str) -> dict:
         "returns_for_var": [round(float(r), 6) for r in rets[-252:]],
         "evt_metrics": evt_metrics,
         "specialized_analysis": {
-            "news_monitoring_gemini": news_res if not isinstance(news_res, Exception) else "Erro Gemini",
-            "fundamental_claude": fundamental_res if not isinstance(fundamental_res, Exception) else "Erro Claude",
-            "quant_strategy_gpt": quant_res if not isinstance(quant_res, Exception) else "Erro GPT",
-            "pulse_grok": pulse_res if not isinstance(pulse_res, Exception) else "Erro Grok",
-            "search_perplexity": search_res if not isinstance(search_res, Exception) else "Erro Perplexity",
+            "news_monitoring_gemini": news_res if not isinstance(news_res, BaseException) else "Erro Gemini",
+            "fundamental_claude": fundamental_res if not isinstance(fundamental_res, BaseException) else "Erro Claude",
+            "quant_strategy_gpt": quant_res if not isinstance(quant_res, BaseException) else "Erro GPT",
+            "pulse_grok": pulse_res if not isinstance(pulse_res, BaseException) else "Erro Grok",
+            "search_perplexity": search_res if not isinstance(search_res, BaseException) else "Erro Perplexity",
             "bridgewise_b3": bridgewise_res
         },
         "generated_at": date.today().isoformat(),
@@ -823,13 +823,13 @@ async def _full_analysis_streaming(ticker: str):
     swan_task = _run(BlackSwanDetector.analyze_tail_risk, rets)
     ml_result, var_result, swan_result = await asyncio.gather(ml_task, var_task, swan_task, return_exceptions=True)
 
-    if isinstance(ml_result, Exception):
+    if isinstance(ml_result, BaseException):
         logger.warning("ML forecast failed (stream) for %s: %s", ticker, ml_result)
         ml_result = {"predictions": [price] * 30, "predicted_return": 0}
-    if isinstance(var_result, Exception):
+    if isinstance(var_result, BaseException):
         logger.warning("VaR failed (stream) for %s: %s", ticker, var_result)
         var_result = {"var_percentage": 2.0}
-    if isinstance(swan_result, Exception):
+    if isinstance(swan_result, BaseException):
         logger.warning("Black Swan failed (stream) for %s: %s", ticker, swan_result)
         swan_result = {"combined_score": 50.0}
 
@@ -872,7 +872,7 @@ async def _full_analysis_streaming(ticker: str):
     bs_put = BlackScholes.greeks(price, price, ttm, rf, iv, "put")
     garch_vol = float(np.std(rets[-30:]) * math.sqrt(252)) if len(rets) >= 30 else iv
 
-    ml_return_pct = float(ml_result.get("predicted_return", 0)) if isinstance(ml_result, dict) else 0
+    ml_return_pct = float(ml_result.get("predicted_return", 0) or 0) if isinstance(ml_result, dict) else 0
     var_pct = float(var_result.get("var_percentage", 2.0)) if isinstance(var_result, dict) else 2.0
     swan_score = float(swan_result.get("combined_score", 50.0)) if isinstance(swan_result, dict) else 50.0
     momentum = _momentum_score(closes)
@@ -912,7 +912,7 @@ async def _full_analysis_streaming(ticker: str):
 
     # Process agents
     agents_res = results.get("agents")
-    consensus = aggregate_signals(agents_res) if not isinstance(agents_res, Exception) else {"consensus": "Erro", "consensus_pct": 0}
+    consensus = aggregate_signals(agents_res) if isinstance(agents_res, list) else {"consensus": "Erro", "consensus_pct": 0}
 
     yield sse("progress", {"step": 6, "total": 7, "message": "Gerando narrativa com IA (Claude)..."})
 
@@ -944,12 +944,12 @@ async def _full_analysis_streaming(ticker: str):
         "returns_for_var": [round(float(r), 6) for r in rets[-252:]],
         "evt_metrics": evt_metrics_stream,
         "specialized_analysis": {
-            "news_monitoring_gemini": results["news"] if not isinstance(results["news"], Exception) else "Erro Gemini",
-            "fundamental_claude": results["fundamental"] if not isinstance(results["fundamental"], Exception) else "Erro Claude",
-            "quant_strategy_gpt": results["quant"] if not isinstance(results["quant"], Exception) else "Erro GPT",
-            "pulse_grok": results["pulse"] if not isinstance(results["pulse"], Exception) else "Erro Grok",
-            "search_perplexity": results["search"] if not isinstance(results["search"], Exception) else "Erro Perplexity",
-            "bridgewise_b3": results.get("bridgewise") if not isinstance(results.get("bridgewise"), Exception) else None
+            "news_monitoring_gemini": results["news"] if not isinstance(results["news"], BaseException) else "Erro Gemini",
+            "fundamental_claude": results["fundamental"] if not isinstance(results["fundamental"], BaseException) else "Erro Claude",
+            "quant_strategy_gpt": results["quant"] if not isinstance(results["quant"], BaseException) else "Erro GPT",
+            "pulse_grok": results["pulse"] if not isinstance(results["pulse"], BaseException) else "Erro Grok",
+            "search_perplexity": results["search"] if not isinstance(results["search"], BaseException) else "Erro Perplexity",
+            "bridgewise_b3": results.get("bridgewise") if not isinstance(results.get("bridgewise"), BaseException) else None
         },
         "generated_at": date.today().isoformat(),
     }

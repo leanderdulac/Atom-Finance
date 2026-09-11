@@ -124,8 +124,9 @@ async def refresh_ibovespa_params(force: bool = False) -> bool:
             yf_ticker = f"{ticker}.SA"
             
             # 1. Update S0 (Price)
-            if yf_ticker in quotes and quotes[yf_ticker]:
-                price = quotes[yf_ticker].get("price")
+            quote = quotes.get(yf_ticker)
+            if quote:
+                price = quote.get("price")
                 if price and price > 0:
                     asset["S0"] = price
             
@@ -375,6 +376,7 @@ def generate_excel_report(
 
     # ── Sheet 1: Portfolio ─────────────────────────────────────────────────────
     ws1 = wb.active
+    assert ws1 is not None  # a freshly created Workbook() always has an active sheet
     ws1.title = "Portfólio RL"
     ws1.column_dimensions["A"].width = 10
     ws1.column_dimensions["B"].width = 16

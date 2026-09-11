@@ -28,7 +28,7 @@ class GhostLiquidityAnalyzer:
     @staticmethod
     def analyze_order_book(
         bids: list[dict], asks: list[dict],
-        venues: list[str] = None,
+        venues: list[str] | None = None,
         hft_cancel_rate: float = 0.7,
         cross_venue_duplication: float = 0.3,
         seed: int | None = 42

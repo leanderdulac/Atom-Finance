@@ -113,7 +113,7 @@ class GeneralizedParetoDistribution:
     # ------------------------------------------------------------------
     def var_evt(self, confidence: float, n_total: int, n_excess: int) -> float:
         """EVT-VaR at *confidence* level (expressed as a loss, i.e. positive)."""
-        if self.xi is None:
+        if self.xi is None or self.sigma is None or self.threshold is None:
             raise RuntimeError("Model not fitted — call fit() first.")
         zeta = n_excess / n_total  # exceedance rate
         return self.threshold + (self.sigma / self.xi) * (
@@ -122,7 +122,7 @@ class GeneralizedParetoDistribution:
 
     def cvar_evt(self, var_value: float) -> float:
         """EVT-CVaR (Expected Shortfall) given a VaR value."""
-        if self.xi is None:
+        if self.xi is None or self.sigma is None or self.threshold is None:
             raise RuntimeError("Model not fitted — call fit() first.")
         excess_over_u = var_value - self.threshold
         return (var_value + self.sigma + self.xi * excess_over_u) / (1.0 - self.xi)
@@ -135,6 +135,8 @@ class GeneralizedParetoDistribution:
         n_excess: int,
     ) -> float:
         """Return level for a given multi-year return period."""
+        if self.xi is None or self.sigma is None or self.threshold is None:
+            raise RuntimeError("Model not fitted — call fit() first.")
         zeta = n_excess / n_total
         p = 1.0 / (return_period_years * n_obs_per_year)
         return self.threshold + (self.sigma / self.xi) * (

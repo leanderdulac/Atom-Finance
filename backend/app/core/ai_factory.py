@@ -44,7 +44,10 @@ class ClaudeProvider(LLMProvider):
                 system=system_prompt if system_prompt else "Você é um analista financeiro sênior.",
                 messages=[{"role": "user", "content": prompt}]
             )
-            return message.content[0].text
+            block = message.content[0]
+            if not isinstance(block, anthropic.types.TextBlock):
+                raise LLMException(f"Unexpected Claude response block type: {type(block).__name__}")
+            return block.text
         except anthropic.BadRequestError as e:
             if "credit balance" in str(e).lower():
                 logger.error(f"Claude Credit Error: {e}")
@@ -99,6 +102,8 @@ class GeminiProvider(LLMProvider):
                 model=self.model,
                 contents=full_prompt,
             )
+            if response.text is None:
+                raise LLMException("Gemini returned no text (likely blocked by safety filters).")
             return response.text
         except Exception as e:
             logger.error(f"Gemini error: {e}")

@@ -96,6 +96,9 @@ def save_report(ticker: str, report: dict[str, Any], *, owner: str) -> int:
             )
             conn.commit()
             logger.info("Report saved to DB: %s (id=%d)", ticker, cur.lastrowid)
+            # lastrowid is None only when the last statement wasn't an INSERT;
+            # we just ran one, so it's always populated here.
+            assert cur.lastrowid is not None
             return cur.lastrowid
     except Exception as exc:
         logger.error("Failed to save report for %s: %s", ticker, exc)

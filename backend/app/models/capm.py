@@ -12,14 +12,17 @@ class CAPMAnalyzer:
         n = min(len(asset_returns), len(market_returns))
         r_a = np.asarray(asset_returns[-n:], dtype=np.float64)
         r_m = np.asarray(market_returns[-n:], dtype=np.float64)
-        slope, intercept, r_value, p_value, std_err = stats.linregress(r_m, r_a)
+        # scipy-stubs doesn't expose linregress()'s named fields (neither via
+        # tuple-unpacking nor attribute access) even though they're a stable,
+        # documented part of scipy's API (LinregressResult).
+        reg = stats.linregress(r_m, r_a)
         return {
-            "beta": round(float(slope), 4),
-            "alpha_daily": round(float(intercept), 6),
-            "alpha_annual": round(float(intercept * 252), 4),
-            "r_squared": round(float(r_value ** 2), 4),
-            "p_value": round(float(p_value), 4),
-            "std_err": round(float(std_err), 6),
+            "beta": round(float(reg.slope), 4),  # pyright: ignore[reportAttributeAccessIssue]
+            "alpha_daily": round(float(reg.intercept), 6),  # pyright: ignore[reportAttributeAccessIssue]
+            "alpha_annual": round(float(reg.intercept * 252), 4),  # pyright: ignore[reportAttributeAccessIssue]
+            "r_squared": round(float(reg.rvalue ** 2), 4),  # pyright: ignore[reportAttributeAccessIssue]
+            "p_value": round(float(reg.pvalue), 4),  # pyright: ignore[reportAttributeAccessIssue]
+            "std_err": round(float(reg.stderr), 6),  # pyright: ignore[reportAttributeAccessIssue]
             "n_observations": n,
         }
 

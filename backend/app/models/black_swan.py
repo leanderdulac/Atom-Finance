@@ -193,7 +193,7 @@ class BlackSwanDetector:
                 "negative_keywords_found": neg_count,
             })
 
-        avg_sentiment = BlackSwanDetector._finite_float(np.mean(sentiment_scores)) if sentiment_scores else 0.0
+        avg_sentiment = BlackSwanDetector._finite_float(float(np.mean(sentiment_scores))) if sentiment_scores else 0.0
         alert_level = "CRITICAL" if avg_sentiment < -0.5 else (
             "WARNING" if avg_sentiment < -0.2 else (
                 "WATCH" if avg_sentiment < 0 else "NORMAL"

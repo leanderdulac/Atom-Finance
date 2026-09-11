@@ -38,6 +38,11 @@ jobs:
           pip install ruff
           ruff check .
 
+      - name: Static type check (basedpyright)
+        run: |
+          pip install basedpyright
+          basedpyright
+
       - name: Run pytest (unit tests — no external APIs)
         env:
           ATOM_ENV: test

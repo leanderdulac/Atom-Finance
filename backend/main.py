@@ -93,7 +93,9 @@ app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 from slowapi import _rate_limit_exceeded_handler
 
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# This is slowapi's own documented FastAPI integration pattern; the handler's
+# signature is narrower than FastAPI's generic ExceptionHandler type.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # pyright: ignore[reportArgumentType]
 
 app.add_middleware(
     CORSMiddleware,

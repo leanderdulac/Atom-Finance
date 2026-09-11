@@ -269,7 +269,7 @@ async def generate_autopilot(req: AutopilotRequest):
 
         analyses = {}
         for ticker, res in zip(tickers, results, strict=False):
-            if not isinstance(res, Exception):
+            if not isinstance(res, BaseException):
                 analyses[ticker] = res
             else:
                 logger.warning(f"Autopilot: {ticker} failed: {res}")

@@ -110,8 +110,10 @@ class BlackScholes:
             def objective(sigma):
                 return cls.price(S, K, T, r, sigma, option_type, q) - market_price
 
+            # full_output isn't passed, so brentq returns a plain float here —
+            # scipy-stubs' overload resolution doesn't narrow that cleanly.
             iv = brentq(objective, 1e-6, 10.0, xtol=1e-8)
-            return round(iv, 6)
+            return round(iv, 6)  # pyright: ignore[reportCallIssue,reportArgumentType]
         except (ValueError, RuntimeError):
             return float("nan")
 

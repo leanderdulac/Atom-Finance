@@ -193,10 +193,13 @@ class BinanceService:
             params = {"symbol": symbol.upper(), "leverage": leverage, "timestamp": int(time.time() * 1000)}
             query_string = urlencode(params)
             signature = cls._get_signature(query_string)
-            headers = {"X-MBX-APIKEY": api_key}
+            headers = {
+                "X-MBX-APIKEY": api_key,
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
             url = f"{cls.FUTURES_URL}/fapi/v1/leverage"
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, data=f"{query_string}&signature={signature}", timeout=10)
+                response = await client.post(url, headers=headers, content=f"{query_string}&signature={signature}", timeout=10)
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
@@ -213,7 +216,7 @@ class BinanceService:
         bankroll = bankroll_override
         if bankroll is None:
             acc = await cls.get_account_info()
-            if "balances" in acc:
+            if acc and "balances" in acc:
                 usdt_balance = next((b for b in acc["balances"] if b["asset"] == "USDT"), None)
                 if usdt_balance:
                     bankroll = float(usdt_balance["free"])

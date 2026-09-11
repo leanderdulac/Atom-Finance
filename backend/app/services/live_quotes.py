@@ -27,7 +27,8 @@ def health(row, now):
                           'stale' if ages['last_timestamp'] > 60 else 'recent')
     row['book_status'] = ('invalid' if row['bid'] is None or row['ask'] is None or row['bid'] < 0 or row['ask'] <= 0 or row['bid'] > row['ask'] else
                           'unknown_time' if any(ages[f] is None for f in fields[1:]) else
-                          'recent' if all(-60 <= ages[f] <= 60 for f in fields[1:]) else 'stale_or_future')
+                          # the branch above already ruled out None for every ages[f] here
+                          'recent' if all(-60 <= ages[f] <= 60 for f in fields[1:]) else 'stale_or_future')  # pyright: ignore[reportOptionalOperand,reportOperatorIssue]
     return row
 
 

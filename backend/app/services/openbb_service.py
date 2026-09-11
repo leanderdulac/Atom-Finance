@@ -265,12 +265,16 @@ class OpenBBService:
 
             chain: list[dict[str, Any]] = []
             grouped = normalized.groupby(["expiration", "strike"], dropna=False)
-            for (expiration, strike), group in grouped:
+            # pandas-stubs types a groupby key as plain Hashable regardless of
+            # how many columns were grouped on; grouping by 2 columns always
+            # yields a 2-tuple key at runtime. `.get(key, default)` with a
+            # non-None default also never returns None here despite the stub.
+            for (expiration, strike), group in grouped:  # pyright: ignore[reportGeneralTypeIssues]
                 row: dict[str, Any] = {
                     "expiration": expiration,
                     "strike": float(strike) if strike is not None else 0.0,
-                    "volume": int(group.get("volume", pd.Series([0])).fillna(0).sum()),
-                    "open_interest": int(group.get("open_interest", pd.Series([0])).fillna(0).sum()),
+                    "volume": int(group.get("volume", pd.Series([0])).fillna(0).sum()),  # pyright: ignore[reportOptionalMemberAccess]
+                    "open_interest": int(group.get("open_interest", pd.Series([0])).fillna(0).sum()),  # pyright: ignore[reportOptionalMemberAccess]
                 }
                 for _, option in group.iterrows():
                     option_type = str(option.get("option_type", "")).lower()

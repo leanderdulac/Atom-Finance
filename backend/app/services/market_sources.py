@@ -9,7 +9,10 @@ import httpx
 
 
 class SourceError(Exception):
-    def __init__(self, status, message): self.status=status; self.message=message
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+        self.message = message
 
 async def get_json(url, *, params=None, headers=None):
     # Fixed URLs selected by adapters, no user-controlled origin or redirects.
