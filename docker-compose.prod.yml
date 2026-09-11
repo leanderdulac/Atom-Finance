@@ -1,12 +1,10 @@
-version: '3.9'
-
 # ════════════════════════════════════════════════════════════════
 #  ATOM — Production Docker Compose
 #  Usage: docker-compose -f docker-compose.prod.yml up -d
 #
 #  Required env vars (set in a .env file or via secrets manager):
 #    SECRET_KEY, BRAPI_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY,
-#    XAI_API_KEY, PERPLEXITY_API_KEY, POSTGRES_PASSWORD
+#    XAI_API_KEY, PERPLEXITY_API_KEY
 # ════════════════════════════════════════════════════════════════
 
 services:
@@ -21,6 +19,12 @@ services:
       - QUANTMIND_URL=http://quantmind:8010
       - QUANTMIND_SERVICE_TOKEN=${QUANTMIND_SERVICE_TOKEN:-}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - ATOM_ENV=production
+      - ATOM_ALLOW_REGISTRATION=${ATOM_ALLOW_REGISTRATION:-false}
+      - OPLAB_ACCESS_TOKEN=${OPLAB_ACCESS_TOKEN:-}
+      - OPLAB_OWNER=${OPLAB_OWNER:-}
+      - CEDRO_SESSION_COOKIE=${CEDRO_SESSION_COOKIE:-}
+      - CEDRO_OWNER=${CEDRO_OWNER:-}
       - ATOM_DB_PATH=/data/atom_reports.db
       - REDIS_URL=redis://redis:6379/0
       - FRONTEND_URL=${FRONTEND_URL:-https://atom.yourdomain.com}
@@ -31,15 +35,16 @@ services:
       - XAI_API_KEY=${XAI_API_KEY:-}
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
-      - BINANCE_API_KEY=${BINANCE_API_KEY:-}
-      - BINANCE_API_SECRET=${BINANCE_API_SECRET:-}
       - BINANCE_BASE_URL=${BINANCE_BASE_URL:-https://api.binance.com}
       - BINANCE_FUTURES_URL=${BINANCE_FUTURES_URL:-https://fapi.binance.com}
       - BRIDGEWISE_TOKEN=${BRIDGEWISE_TOKEN:-}
       - ACCESS_TOKEN_EXPIRE_HOURS=24
     volumes:
       - sqlite_data:/data
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2 --log-level info
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --no-proxy-headers --log-level info
     depends_on:
       - redis
     expose:
@@ -79,7 +84,7 @@ services:
         - VITE_API_BASE=/api
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "${ATOM_BIND_ADDRESS:-127.0.0.1}:${ATOM_HTTP_PORT:-8080}:80"
     networks:
       - internal
     depends_on:

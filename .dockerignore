@@ -16,3 +16,13 @@ Kronos_temp
 Downloads
 venv_test
 venv_test2
+.env*
+**/.env*
+**/.venv
+**/venv
+**/*.db
+**/*.db-*
+**/*.runtime.lock
+research
+outputs
+work
