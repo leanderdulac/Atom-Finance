@@ -4,9 +4,9 @@ Volatility Models
 - Heston Stochastic Volatility
 - EWMA Volatility
 """
+
 import numpy as np
 from scipy.optimize import minimize
-from typing import Optional
 
 
 class GARCHModel:
@@ -100,7 +100,7 @@ class HestonModel:
     @staticmethod
     def simulate(S0: float, v0: float, mu: float, kappa: float, theta: float,
                  xi: float, rho: float, T: float, n_paths: int = 10000,
-                 n_steps: int = 252, seed: Optional[int] = 42) -> dict:
+                 n_steps: int = 252, seed: int | None = 42) -> dict:
         if seed is not None:
             np.random.seed(seed)
 
@@ -150,11 +150,7 @@ class HestonModel:
     def price_option(S0: float, K: float, v0: float, r: float, kappa: float,
                      theta: float, xi: float, rho: float, T: float,
                      option_type: str = "call", n_paths: int = 50000,
-                     seed: Optional[int] = 42) -> dict:
-        result = HestonModel.simulate(S0, v0, r, kappa, theta, xi, rho, T, n_paths, seed=seed)
-        # Use simulated terminal prices
-        from app.models.pricing import BlackScholes
-        # Re-simulate for pricing
+                     seed: int | None = 42) -> dict:
         if seed is not None:
             np.random.seed(seed)
 

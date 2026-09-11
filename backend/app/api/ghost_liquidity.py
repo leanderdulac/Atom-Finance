@@ -1,7 +1,8 @@
 """Ghost Liquidity API endpoints."""
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from typing import Optional
+
 from app.models.ghost_liquidity import GhostLiquidityAnalyzer
 
 router = APIRouter()

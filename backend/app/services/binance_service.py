@@ -1,12 +1,13 @@
-import hmac
 import hashlib
-import time
+import hmac
 import logging
 import os
-from typing import Optional, Union, Dict, Any
+import time
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+
 from app.core.cache import Cache
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class BinanceService:
         ).hexdigest()
 
     @classmethod
-    async def get_ticker_price(cls, symbol: str) -> Optional[Dict[str, Any]]:
+    async def get_ticker_price(cls, symbol: str) -> dict[str, Any] | None:
         """Fetch current price for a symbol (e.g. BTCUSDT)."""
         symbol = symbol.upper()
         cache_key = f"binance:price:{symbol}"
@@ -61,7 +62,7 @@ class BinanceService:
             return None
 
     @classmethod
-    async def get_all_tickers(cls) -> Optional[list]:
+    async def get_all_tickers(cls) -> list | None:
         """Fetch current prices for all symbols."""
         cache_key = "binance:all_tickers"
         cached = Cache.get(cache_key)
@@ -80,7 +81,7 @@ class BinanceService:
             return None
 
     @classmethod
-    async def get_order_book(cls, symbol: str, limit: int = 100) -> Optional[Dict[str, Any]]:
+    async def get_order_book(cls, symbol: str, limit: int = 100) -> dict[str, Any] | None:
         """Fetch market depth (Order Book)."""
         symbol = symbol.upper()
         try:
@@ -94,7 +95,7 @@ class BinanceService:
             return None
 
     @classmethod
-    async def get_futures_ticker(cls, symbol: str) -> Optional[Dict[str, Any]]:
+    async def get_futures_ticker(cls, symbol: str) -> dict[str, Any] | None:
         """Fetch current price for a futures contract."""
         symbol = symbol.upper()
         cache_key = f"binance:futures:price:{symbol}"
@@ -119,7 +120,7 @@ class BinanceService:
             return None
 
     @classmethod
-    async def get_klines(cls, symbol: str, interval: str = "1d", limit: int = 100) -> Optional[list]:
+    async def get_klines(cls, symbol: str, interval: str = "1d", limit: int = 100) -> list | None:
         """Fetch historical candle data."""
         symbol = symbol.upper()
         cache_key = f"binance:klines:{symbol}:{interval}:{limit}"
@@ -140,7 +141,7 @@ class BinanceService:
             return None
 
     @classmethod
-    async def get_account_info(cls) -> Optional[Dict[str, Any]]:
+    async def get_account_info(cls) -> dict[str, Any] | None:
         """Fetch account balance and info (Spot - Signed)."""
         api_key = cls._get_api_key()
         api_secret = cls._get_api_secret()
@@ -161,7 +162,7 @@ class BinanceService:
             return {"error": str(e)}
 
     @classmethod
-    async def get_futures_account(cls) -> Optional[Dict[str, Any]]:
+    async def get_futures_account(cls) -> dict[str, Any] | None:
         """Fetch futures account balance and positions (Signed)."""
         api_key = cls._get_api_key()
         api_secret = cls._get_api_secret()
@@ -182,7 +183,7 @@ class BinanceService:
             return {"error": str(e)}
 
     @classmethod
-    async def change_leverage(cls, symbol: str, leverage: int) -> Optional[Dict[str, Any]]:
+    async def change_leverage(cls, symbol: str, leverage: int) -> dict[str, Any] | None:
         """Change leverage for a futures symbol (Signed)."""
         api_key = cls._get_api_key()
         api_secret = cls._get_api_secret()
@@ -203,7 +204,7 @@ class BinanceService:
             return {"error": str(e)}
 
     @classmethod
-    async def calculate_kelly_sizing(cls, symbol: str, win_prob: float, payout_ratio: float, bankroll_override: Optional[float] = None, fraction: float = 0.25):
+    async def calculate_kelly_sizing(cls, symbol: str, win_prob: float, payout_ratio: float, bankroll_override: float | None = None, fraction: float = 0.25):
         """Integrates current Binance price with Kelly Sizing."""
         ticker = await cls.get_ticker_price(symbol)
         if not ticker:

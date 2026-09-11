@@ -1,8 +1,9 @@
 """Black Swan Detection API endpoints."""
+
+import numpy as np
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from typing import Optional
-import numpy as np
+
 from app.models.black_swan import BlackSwanDetector
 
 router = APIRouter()
@@ -13,12 +14,12 @@ class TailRiskRequest(BaseModel):
 
 
 class NewsAnalysisRequest(BaseModel):
-    articles: Optional[list[dict]] = None
+    articles: list[dict] | None = None
 
 
 class CombinedAnalysisRequest(BaseModel):
     returns: list[float] = Field(..., min_length=30)
-    articles: Optional[list[dict]] = None
+    articles: list[dict] | None = None
 
 
 @router.post("/tail-risk")

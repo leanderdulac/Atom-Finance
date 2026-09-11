@@ -3,21 +3,23 @@ AI Options Expert API — Scan B3 for the best trades.
 """
 import logging
 import os
-import json
-from datetime import datetime
-from fastapi import APIRouter
-from pydantic import BaseModel, Field
-from typing import List, Optional
 
-from app.models.options_agent import OptionsExpert, OptionTrade
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from app.core.security import get_current_user
+from app.models.options_agent import (  # noqa: F401 — OptionsExpert kept as a patch target for tests/test_derivatives_planner.py::test_legacy_scanner_retired_without_model_call
+    OptionsExpert,
+    OptionTrade,
+)
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 class ScanResult(BaseModel):
     timestamp: str
     num_trades: int
-    trades: List[OptionTrade]
+    trades: list[OptionTrade]
     expert_narrative: str
     
 class ScanRequest(BaseModel):
@@ -62,13 +64,4 @@ Relatório em Português (Brasil). Máximo 300 palavras."""
 @router.post("/scan")
 async def scan_options(req: ScanRequest):
     """Scan and recommend best options trades."""
-    trades = await OptionsExpert.scan_market(limit=req.num_assets)
-    
-    narrative = await _get_expert_narrative(trades, req.risk_profile)
-    
-    return ScanResult(
-        timestamp=datetime.now().isoformat(),
-        num_trades=len(trades),
-        trades=trades,
-        expert_narrative=narrative
-    )
+    raise HTTPException(410, "Scanner com prêmios e probabilidades estimados retirado. Use /api/derivatives/plan com contratos e cotações explícitos.")

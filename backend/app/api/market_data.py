@@ -6,8 +6,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Query, Request
-from app.core.limiter import limiter
 
+from app.core.limiter import limiter
 from app.models.pricing import BlackScholes
 from app.services.brapi_service import BrapiService, _is_br_ticker
 from app.services.data_fetcher import DataFetcher
@@ -119,7 +119,7 @@ def _quote_from_yfinance(ticker: str) -> dict | None:
 
 
 def _history_from_yfinance(ticker: str, days: int, period: str) -> dict | None:
-    period_map = {7: "5d", 30: "1mo", 90: "3mo", 252: "1y", 504: "2y"}
+    period_map = {7: "5d", 30: "1mo", 90: "3mo", 252: "1y", 504: "2y", 1260: "5y", 1825: "5y"}
     yf_period = period_map.get(days, period)
     df = DataFetcher.get_historical_data(ticker, period=yf_period, interval="1d")
     if df is None or df.empty:

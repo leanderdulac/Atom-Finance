@@ -7,11 +7,12 @@ Options Pricing Models
 - Greeks Calculation
 - Implied Volatility
 """
-import numpy as np
-from scipy.stats import norm
-from scipy.optimize import brentq
-from typing import Literal, Optional
 from dataclasses import dataclass
+from typing import Literal
+
+import numpy as np
+from scipy.optimize import brentq
+from scipy.stats import norm
 
 
 @dataclass
@@ -124,7 +125,7 @@ class MonteCarlo:
     def price(S: float, K: float, T: float, r: float, sigma: float,
               option_type: Literal["call", "put"] = "call",
               n_simulations: int = 100_000, n_steps: int = 252,
-              q: float = 0.0, seed: Optional[int] = 42) -> dict:
+              q: float = 0.0, seed: int | None = 42) -> dict:
 
         if seed is not None:
             np.random.seed(seed)
@@ -299,7 +300,7 @@ class VolatilitySurface:
 
     @staticmethod
     def generate(S: float, r: float, strikes: list[float], maturities: list[float],
-                 market_prices: Optional[list[list[float]]] = None,
+                 market_prices: list[list[float]] | None = None,
                  option_type: Literal["call", "put"] = "call",
                  q: float = 0.0) -> dict:
         """

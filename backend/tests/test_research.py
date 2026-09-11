@@ -3,15 +3,20 @@
 import os
 import unittest
 from unittest.mock import AsyncMock, patch
+
 import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from app.api.research import router
 from app.core.security import create_access_token
 
 
 class ResearchGatewayTests(unittest.TestCase):
     def setUp(self):
+        active = patch("app.db.database.get_user_by_username", return_value={"username": "alice", "is_active": 1})
+        active.start()
+        self.addCleanup(active.stop)
         app = FastAPI()
         app.include_router(router, prefix="/api/research")
         self.client = TestClient(app)

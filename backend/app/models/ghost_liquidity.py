@@ -3,9 +3,9 @@ Ghost Liquidity Analysis
 Measures the difference between consolidated measured liquidity and real tradable
 liquidity in fragmented markets, considering HFT impacts and duplicate order cancellations.
 """
-import numpy as np
-from typing import Optional
 from dataclasses import dataclass
+
+import numpy as np
 
 
 @dataclass
@@ -31,7 +31,7 @@ class GhostLiquidityAnalyzer:
         venues: list[str] = None,
         hft_cancel_rate: float = 0.7,
         cross_venue_duplication: float = 0.3,
-        seed: Optional[int] = 42
+        seed: int | None = 42
     ) -> dict:
         """
         Analyze order book for ghost liquidity.
@@ -140,7 +140,7 @@ class GhostLiquidityAnalyzer:
         }
 
     @staticmethod
-    def _generate_synthetic_book(mid_price: float = 100.0, seed: Optional[int] = 42) -> tuple:
+    def _generate_synthetic_book(mid_price: float = 100.0, seed: int | None = 42) -> tuple:
         if seed is not None:
             np.random.seed(seed)
 
@@ -164,7 +164,7 @@ class GhostLiquidityAnalyzer:
         return bids, asks
 
     @staticmethod
-    def monitor_liquidity_over_time(n_snapshots: int = 100, seed: Optional[int] = 42) -> dict:
+    def monitor_liquidity_over_time(n_snapshots: int = 100, seed: int | None = 42) -> dict:
         """Simulate liquidity monitoring over time."""
         if seed is not None:
             np.random.seed(seed)

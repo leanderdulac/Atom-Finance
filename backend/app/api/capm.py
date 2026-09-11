@@ -1,10 +1,11 @@
 """CAPM, Kelly Criterion and GBM simulation endpoints."""
 import asyncio
 from functools import partial
-from typing import Optional
+
 import numpy as np
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
+
 from app.models.capm import CAPMAnalyzer
 from app.models.kelly_derivatives import kelly_derivatives, simular_caminhos_kelly_derivativos
 
@@ -39,7 +40,7 @@ class KellyDerivativesRequest(BaseModel):
 class KellyDerivativesSimRequest(KellyDerivativesRequest):
     num_apostas: int = Field(100, gt=0)
     num_simulacoes: int = Field(10000, gt=0, le=50000)
-    seed: Optional[int] = Field(42)
+    seed: int | None = Field(42)
 
 
 class GBMRequest(BaseModel):
@@ -49,7 +50,7 @@ class GBMRequest(BaseModel):
     T: float = Field(1.0, gt=0, description="Time horizon in years")
     n_steps: int = Field(252, ge=10, le=1000)
     n_paths: int = Field(200, ge=10, le=2000)
-    seed: Optional[int] = Field(42)
+    seed: int | None = Field(42)
 
 
 class GBMAsset(BaseModel):
@@ -64,10 +65,10 @@ class GBMMultiRequest(BaseModel):
     T: float = Field(1.0, gt=0, le=10, description="Horizon in years")
     n_steps: int = Field(252, ge=21, le=1260, description="252=1y, 504=2y …")
     n_paths: int = Field(500, ge=100, le=5000)
-    corr_matrix: Optional[list[list[float]]] = Field(
+    corr_matrix: list[list[float]] | None = Field(
         None, description="d×d correlation matrix. Defaults to identity (independent)."
     )
-    seed: Optional[int] = Field(42)
+    seed: int | None = Field(42)
 
 
 @router.post("/beta")

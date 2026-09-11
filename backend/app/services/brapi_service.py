@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date, timedelta
-from typing import Optional
+from datetime import date
 
 import requests
 
@@ -39,7 +38,7 @@ class BrapiService:
     # ── Quote ─────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def get_quote(ticker: str) -> Optional[dict]:
+    def get_quote(ticker: str) -> dict | None:
         key = f"brapi:quote:{ticker.upper()}"
         cached = Cache.get(key)
         if cached:
@@ -127,7 +126,7 @@ class BrapiService:
     # ── Historical data ───────────────────────────────────────────────────────
 
     @staticmethod
-    def get_history(ticker: str, days: int = 252) -> Optional[dict]:
+    def get_history(ticker: str, days: int = 252) -> dict | None:
         key = f"brapi:history:{ticker.upper()}:{days}"
         cached = Cache.get(key)
         if cached:
@@ -137,7 +136,7 @@ class BrapiService:
             # brapi range param: 1d 5d 1mo 3mo 6mo 1y 2y 5y 10y ytd max
             range_map = {
                 5: "5d", 22: "1mo", 66: "3mo", 126: "6mo",
-                252: "1y", 504: "2y",
+                252: "1y", 504: "2y", 1260: "5y", 1825: "5y", 2520: "10y",
             }
             rng = min(range_map, key=lambda k: abs(k - days))
             brapi_range = range_map[rng]
@@ -161,13 +160,21 @@ class BrapiService:
             dates, opens, highs, lows, closes, volumes = [], [], [], [], [], []
             for bar in sorted(hist, key=lambda b: b.get("date", 0)):
                 epoch = bar.get("date")
-                if epoch:
-                    dates.append(date.fromtimestamp(epoch).strftime("%Y-%m-%d"))
-                    opens.append(round(float(bar.get("open") or 0), 2))
-                    highs.append(round(float(bar.get("high") or 0), 2))
-                    lows.append(round(float(bar.get("low") or 0), 2))
-                    closes.append(round(float(bar.get("close") or 0), 2))
-                    volumes.append(int(bar.get("volume") or 0))
+                close = bar.get("close")
+                if not epoch or close is None:
+                    continue
+                try:
+                    close_px = float(close)
+                except (TypeError, ValueError):
+                    continue
+                if close_px <= 0:
+                    continue
+                dates.append(date.fromtimestamp(epoch).strftime("%Y-%m-%d"))
+                opens.append(round(float(bar.get("open") or close_px), 2))
+                highs.append(round(float(bar.get("high") or close_px), 2))
+                lows.append(round(float(bar.get("low") or close_px), 2))
+                closes.append(round(close_px, 2))
+                volumes.append(int(bar.get("volume") or 0))
 
             if not closes:
                 return None
@@ -214,7 +221,7 @@ class BrapiService:
     # ── Inflation / macro (IPCA, SELIC) ──────────────────────────────────────
 
     @staticmethod
-    def get_inflation() -> Optional[dict]:
+    def get_inflation() -> dict | None:
         key = "brapi:inflation"
         cached = Cache.get(key)
         if cached:
@@ -232,7 +239,7 @@ class BrapiService:
             return None
 
     @staticmethod
-    def get_prime_rate() -> Optional[dict]:
+    def get_prime_rate() -> dict | None:
         """SELIC and CDI rates."""
         key = "brapi:prime"
         cached = Cache.get(key)

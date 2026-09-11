@@ -8,7 +8,7 @@ import asyncio
 from functools import partial
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -21,12 +21,6 @@ from app.models.ibovespa import (
 )
 
 router = APIRouter()
-
-
-@router.on_event("startup")
-async def startup_event():
-    """Update Ibovespa assets on startup (async compatible)."""
-    await refresh_ibovespa_params()
 
 
 async def _run(func, *args, **kwargs):
@@ -200,7 +194,7 @@ async def demo():
         },
         "top5_allocation": sorted(
             [{"ticker": t, "weight_pct": round(w * 100, 2)}
-             for t, w in zip(rl.tickers, rl.weights)],
+             for t, w in zip(rl.tickers, rl.weights, strict=False)],
             key=lambda x: -x["weight_pct"]
         )[:5],
     }

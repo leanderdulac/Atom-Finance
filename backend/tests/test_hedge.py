@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+
 import pytest
 
 from app.models.hedge import (
@@ -11,7 +12,6 @@ from app.models.hedge import (
     UniswapV3Inventory,
     UniswapV3Position,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

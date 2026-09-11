@@ -3,10 +3,12 @@ Bridgewise B3 Specialist — Real Integration with Bridgewise API
 (rest.bridgewise.com) for B3 assets.
 """
 from __future__ import annotations
-import os
+
 import logging
+import os
+from typing import Any
+
 import httpx
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +23,14 @@ class BridgewiseB3:
     TOKEN = os.getenv("BRIDGEWISE_TOKEN")
 
     @classmethod
-    async def _get_headers(cls) -> Dict[str, str]:
+    async def _get_headers(cls) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {cls.TOKEN}",
             "Content-Type": "application/json"
         }
 
     @classmethod
-    async def get_company_id(cls, ticker: str) -> Optional[int]:
+    async def get_company_id(cls, ticker: str) -> int | None:
         """Search for the Bridgewise company_id using the ticker."""
         if not cls.TOKEN: return None
         
@@ -55,7 +57,7 @@ class BridgewiseB3:
             return None
 
     @classmethod
-    async def get_analysis(cls, ticker: str) -> Dict[str, Any]:
+    async def get_analysis(cls, ticker: str) -> dict[str, Any]:
         """
         Fetches real scoring and narrative from Bridgewise.
         """

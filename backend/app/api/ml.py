@@ -3,10 +3,12 @@ import asyncio
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 from app.core.limiter import limiter
 from app.core.security import get_current_user
+from app.db import experiments
 from app.models.research_validation import FEATURES, POLICY_VERSION, evaluate_experiment
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -32,7 +34,7 @@ class ExperimentRequest(BaseModel):
     def chronological(self):
         if len(self.prices) != len(self.dates):
             raise ValueError('Datas e preços devem ter o mesmo tamanho.')
-        if any(a >= b for a, b in zip(self.dates, self.dates[1:])):
+        if any(a >= b for a, b in zip(self.dates, self.dates[1:], strict=False)):
             raise ValueError('Datas devem ser únicas e estritamente crescentes.')
         if self.dates[-1] > date.today():
             raise ValueError('Não é permitido enviar observações futuras.')
@@ -49,11 +51,45 @@ async def policy():
 
 @router.post('/evaluate')
 @limiter.limit('5/minute')
-async def evaluate(request: Request, req: ExperimentRequest):
+async def evaluate(request: Request, req: ExperimentRequest, owner: str = Depends(get_current_user)):
+    inputs = req.model_dump(mode='json')
+    run_id = await asyncio.to_thread(experiments.begin, owner, inputs)
     try:
-        return await asyncio.to_thread(evaluate_experiment, **req.model_dump(mode='json'))
+        result = await asyncio.to_thread(evaluate_experiment, **inputs)
     except ValueError as exc:
+        await asyncio.to_thread(experiments.finish, run_id, error=str(exc))
         raise HTTPException(422, str(exc)) from None
+    except Exception:
+        await asyncio.to_thread(experiments.finish, run_id, error='Falha no processamento. Crie uma nova tentativa para repetir.')
+        raise HTTPException(500, 'Experimento falhou; tentativa preservada no diário.') from None
+    result['run_id'] = run_id
+    await asyncio.to_thread(experiments.finish, run_id, result=result)
+    return result
+
+
+@router.get('/experiments')
+async def history(owner: str = Depends(get_current_user), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return await asyncio.to_thread(experiments.history, owner, limit, offset)
+
+
+@router.get('/experiments/{run_id}')
+async def detail(run_id: str, owner: str = Depends(get_current_user)):
+    item = await asyncio.to_thread(experiments.detail, owner, run_id)
+    if item is None: raise HTTPException(404, 'Experimento não encontrado.')
+    return item
+
+
+class ReviewRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    decision: Literal['discard', 'investigate']
+    rationale: str = Field(min_length=20, max_length=2000)
+
+
+@router.post('/experiments/{run_id}/reviews')
+async def review(run_id: str, req: ReviewRequest, owner: str = Depends(get_current_user)):
+    if not await asyncio.to_thread(experiments.review, owner, run_id, req.decision, req.rationale):
+        raise HTTPException(404, 'Experimento concluído não encontrado.')
+    return await asyncio.to_thread(experiments.detail, owner, run_id)
 
 
 @router.post('/predict')

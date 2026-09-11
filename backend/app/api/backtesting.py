@@ -2,7 +2,7 @@
 
 import asyncio
 from functools import partial
-from typing import Annotated, Optional
+from typing import Annotated
 
 import numpy as np
 from fastapi import APIRouter
@@ -16,7 +16,7 @@ router = APIRouter()
 class BacktestRequest(BaseModel):
     prices: list[Annotated[float, Field(gt=0, allow_inf_nan=False)]] = Field(..., min_length=100, max_length=5000)
     strategy: str = Field("sma_crossover", pattern="^(sma_crossover|mean_reversion|momentum|rsi)$")
-    params: Optional[dict] = None
+    params: dict | None = None
     initial_capital: float = Field(100_000, gt=0)
     commission: float = Field(0.001, ge=0, le=0.01, allow_inf_nan=False)
     slippage: float = Field(0.0005, ge=0, le=0.01, allow_inf_nan=False)
@@ -65,4 +65,4 @@ async def compare_strategies(req: BacktestRequest):
         for s in strategies
     ]
     results_list = await asyncio.gather(*tasks)
-    return {"comparison": dict(zip(strategies, results_list))}
+    return {"comparison": dict(zip(strategies, results_list, strict=False))}

@@ -1,5 +1,6 @@
 """CAPM, Beta, Kelly Criterion and GBM path simulation."""
 from __future__ import annotations
+
 import numpy as np
 from scipy import stats
 

@@ -1,16 +1,23 @@
 """Adversarial tests of chronology, causal features and net execution."""
 from datetime import date, timedelta
 from unittest.mock import patch
+
 import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sklearn.preprocessing import StandardScaler
+
 from app.api.ml import ExperimentRequest, router
 from app.core.limiter import limiter
 from app.core.security import get_current_user
-from app.models.research_validation import PurgedGroupWalkForward, build_features, evaluate_experiment, portfolio_metrics
 from app.models.backtesting import BacktestEngine
+from app.models.research_validation import (
+    PurgedGroupWalkForward,
+    build_features,
+    evaluate_experiment,
+    portfolio_metrics,
+)
 
 
 def dataset(n=800):
@@ -75,7 +82,7 @@ def test_scaler_train_only_and_deterministic_report():
     with patch.object(StandardScaler, 'fit', record_fit):
         report = evaluate_experiment(prices, dates, **config)
     features, _, times, _ = build_features(prices)
-    for fit, (train, test) in zip(fits, PurgedGroupWalkForward().split([dates[t][:7] for t in times], times, times + 2)):
+    for fit, (train, test) in zip(fits, PurgedGroupWalkForward().split([dates[t][:7] for t in times], times, times + 2), strict=False):
         np.testing.assert_array_equal(fit, features[train])
         assert len(fit) < len(features)
     assert report == evaluate_experiment(prices, dates, **config)
@@ -108,7 +115,9 @@ def test_forest_and_baselines_compare_identical_periods():
     assert len({len(m['equity']) for m in report['results'].values()}) == 1
 
 
-def test_api_rejects_bad_data_and_legacy_predictions():
+def test_api_rejects_bad_data_and_legacy_predictions(tmp_path, monkeypatch):
+    from app.db import database
+    monkeypatch.setattr(database, '_DB_PATH', str(tmp_path / 'experiments.db'))
     prices, dates = dataset()
     base = dict(prices=prices, dates=dates, hypothesis='Economic hypothesis for a controlled unit test.', data_source='synthetic_demo')
     for update in ({'dates': dates[::-1]}, {'prices': [0] + prices[1:]}, {'dates': dates[:-1]}, {'hypothesis': 'LSTM'}, {'model': 'lstm'}, {'commission_bps': float('nan')}):
@@ -152,7 +161,11 @@ def test_sma_signal_uses_current_close():
     assert result['trades'][0]['day'] == 51
 
 
-def test_registered_ml_research_route():
+def test_registered_quant_routes():
     from main import app
-    paths = {getattr(route, "path", "") for route in app.routes}
-    assert "/api/ml/evaluate" in paths
+    paths = set(app.openapi()['paths'])
+    assert '/api/ml/evaluate' in paths
+    assert '/api/screener/top-picks' in paths
+    assert '/api/screener/screener/top-picks' not in paths
+    assert '/api/neural-sde/status' in paths
+    assert '/api/autopilot/generate' in paths

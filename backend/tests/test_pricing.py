@@ -1,7 +1,5 @@
 """Tests for options pricing models."""
 import math
-import pytest
-import numpy as np
 
 from app.models.pricing import (
     BinomialTree,
@@ -10,7 +8,6 @@ from app.models.pricing import (
     MonteCarlo,
     OptionsStrategies,
 )
-
 
 # ── Black-Scholes ──────────────────────────────────────────────────────────────
 

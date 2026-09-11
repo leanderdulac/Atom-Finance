@@ -4,9 +4,10 @@ Risk Analysis Models
 - Conditional VaR (CVaR / Expected Shortfall)
 - Stress Testing & Scenario Analysis
 """
+
 import numpy as np
-from scipy.stats import norm, t as t_dist
-from typing import Optional
+from scipy.stats import norm
+from scipy.stats import t as t_dist
 
 
 class ValueAtRisk:
@@ -75,7 +76,7 @@ class ValueAtRisk:
     @staticmethod
     def monte_carlo(returns: np.ndarray, confidence: float = 0.95,
                     portfolio_value: float = 1_000_000, holding_period: int = 1,
-                    n_simulations: int = 50_000, seed: Optional[int] = 42) -> dict:
+                    n_simulations: int = 50_000, seed: int | None = 42) -> dict:
         if seed is not None:
             np.random.seed(seed)
 

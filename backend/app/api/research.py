@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+
 from app.core.security import get_current_user
 
 router = APIRouter()

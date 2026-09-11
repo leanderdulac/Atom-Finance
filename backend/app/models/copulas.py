@@ -14,14 +14,12 @@ Implemented:
 - empirical_copula — transforma dados em pseudo-observações uniformes
 """
 
-import numpy as np
 from dataclasses import dataclass
-from functools import partial
-from scipy import stats
-from scipy.optimize import minimize_scalar, minimize
-from scipy.special import gammaln
-from typing import Optional
 
+import numpy as np
+from scipy import stats
+from scipy.optimize import minimize_scalar
+from scipy.special import gammaln
 
 # ── Data class ────────────────────────────────────────────────────────────────
 
@@ -94,7 +92,7 @@ class GaussianCopula:
             interpretation="Dependência simétrica, sem clustering de cauda — condições normais de mercado.",
         )
 
-    def simulate(self, n: int, corr_matrix: Optional[np.ndarray] = None) -> np.ndarray:
+    def simulate(self, n: int, corr_matrix: np.ndarray | None = None) -> np.ndarray:
         R = corr_matrix if corr_matrix is not None else self.corr_matrix
         L = np.linalg.cholesky(R)
         d = R.shape[0]
@@ -132,7 +130,12 @@ class StudentTCopula:
             - (d / 2.0) * np.log(df * np.pi)
             - 0.5 * log_det
         )
-        marg_const = d * (gammaln((df + 1) / 2.0) - gammaln(df / 2.0) - 0.5 * np.log(df * np.pi))
+        # Copula log-density = log f_t,ν,Σ(joint) − Σ_i log f_t,ν(marginal_i).
+        # `joint` below already includes the full multivariate-t normalizing
+        # constant (log_const), and `marg` uses scipy's t.logpdf, which already
+        # includes the univariate normalizing constant for each dimension —
+        # so both terms are complete and `ll = joint - marg` is the correct,
+        # unbiased copula log-likelihood; no separate marginal constant needed.
         for i in range(n):
             ti = t_obs[i]
             quad = float(ti @ inv_corr @ ti)
@@ -141,7 +144,7 @@ class StudentTCopula:
             ll += joint - marg
         return ll
 
-    def fit(self, u: np.ndarray, df_grid: Optional[np.ndarray] = None) -> CopulaFitResult:
+    def fit(self, u: np.ndarray, df_grid: np.ndarray | None = None) -> CopulaFitResult:
         u = _clip(u)
         n, d = u.shape
         if df_grid is None:

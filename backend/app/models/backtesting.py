@@ -4,8 +4,8 @@ Backtesting Engine
 - Performance metrics (Sharpe, Sortino, Calmar, etc.)
 - Drawdown analysis
 """
+
 import numpy as np
-from typing import Optional
 
 
 class BacktestEngine:
@@ -13,8 +13,8 @@ class BacktestEngine:
 
     @staticmethod
     def run_strategy(prices: np.ndarray, strategy: str = "sma_crossover",
-                     params: Optional[dict] = None, initial_capital: float = 100_000,
-                     commission: float = 0.001, seed: Optional[int] = 42,
+                     params: dict | None = None, initial_capital: float = 100_000,
+                     commission: float = 0.001, seed: int | None = 42,
                      slippage: float = 0.0005) -> dict:
         if seed is not None:
             np.random.seed(seed)

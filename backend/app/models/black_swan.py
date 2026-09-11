@@ -5,10 +5,9 @@ Black Swan Detection Engine
 - Cross-market anomaly detection
 - News feed analysis
 """
-import numpy as np
-from typing import Optional
-from datetime import datetime, timedelta
 import math
+
+import numpy as np
 
 
 class BlackSwanDetector:
@@ -142,7 +141,7 @@ class BlackSwanDetector:
         }
 
     @staticmethod
-    def analyze_news_sentiment(articles: Optional[list[dict]] = None) -> dict:
+    def analyze_news_sentiment(articles: list[dict] | None = None) -> dict:
         """
         Analyze news articles for black swan indicators.
         articles: [{"title": "...", "description": "...", "source": "...", "date": "..."}]
@@ -228,7 +227,7 @@ class BlackSwanDetector:
         ]
 
     @staticmethod
-    def combined_analysis(returns: np.ndarray, articles: Optional[list[dict]] = None) -> dict:
+    def combined_analysis(returns: np.ndarray, articles: list[dict] | None = None) -> dict:
         """Full black swan analysis combining market data and news."""
         tail = BlackSwanDetector.analyze_tail_risk(returns)
         regime = BlackSwanDetector.detect_regime_change(returns)

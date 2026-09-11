@@ -20,7 +20,6 @@ Architecture
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import numpy as np
 import torch
@@ -85,7 +84,7 @@ class NeuralSDE:
         state_size: int = 1,
         hidden_size: int = 32,
         method: str = "euler",
-        seed: Optional[int] = 42,
+        seed: int | None = 42,
     ) -> dict:
         """
         Simulate N trajectories of a Neural SDE on CPU.

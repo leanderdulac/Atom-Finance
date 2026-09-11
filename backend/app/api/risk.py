@@ -2,7 +2,6 @@
 
 import asyncio
 from functools import partial
-from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter
@@ -24,7 +23,7 @@ class VaRRequest(BaseModel):
 
 class StressTestRequest(BaseModel):
     portfolio: dict[str, float] = Field(..., description="Asset class weights")
-    scenario: Optional[str] = None
+    scenario: str | None = None
     portfolio_value: float = Field(1_000_000, gt=0)
 
 

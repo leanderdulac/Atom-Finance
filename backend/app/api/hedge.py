@@ -2,7 +2,6 @@
 
 import asyncio
 from functools import partial
-from typing import Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -56,7 +55,7 @@ class TailRiskRequest(BaseModel):
     drift_annual: float = Field(0.0, description="Annualised drift (use 0 for risk-neutral)")
     horizon_hours: float = Field(8.0, gt=0)
     n_paths: int = Field(10_000, ge=100, le=100_000)
-    seed: Optional[int] = Field(42)
+    seed: int | None = Field(42)
 
 
 # ── Thread-pool helper ─────────────────────────────────────────────────────────

@@ -5,8 +5,8 @@ Machine Learning Models for Price Prediction
 - Time Series ARIMA
 - Reinforcement Learning (DQN) for trading
 """
+
 import numpy as np
-from typing import Optional
 
 
 class LSTMPredictor:
@@ -16,7 +16,7 @@ class LSTMPredictor:
         self.lookback = lookback
         self.hidden_size = hidden_size
 
-    def predict(self, prices: np.ndarray, forecast_days: int = 30, seed: Optional[int] = 42) -> dict:
+    def predict(self, prices: np.ndarray, forecast_days: int = 30, seed: int | None = 42) -> dict:
         """Generate price predictions using a simplified recurrent approach."""
         if seed is not None:
             np.random.seed(seed)
@@ -67,7 +67,7 @@ class RandomForestPredictor:
         self.n_estimators = n_estimators
         self.lookback = lookback
 
-    def predict(self, prices: np.ndarray, forecast_days: int = 10, seed: Optional[int] = 42) -> dict:
+    def predict(self, prices: np.ndarray, forecast_days: int = 10, seed: int | None = 42) -> dict:
         if seed is not None:
             np.random.seed(seed)
 
@@ -123,7 +123,7 @@ class RandomForestPredictor:
             "predictions": forecasts,
             "direction": "bullish" if avg_return > 0 else "bearish",
             "confidence": round(float(abs(avg_return) / np.std(predictions_all)) * 100, 2) if np.std(predictions_all) > 0 else 50.0,
-            "feature_importance": {name: round(float(imp), 4) for name, imp in zip(feature_names, importances)},
+            "feature_importance": {name: round(float(imp), 4) for name, imp in zip(feature_names, importances, strict=False)},
             "last_actual_price": round(float(last_price), 2),
         }
 
@@ -133,7 +133,7 @@ class ARIMAForecast:
 
     @staticmethod
     def forecast(prices: np.ndarray, p: int = 5, d: int = 1, q: int = 0,
-                 forecast_days: int = 30, seed: Optional[int] = 42) -> dict:
+                 forecast_days: int = 30, seed: int | None = 42) -> dict:
         if seed is not None:
             np.random.seed(seed)
 
@@ -197,7 +197,7 @@ class TradingDQN:
 
     @staticmethod
     def generate_signals(prices: np.ndarray, lookback: int = 20,
-                         seed: Optional[int] = 42) -> dict:
+                         seed: int | None = 42) -> dict:
         if seed is not None:
             np.random.seed(seed)
 
@@ -240,7 +240,7 @@ class TradingDQN:
             signals.append({
                 "index": i,
                 "action": action,
-                "q_values": {a: round(float(q), 4) for a, q in zip(TradingDQN.ACTIONS, q_values)},
+                "q_values": {a: round(float(q), 4) for a, q in zip(TradingDQN.ACTIONS, q_values, strict=False)},
             })
 
         # Performance metrics

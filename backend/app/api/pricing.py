@@ -1,9 +1,9 @@
 """Options Pricing API endpoints."""
 import math
+from typing import Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from typing import Literal
 
 from app.models.pricing import (
     BinomialTree,

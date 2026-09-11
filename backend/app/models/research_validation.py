@@ -98,7 +98,7 @@ def portfolio_metrics(returns, targets, cost_bps, max_drawdown=1.0):
     brake_at = None
     equity, gross_equity, net_returns, turnovers, weights = [1.0], [1.0], [], [], []
     paid = 0.0
-    for i, (ret, target) in enumerate(zip(returns, targets)):
+    for i, (ret, target) in enumerate(zip(returns, targets, strict=False)):
         weight = 0.0 if halted else float(np.clip(target, 0, 1))
         delta = weight - previous
         fee = rate * abs(delta) / (1 + rate * weight if delta >= 0 else 1 - rate * weight)

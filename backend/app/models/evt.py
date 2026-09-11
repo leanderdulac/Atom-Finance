@@ -6,12 +6,11 @@ Extreme Value Theory (EVT) Models
 - EVT-based VaR, CVaR and Return Levels
 """
 
-import numpy as np
 from dataclasses import dataclass
-from functools import partial
-from scipy import stats
-from scipy.optimize import minimize, minimize_scalar
 
+import numpy as np
+from scipy import stats
+from scipy.optimize import minimize
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
