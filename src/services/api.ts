@@ -1,3 +1,4 @@
+import type { PaperRecord, PaperSummary, SourceCheck, SourceSnapshotSummary } from '../types/paperTrading';
 const API_BASE = '/api';
 const TOKEN_KEY = 'atom_jwt';
 
@@ -34,14 +35,42 @@ export interface QuantMetrics {
   cost_paid_pct_initial: number; mse_oos?: number; equity: number[];
 }
 export interface QuantExperiment {
-  experiment_id: string; policy_version: string; assessment: string;
+  run_id?: string; experiment_id: string; policy_version: string; assessment: string;
   config: { model: string }; reasons: string[]; limitations: string[];
   results: Record<string, QuantMetrics>;
   folds: { fold: number; train_end: string; last_train_label_end: string; test_start: string; test_end: string; test_count: number; net_return_pct: number }[];
 }
+export interface ExperimentSummary { id: string; created_at: string; status: string; input_hash: string; error: string | null; hypothesis: string; data_source: string; model: string; assessment: string | null }
+export interface ExperimentDetail {
+  id: string; created_at: string; status: string; input_hash: string; error: string | null;
+  inputs: { hypothesis: string; data_source: string; prices: number[]; dates: string[]; price_basis: string; commission_bps: number; slippage_bps: number; target_volatility: number; max_drawdown: number };
+  result: QuantExperiment | null;
+  reviews: { id: string; created_at: string; decision: string; rationale: string }[];
+}
 export const api = {
+  sourceSnapshots: (ticker:string) => request<SourceSnapshotSummary[]>(`/sources/snapshots?ticker=${encodeURIComponent(ticker)}`),
+  paperSourceCheck: (id:string,snapshotId:string) => request<SourceCheck>(`/paper-trades/${encodeURIComponent(id)}/source-check/${encodeURIComponent(snapshotId)}`),
+  sourceStatus: () => request<Record<string,{configured?:boolean;access?:string;data_mode?:string}>>('/sources/status'),
+  sourceExpirations: (ticker:string) => request<{expirations:string[]}>(`/sources/expirations?ticker=${encodeURIComponent(ticker)}`),
+  sourceChain: (provider:string,ticker:string,expiry:string) => request<unknown>(`/sources/chain?provider=${provider}&ticker=${encodeURIComponent(ticker)}${expiry?'&expiry='+encodeURIComponent(expiry):''}`),
+  sourceSnapshot: (id:string) => request<unknown>(`/sources/snapshots/${encodeURIComponent(id)}`),
+  sourceSelic: () => request<{value:number;observed_date:string;annualized_252_pct:number;note:string}>('/sources/selic'),
+  sourceCvm: (kind:string) => request<{dataset:string;note:string;resources:{name:string;url:string;format:string}[]}>(`/sources/cvm?kind=${kind}`),
+  paperTrack: (plan_id:string,plan_index:number) => request<PaperRecord>('/paper-trades', {method:'POST',body:JSON.stringify({plan_id,plan_index})}),
+  paperHistory: () => request<PaperSummary[]>('/paper-trades'),
+  paperRecord: (id:string) => request<PaperRecord>(`/paper-trades/${encodeURIComponent(id)}`),
+  paperEvent: (id:string,data:object) => request<PaperRecord>(`/paper-trades/${encodeURIComponent(id)}/events`, {method:'POST',body:JSON.stringify(data)}),
+  derivativePlan: (data: object) => request<unknown>('/derivatives/plan', { method: 'POST', body: JSON.stringify(data) }),
+  derivativeHistory: () => request<{id: string; created_at: string}[]>('/derivatives/plans'),
+  derivativeRecord: (id: string) => request<{inputs: unknown; result: unknown}>(`/derivatives/plans/${encodeURIComponent(id)}`),
+  experiments: (offset = 0) => request<{items: ExperimentSummary[]; total: number}>(`/ml/experiments?offset=${offset}`),
+  experiment: (id: string) => request<ExperimentDetail>(`/ml/experiments/${encodeURIComponent(id)}`),
+  reviewExperiment: (id: string, decision: string, rationale: string) => request<ExperimentDetail>(`/ml/experiments/${encodeURIComponent(id)}/reviews`, { method: 'POST', body: JSON.stringify({ decision, rationale }) }),
   researchMarketHistory: (ticker: string) => request<{close: number[]; dates: string[]; provider?: string; source?: string}>(`/market-data/history/${encodeURIComponent(ticker)}?days=1825&period=5y&provider=yfinance`),
   quantEvaluate: (data: object) => request<QuantExperiment>('/ml/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  screenerTopPicks: () => request<any[]>('/screener/top-picks'),
+  autopilotGenerate: (data: { capital: number; horizon_days: number }) =>
+    request<any>('/autopilot/generate', { method: 'POST', body: JSON.stringify(data) }),
   researchHistory: () => request<ResearchSummary[]>('/research/papers'),
   researchPaper: (id: string) => request<ResearchPaper>(`/research/papers/${encodeURIComponent(id)}`),
   researchExtract: (kind: 'text' | 'arxiv', content: string) => request<ResearchPaper>('/research/papers', { method: 'POST', body: JSON.stringify({ kind, content }) }),

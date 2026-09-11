@@ -9,7 +9,7 @@ import {
   Balance, Visibility, VisibilityOff, CheckCircle, Warning,
   TrendingUp, TrendingDown, Psychology, Search as SearchIcon
 } from '@mui/icons-material';
-import axios from 'axios';
+import { api } from '../services/api';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,7 +33,7 @@ interface Operation {
   scenario_base: Scenario;
   scenario_bull: Scenario;
   max_loss: number;
-  probability_of_profit: number;
+  theoretical_itm_probability_pct: number;
   bull_score: number;
   ai_consensus: string;
   narrative_summary: string;
@@ -61,7 +61,7 @@ const stages = [
   { icon: <TrendingUp />, label: 'GPT-5 calculando estratégias...', color: '#10B981' },
   { icon: <AutoFixHigh />, label: 'Gemini monitorando notícias...', color: '#6495ED' },
   { icon: <RocketLaunch />, label: 'Grok detectando rumores...', color: '#00f2ff' },
-  { icon: <Shield />, label: 'Backtesting matemático...', color: '#a855f7' },
+  { icon: <Shield />, label: 'Calculando cenários teóricos...', color: '#a855f7' },
   { icon: <CheckCircle />, label: 'Validando operações...', color: '#22c55e' },
 ];
 
@@ -196,9 +196,9 @@ function OperationCard({ op, idx }: { op: Operation; idx: number }) {
           {/* Bottom Metrics */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Box>
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)' }}>PROB. LUCRO</Typography>
-              <Typography variant="body1" sx={{ color: op.probability_of_profit >= 50 ? '#22c55e' : '#fbbf24', fontWeight: 900 }}>
-                {op.probability_of_profit}%
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)' }}>PROB. TEÓRICA ITM (NÃO LUCRO)</Typography>
+              <Typography variant="body1" sx={{ color: op.theoretical_itm_probability_pct >= 50 ? '#22c55e' : '#fbbf24', fontWeight: 900 }}>
+                {op.theoretical_itm_probability_pct}%
               </Typography>
             </Box>
             <Box sx={{ textAlign: 'center' }}>
@@ -245,13 +245,13 @@ export default function AutopilotPage() {
     setError(null);
     setResult(null);
     try {
-      const res = await axios.post('http://127.0.0.1:8000/api/autopilot/generate', {
+      const res = await api.autopilotGenerate({
         capital,
         horizon_days: horizon,
       });
-      setResult(res.data);
+      setResult(res);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Erro ao processar. Verifique as chaves de API.');
+      setError(err instanceof Error ? err.message : 'Erro ao processar. Verifique as chaves de API.');
     } finally {
       setLoading(false);
     }
@@ -272,7 +272,7 @@ export default function AutopilotPage() {
         <Box sx={{ textAlign: 'center', mb: 6 }}>
           <Typography variant="h3" sx={{ fontWeight: 900, color: '#fff', mb: 1, letterSpacing: '-0.03em' }}>
             <RocketLaunch sx={{ fontSize: '2.5rem', color: '#fbbf24', mr: 2, verticalAlign: 'middle' }} />
-            ATOM AUTOPILOT
+            CENÁRIOS DE OPÇÕES
           </Typography>
           <Typography variant="subtitle1" sx={{ color: 'rgba(255,255,255,0.4)', maxWidth: 600, mx: 'auto' }}>
             Insira quanto quer investir e por quanto tempo. Nossa inteligência artificial faz o resto.
@@ -345,7 +345,7 @@ export default function AutopilotPage() {
               </Button>
 
               <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.2)', mt: 2, display: 'block', textAlign: 'center' }}>
-                6 modelos de IA + backtest matemático • Resultado em segundos
+                Cenários hipotéticos · sem backtest histórico ou validação fora da amostra
               </Typography>
             </CardContent>
           </Card>

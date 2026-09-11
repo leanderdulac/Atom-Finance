@@ -8,9 +8,10 @@ import json
 import logging
 import os
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timezone
-from typing import Any, Generator, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,10 @@ def _create_tables(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_ticker ON reports(ticker)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at)")
 
+    if "owner" not in {row[1] for row in conn.execute("PRAGMA table_info(reports)")}:
+        conn.execute("ALTER TABLE reports ADD COLUMN owner TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_owner ON reports(owner, created_at)")
+
     # ── Users ─────────────────────────────────────────────────────
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -55,7 +60,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
 
 @contextmanager
 def _get_conn() -> Generator[sqlite3.Connection, None, None]:
-    conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(_DB_PATH, check_same_thread=False, timeout=15)
     conn.row_factory = sqlite3.Row
     try:
         _create_tables(conn)
@@ -64,7 +69,7 @@ def _get_conn() -> Generator[sqlite3.Connection, None, None]:
         conn.close()
 
 
-def save_report(ticker: str, report: dict[str, Any]) -> int:
+def save_report(ticker: str, report: dict[str, Any], *, owner: str) -> int:
     """Persists a full AI report. Returns the new row ID."""
     try:
         rec = report.get("recommendation", {})
@@ -73,8 +78,8 @@ def save_report(ticker: str, report: dict[str, Any]) -> int:
             cur = conn.execute(
                 """
                 INSERT INTO reports
-                    (ticker, exchange, price, currency, bull_score, action, narrative, full_report, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (ticker, exchange, price, currency, bull_score, action, narrative, full_report, created_at, owner)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     ticker.upper(),
@@ -85,7 +90,8 @@ def save_report(ticker: str, report: dict[str, Any]) -> int:
                     rec.get("action"),
                     report.get("narrative"),
                     json.dumps(report, ensure_ascii=False, default=str),
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
+                    owner,
                 ),
             )
             conn.commit()
@@ -93,24 +99,24 @@ def save_report(ticker: str, report: dict[str, Any]) -> int:
             return cur.lastrowid
     except Exception as exc:
         logger.error("Failed to save report for %s: %s", ticker, exc)
-        return -1
+        raise
 
 
-def list_reports(ticker: Optional[str] = None, limit: int = 20) -> List[dict]:
+def list_reports(ticker: str | None = None, limit: int = 20, *, owner: str) -> list[dict]:
     """Returns recent reports, optionally filtered by ticker."""
     try:
         with _get_conn() as conn:
             if ticker:
                 rows = conn.execute(
                     "SELECT id, ticker, exchange, price, currency, bull_score, action, created_at "
-                    "FROM reports WHERE ticker = ? ORDER BY created_at DESC LIMIT ?",
-                    (ticker.upper(), limit),
+                    "FROM reports WHERE owner = ? AND ticker = ? ORDER BY created_at DESC LIMIT ?",
+                    (owner, ticker.upper(), limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT id, ticker, exchange, price, currency, bull_score, action, created_at "
-                    "FROM reports ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
+                    "FROM reports WHERE owner = ? ORDER BY created_at DESC LIMIT ?",
+                    (owner, limit),
                 ).fetchall()
             return [dict(r) for r in rows]
     except Exception as exc:
@@ -118,12 +124,12 @@ def list_reports(ticker: Optional[str] = None, limit: int = 20) -> List[dict]:
         return []
 
 
-def get_report_by_id(report_id: int) -> Optional[dict]:
+def get_report_by_id(report_id: int, *, owner: str) -> dict | None:
     """Returns the full report JSON for a given ID."""
     try:
         with _get_conn() as conn:
             row = conn.execute(
-                "SELECT full_report FROM reports WHERE id = ?", (report_id,)
+                "SELECT full_report FROM reports WHERE id = ? AND owner = ?", (report_id, owner)
             ).fetchone()
             if row:
                 return json.loads(row["full_report"])
@@ -135,13 +141,13 @@ def get_report_by_id(report_id: int) -> Optional[dict]:
 
 # ── User CRUD ──────────────────────────────────────────────────────────────
 
-def create_user(username: str, email: str, password_hash: str, role: str = "analyst") -> Optional[int]:
+def create_user(username: str, email: str, password_hash: str, role: str = "analyst") -> int | None:
     """Creates a new user. Returns the new row ID, or None on duplicate."""
     try:
         with _get_conn() as conn:
             cur = conn.execute(
                 "INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
-                (username.lower().strip(), email.lower().strip(), password_hash, role, datetime.now(timezone.utc).isoformat()),
+                (username.lower().strip(), email.lower().strip(), password_hash, role, datetime.now(UTC).isoformat()),
             )
             conn.commit()
             logger.info("User created: %s (id=%d)", username, cur.lastrowid)
@@ -154,7 +160,7 @@ def create_user(username: str, email: str, password_hash: str, role: str = "anal
         return None
 
 
-def get_user_by_username(username: str) -> Optional[dict]:
+def get_user_by_username(username: str) -> dict | None:
     """Returns user dict (includes password_hash) or None."""
     try:
         with _get_conn() as conn:
@@ -169,7 +175,7 @@ def get_user_by_username(username: str) -> Optional[dict]:
         return None
 
 
-def get_user_by_email(email: str) -> Optional[dict]:
+def get_user_by_email(email: str) -> dict | None:
     """Returns user dict by email or None."""
     try:
         with _get_conn() as conn:
@@ -196,7 +202,7 @@ def user_exists(username: str) -> bool:
         return False
 
 
-def list_users(limit: int = 100) -> List[dict]:
+def list_users(limit: int = 100) -> list[dict]:
     """Admin helper — returns user list without password hashes."""
     try:
         with _get_conn() as conn:
@@ -208,3 +214,12 @@ def list_users(limit: int = 100) -> List[dict]:
     except Exception as exc:
         logger.error("Failed to list users: %s", exc)
         return []
+
+
+def readiness():
+    """Verify writable database with a rolled-back write, without external API calls."""
+    with _get_conn() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS health_probe (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.execute("INSERT OR REPLACE INTO health_probe VALUES (1)")
+        conn.rollback()

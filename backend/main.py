@@ -4,47 +4,47 @@ Main FastAPI Application
 """
 import logging
 import os
-from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-
-from app.core.limiter import limiter
+from slowapi.middleware import SlowAPIMiddleware
 
 load_dotenv()
 
 from app.api import (  # noqa: E402
-    ai_screener_router,
+    ai_proxy_router,
     ai_report_router,
-    # autopilot_router,
+    ai_screener_router,
     auth_router,
-    binance_router,
+    autopilot_router,
     backtesting_router,
+    binance_router,
     black_swan_router,
     capm_router,
     copulas_router,
     evt_router,
+    ghost_liquidity_router,
     hedge_router,
     ibovespa_router,
-    ghost_liquidity_router,
     market_data_router,
-    # neural_sde_router,
     ml_router,
+    neural_sde_router,
     options_router,
     portfolio_router,
     pricing_router,
     reports_router,
     risk_router,
-    ai_proxy_router,
 )
 from app.api.research import router as research_router
 from app.core.cache import Cache  # noqa: E402
-from app.services.brapi_service import BrapiService
-from app.db.database import list_reports as _db_check
+from app.core.limiter import limiter
+from app.core.runtime import exclusive_runtime
+from app.core.security import get_current_user
+from app.db.database import readiness
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +69,8 @@ async def lifespan(_app: FastAPI):
         logger.info("Cache backend: Redis")
     else:
         logger.warning("Cache backend: in-memory (Redis not available)")
-    yield
+    with exclusive_runtime():
+        yield
     logger.info("ATOM shutting down…")
 
 
@@ -82,11 +83,16 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None if os.getenv("ATOM_ENV") == "production" else "/docs",
+    redoc_url=None if os.getenv("ATOM_ENV") == "production" else "/redoc",
+    openapi_url=None if os.getenv("ATOM_ENV") == "production" else "/openapi.json",
 )
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
 app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 from slowapi import _rate_limit_exceeded_handler
+
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
@@ -97,73 +103,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(research_router, prefix="/api/research", tags=["Research"])
+protected = APIRouter(dependencies=[Depends(get_current_user)])
+from app.api.market_sources import router as market_sources_router
+
+protected.include_router(market_sources_router, prefix="/api/sources", tags=["Market Sources"])
+from app.api.derivatives import router as derivatives_router
+
+protected.include_router(derivatives_router, prefix="/api/derivatives", tags=["Derivatives Planner"])
+
+protected.include_router(research_router, prefix="/api/research", tags=["Research"])
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth_router,            prefix="/api/auth",          tags=["Authentication"])
-app.include_router(pricing_router,         prefix="/api/pricing",       tags=["Options Pricing"])
-app.include_router(risk_router,            prefix="/api/risk",          tags=["Risk Analysis"])
-app.include_router(hedge_router,           prefix="/api/hedge",         tags=["Dynamic Hedge"])
-app.include_router(portfolio_router,       prefix="/api/portfolio",     tags=["Portfolio Optimisation"])
-app.include_router(ml_router,              prefix="/api/ml",            tags=["Machine Learning"])
-# app.include_router(neural_sde_router,      prefix="/api/neural-sde",    tags=["Neural SDE"])
-app.include_router(ghost_liquidity_router, prefix="/api/ghost-liquidity", tags=["Ghost Liquidity"])
-app.include_router(black_swan_router,      prefix="/api/black-swan",    tags=["Black Swan Detection"])
-app.include_router(market_data_router,     prefix="/api/market-data",   tags=["Market Data"])
-app.include_router(ibovespa_router,        prefix="/api/ibovespa",      tags=["Ibovespa Dashboard"])
-app.include_router(options_router,         prefix="/api/ai/options-expert", tags=["AI Options Agent"])
-app.include_router(reports_router,         prefix="/api/reports",       tags=["Reports"])
-app.include_router(backtesting_router,     prefix="/api/backtesting",   tags=["Backtesting"])
-app.include_router(capm_router,            prefix="/api/capm",          tags=["CAPM & Kelly"])
-app.include_router(evt_router,             prefix="/api/evt",           tags=["Extreme Value Theory"])
-app.include_router(copulas_router,         prefix="/api/copulas",       tags=["Copulas"])
-app.include_router(ai_report_router,       prefix="/api/reports",       tags=["AI Analysis"])
-app.include_router(ai_screener_router,     prefix="/api/screener",      tags=["AI Screener"])
-# app.include_router(autopilot_router,       prefix="/api/autopilot",     tags=["Autopilot"])
-app.include_router(binance_router,         prefix="/api/binance",       tags=["Binance Crypto"])
-app.include_router(ai_proxy_router,        prefix="/api/ai",            tags=["AI Proxy"])
+protected.include_router(pricing_router,         prefix="/api/pricing",       tags=["Options Pricing"])
+protected.include_router(risk_router,            prefix="/api/risk",          tags=["Risk Analysis"])
+protected.include_router(hedge_router,           prefix="/api/hedge",         tags=["Dynamic Hedge"])
+protected.include_router(portfolio_router,       prefix="/api/portfolio",     tags=["Portfolio Optimisation"])
+protected.include_router(ml_router,              prefix="/api/ml",            tags=["Machine Learning"])
+protected.include_router(neural_sde_router,      prefix="/api/neural-sde",    tags=["Neural SDE"])
+protected.include_router(ghost_liquidity_router, prefix="/api/ghost-liquidity", tags=["Ghost Liquidity"])
+protected.include_router(black_swan_router,      prefix="/api/black-swan",    tags=["Black Swan Detection"])
+protected.include_router(market_data_router,     prefix="/api/market-data",   tags=["Market Data"])
+protected.include_router(ibovespa_router,        prefix="/api/ibovespa",      tags=["Ibovespa Dashboard"])
+protected.include_router(options_router,         prefix="/api/ai/options-expert", tags=["AI Options Agent"])
+protected.include_router(reports_router,         prefix="/api/reports",       tags=["Reports"])
+protected.include_router(backtesting_router,     prefix="/api/backtesting",   tags=["Backtesting"])
+protected.include_router(capm_router,            prefix="/api/capm",          tags=["CAPM & Kelly"])
+protected.include_router(evt_router,             prefix="/api/evt",           tags=["Extreme Value Theory"])
+protected.include_router(copulas_router,         prefix="/api/copulas",       tags=["Copulas"])
+protected.include_router(ai_report_router,       prefix="/api/reports",       tags=["AI Analysis"])
+protected.include_router(ai_screener_router,     prefix="/api/screener",      tags=["AI Screener"])
+protected.include_router(autopilot_router,       prefix="/api/autopilot",     tags=["Autopilot"])
+protected.include_router(binance_router,         prefix="/api/binance",       tags=["Binance Crypto"])
+protected.include_router(ai_proxy_router,        prefix="/api/ai",            tags=["AI Proxy"])
+
+
+from app.api.paper_trades import router as paper_trades_router
+
+protected.include_router(paper_trades_router, prefix="/api/paper-trades", tags=["Paper Trading"])
+app.include_router(protected)
+
+@app.middleware("http")
+async def response_security(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/live")
+@limiter.exempt
+def live():
+    return {"status": "alive"}
 
 
 @app.get("/api/health")
-async def health_check():
-    """Deep health check — verifies DB, Cache, and API configuration."""
-    # 1. Check Database (SQLite)
-    db_status = "healthy"
+@limiter.exempt
+def health_check():
     try:
-        # Just try to list 1 report to see if DB is alive
-        _db_check(limit=1)
-    except Exception as e:
-        logger.error(f"Health Check: DB failure: {e}")
-        db_status = f"unhealthy: {str(e)}"
-
-    # 2. Check Cache (Redis/Memory)
-    cache_type = "redis" if Cache.is_redis_available() else "memory"
-    
-    # 3. Check Brapi (B3 Data)
-    brapi_status = BrapiService.health_check()
-
-    # 4. Check AI Keys (Presence check)
-    def mask(key: str | None) -> str:
-        if not key: return "MISSING"
-        if len(key) < 8: return "SET (Too Short)"
-        return f"{key[:4]}...{key[-4:]}"
-
-    ai_keys = {
-        "anthropic": mask(os.getenv("ANTHROPIC_API_KEY")),
-        "openai":    mask(os.getenv("OPENAI_API_KEY")),
-        "perplexity": mask(os.getenv("PERPLEXITY_API_KEY")),
-        "gemini":    mask(os.getenv("GOOGLE_API_KEY")),
-    }
-
-    return {
-        "status": "healthy" if db_status == "healthy" and brapi_status["status"] == "healthy" else "degraded",
-        "app": "ATOM",
-        "version": "1.0.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "dependencies": {
-            "database": db_status,
-            "cache": cache_type,
-            "brapi": brapi_status,
-        },
-        "ai_configuration": ai_keys
-    }
+        readiness()
+    except Exception:
+        logger.exception("Database readiness failed")
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
+    return {"status": "healthy"}

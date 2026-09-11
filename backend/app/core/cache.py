@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class _MemStore:
     _store: dict[str, tuple[str, float]] = {}
 
     @classmethod
-    def get(cls, key: str) -> Optional[str]:
+    def get(cls, key: str) -> str | None:
         entry = cls._store.get(key)
         if entry is None:
             return None
@@ -70,7 +70,7 @@ class Cache:
     """
 
     @staticmethod
-    def get(key: str) -> Optional[Any]:
+    def get(key: str) -> Any | None:
         r = _get_redis()
         if r:
             try:

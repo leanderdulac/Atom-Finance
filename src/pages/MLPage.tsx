@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert, Box, Button, Card, CardContent, Checkbox, Chip, FormControlLabel,
   MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
@@ -24,6 +25,7 @@ function demoData(): Dataset {
 const labels: Record<string, string> = { ridge: 'Ridge', random_forest: 'Random Forest', zero: 'Previsão zero / caixa', momentum: 'Momentum simples', buy_hold: 'Buy & hold' };
 
 export default function MLPage() {
+  const navigate = useNavigate();
   const [ticker, setTicker] = useState('PETR4.SA');
   const [data, setData] = useState<Dataset | null>(null);
   const [hypothesis, setHypothesis] = useState('');
@@ -73,7 +75,7 @@ export default function MLPage() {
   return <Stack spacing={3} sx={{ maxWidth: 1200, mx: 'auto' }}>
     <Box><Typography variant="h4" component="h1">Laboratório Quant</Typography>
       <Typography color="text.secondary">Hipótese econômica → features causais → validação temporal → resultado líquido.</Typography></Box>
-    <Alert severity="info">Complexidade precisa justificar seu custo. Resultados são de pesquisa e nunca autorizam negociação automática. O teste usa grupos mensais, purga de rótulos e um mês de intervalo antes de cada janela.</Alert>
+    <Alert severity="info">Cada avaliação é salva no seu diário com os dados e premissas. Complexidade precisa justificar seu custo. Resultados são de pesquisa e nunca autorizam negociação automática. O teste usa grupos mensais, purga de rótulos e um mês de intervalo antes de cada janela.</Alert>
     {error && <Alert severity="error">{error}</Alert>}
     <Card component="form" onSubmit={evaluate}><CardContent><Stack spacing={2}>
       <Typography variant="h6">1. Dados e hipótese</Typography>
@@ -116,6 +118,7 @@ export default function MLPage() {
       </CardContent></Card>
       <Card><CardContent><Typography variant="h6">Janelas temporais e estabilidade</Typography><Box sx={{ overflowX: 'auto' }}><Table size="small"><TableHead><TableRow>{['Janela', 'Treino até', 'Último rótulo de treino', 'Teste de', 'Teste até', 'N teste', 'Retorno líquido %'].map(h => <TableCell key={h}>{h}</TableCell>)}</TableRow></TableHead><TableBody>{result.folds.map(f => <TableRow key={f.fold}><TableCell>{f.fold}</TableCell><TableCell>{f.train_end}</TableCell><TableCell>{f.last_train_label_end}</TableCell><TableCell>{f.test_start}</TableCell><TableCell>{f.test_end}</TableCell><TableCell>{f.test_count}</TableCell><TableCell>{f.net_return_pct.toFixed(2)}</TableCell></TableRow>)}</TableBody></Table></Box></CardContent></Card>
       <Card><CardContent><Typography variant="h6">Limitações que acompanham o resultado</Typography>{result.limitations.map(item => <Typography key={item} variant="body2" sx={{ mt: 1 }}>• {item}</Typography>)}</CardContent></Card>
+      {result.run_id && <Button variant="contained" onClick={() => navigate(`/dashboard?id=${result.run_id}`)}>Abrir registro e decidir próximo teste</Button>}
       <Button onClick={download} variant="outlined">Exportar relatório auditável (JSON)</Button>
       <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>{result.policy_version} · Experimento {result.experiment_id}</Typography>
     </>}

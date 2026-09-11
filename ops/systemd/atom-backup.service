@@ -1,0 +1,11 @@
+[Unit]
+Description=ATOM encrypted offsite database backup
+After=docker.service network-online.target
+Requires=docker.service
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/atom/operations.env
+ExecStart=/usr/bin/flock -n /run/atom-backup.lock /usr/bin/python3 /opt/atom/scripts/backup-offsite.py
+TimeoutStartSec=2h
+UMask=0077
+NoNewPrivileges=true

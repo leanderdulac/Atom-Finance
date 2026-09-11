@@ -1,0 +1,20 @@
+# Add explicitly to the production compose only after DNS/firewall are ready.
+services:
+  edge:
+    image: caddy:2.11.2-alpine
+    restart: unless-stopped
+    environment:
+      ATOM_DOMAIN: ${ATOM_DOMAIN:?Set the public hostname without scheme or path}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    depends_on: [frontend]
+    security_opt: [no-new-privileges:true]
+volumes:
+  caddy_data:
+  caddy_config:

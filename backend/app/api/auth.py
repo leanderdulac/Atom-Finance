@@ -5,12 +5,12 @@ Users persist across restarts via the shared ATOM database.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+import os
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 
+from app.core.limiter import limiter
 from app.core.security import (
     create_access_token,
     get_current_user,
@@ -20,8 +20,8 @@ from app.core.security import (
 from app.db.database import (
     create_user,
     get_user_by_username,
-    user_exists,
     list_users,
+    user_exists,
 )
 
 router = APIRouter()
@@ -30,26 +30,31 @@ logger = logging.getLogger(__name__)
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
-class RegisterRequest(BaseModel):
-    username: str
-    password: str
-    email: str
-
-
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
+    password: str = Field(min_length=1, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def bounded_password(cls, value):
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must fit within 72 UTF-8 bytes")
+        return value
+
+
+class RegisterRequest(LoginRequest):
+    password: str = Field(min_length=12, max_length=72)
+    email: str = Field(min_length=3, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/register", status_code=201)
-async def register(req: RegisterRequest):
-    if len(req.username) < 3:
-        raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
-    if len(req.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
-
+@limiter.limit("3/hour")
+async def register(request: Request, req: RegisterRequest):
+    allowed = os.getenv("ATOM_ALLOW_REGISTRATION", "false" if os.getenv("ATOM_ENV") == "production" else "true")
+    if allowed.lower() != "true":
+        raise HTTPException(status_code=403, detail="Registration is disabled; contact the operator.")
     already_taken = await asyncio.to_thread(user_exists, req.username)
     if already_taken:
         raise HTTPException(status_code=400, detail="Username already exists.")
@@ -68,7 +73,8 @@ async def register(req: RegisterRequest):
 
 
 @router.post("/login")
-async def login(req: LoginRequest):
+@limiter.limit("10/minute")
+async def login(request: Request, req: LoginRequest):
     user = await asyncio.to_thread(get_user_by_username, req.username)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials.")
