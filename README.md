@@ -1,4 +1,12 @@
+> Produção: consulte [o runbook do piloto privado](docs/PRODUCTION.md) antes de implantar. Planejamento condicional não autoriza negociação real.
+
+> **Produto atual: ATOM Research — piloto local.** A jornada principal é hipótese → avaliação temporal → diário → decisão de pesquisa. Veja [escopo, limites e critérios do piloto](docs/PRODUCT-PILOT.md). Descrições legadas abaixo não representam validação institucional nem autorização de negociação.
+
 # ATOM - Advanced Trading & Options Modeler
+
+[![ATOM CI](https://github.com/leanderdulac/Atom-Finance/actions/workflows/ci.yml/badge.svg)](https://github.com/leanderdulac/Atom-Finance/actions/workflows/ci.yml)
+[![Deploy](https://github.com/leanderdulac/Atom-Finance/actions/workflows/deploy.yml/badge.svg)](https://github.com/leanderdulac/Atom-Finance/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A comprehensive quantitative finance platform integrating pricing engines, risk analytics, ML predictions, portfolio optimization, and advanced market microstructure analysis.
 
@@ -79,10 +87,11 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 18, TypeScript, Vite 5, MUI 7 |
-| Backend | Python 3.11, FastAPI, NumPy, SciPy, Pandas |
-| Databases | PostgreSQL, MongoDB, Redis |
+| Backend | Python 3.12, FastAPI, NumPy, SciPy, Pandas |
+| ML | PyTorch, torchsde, scikit-learn |
+| Storage | SQLite (file-based), Redis (optional cache, falls back to in-memory) |
 | Deployment | Docker, docker-compose |
-| Auth | JWT (HMAC-SHA256) |
+| Auth | JWT (HS256) + bcrypt |
 
 ---
 
@@ -90,7 +99,7 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 
 ### Prerequisites
 - Node.js 20+
-- Python 3.11+
+- Python 3.12+
 - Docker & Docker Compose (optional)
 
 ### Option 1: Docker (Recommended)
@@ -109,7 +118,7 @@ The app will be available at `http://localhost:5173` with the API at `http://loc
 cd backend
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-pip install -r requirements.txt
+pip install -r requirements.lock   # pinned, reproducible — matches CI
 uvicorn main:app --reload --port 8000
 ```
 
@@ -126,82 +135,69 @@ Open `http://localhost:5173` in your browser.
 ## Project Structure
 
 ```
-ATOM/
+Atom-Finance/
 ├── backend/
-│   ├── main.py                    # FastAPI entry point
-│   ├── requirements.txt           # Python dependencies
+│   ├── main.py             # FastAPI entry point — wires every router below
+│   ├── requirements.txt    # Direct dependencies (backend/requirements.lock is the pinned, uv-compiled lockfile)
 │   ├── Dockerfile
-│   └── app/
-│       ├── api/                   # API route handlers
-│       │   ├── auth.py            # JWT authentication
-│       │   ├── pricing.py         # Options pricing endpoints
-│       │   ├── risk.py            # Risk analysis endpoints
-│       │   ├── portfolio.py       # Portfolio optimization
-│       │   ├── ml.py              # ML prediction endpoints
-│       │   ├── ghost_liquidity.py # Ghost liquidity analysis
-│       │   ├── black_swan.py      # Black swan detection
-│       │   ├── market_data.py     # Market data (synthetic)
-│       │   ├── reports.py         # PDF/CSV export
-│       │   └── backtesting.py     # Backtesting endpoints
-│       └── models/                # Core quantitative models
-│           ├── pricing.py         # BS, MC, Binomial, FD
-│           ├── volatility.py      # GARCH, Heston, EWMA
-│           ├── risk.py            # VaR, CVaR, Stress Test
-│           ├── portfolio.py       # Portfolio optimization
-│           ├── research_validation.py # Purged walk-forward, real estimators, net risk
-│           ├── ghost_liquidity.py # Ghost liquidity analyzer
-│           ├── black_swan.py      # Black swan detector
-│           └── backtesting.py     # Backtesting engine
+│   ├── app/
+│   │   ├── api/            # One module per router (auth, pricing, risk, portfolio, ml, ...)
+│   │   ├── core/           # Security (JWT/bcrypt), cache, rate limiter, AI provider factory
+│   │   ├── db/             # SQLite access layer (stdlib sqlite3, no ORM)
+│   │   ├── models/         # Quantitative models: pricing, volatility, risk, portfolio,
+│   │   │                   # backtesting, ghost liquidity, black swan, CAPM, EVT, copulas, Kronos (ML)
+│   │   └── services/       # External data providers (Brapi/B3, Binance, OpenBB, live quotes)
+│   └── tests/               # pytest suite (unit tests, no external network calls)
 ├── src/
-│   ├── main.tsx                   # React entry point
-│   ├── App.tsx                    # Main app with routing
-│   ├── theme/ThemeProvider.tsx     # MUI theme (dark/light)
-│   ├── services/api.ts            # API client
-│   └── pages/                     # Feature pages
-│       ├── Dashboard.tsx
-│       ├── PricingPage.tsx
-│       ├── RiskPage.tsx
-│       ├── PortfolioPage.tsx
-│       ├── MLPage.tsx
-│       ├── GhostLiquidityPage.tsx
-│       ├── BlackSwanPage.tsx
-│       ├── BacktestingPage.tsx
-│       └── StrategiesPage.tsx
-├── docker-compose.yml
-├── Dockerfile.frontend
-├── vite.config.ts
-├── index.html
+│   ├── main.tsx             # React entry point
+│   ├── App.tsx              # Routing
+│   ├── theme/               # MUI theme (dark/light)
+│   ├── services/api.ts      # API client
+│   ├── components/
+│   └── pages/                # One page per feature area (pricing, risk, portfolio, ML,
+│                              # backtesting, ghost liquidity, black swan, derivatives, paper trading, ...)
+├── research/quantmind/       # Embedded QuantMind research library (own README/tests/tooling)
+├── docs/                     # Product scope, pilot rules, production runbook, research policy
+├── docker-compose*.yml       # dev / prod / edge stacks
 └── package.json
 ```
 
+For the exhaustive, always-current list of files and endpoints, browse the tree directly or use the interactive API docs below — a hand-written list here would just go stale again.
+
 ---
 
-## API Endpoints
+## API
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/auth/register` | POST | Register new user |
-| `/api/auth/login` | POST | Login & get JWT |
-| `/api/pricing/black-scholes` | POST | Black-Scholes pricing |
-| `/api/pricing/monte-carlo` | POST | Monte Carlo pricing |
-| `/api/pricing/binomial` | POST | Binomial tree pricing |
-| `/api/pricing/finite-difference` | POST | FD pricing |
-| `/api/pricing/volatility-surface` | POST | Vol surface generation |
-| `/api/pricing/strategy` | POST | Options strategy analysis |
-| `/api/risk/var` | POST | Value at Risk |
-| `/api/risk/stress-test` | POST | Stress testing |
-| `/api/risk/garch` | POST | GARCH volatility |
-| `/api/portfolio/optimize` | POST | Portfolio optimization |
-| `/api/ml/evaluate` | POST | Out-of-sample research protocol (auth) |
-| `/api/ml/policy` | GET | Research policy and allowed features |
-| `/api/research/papers` | GET/POST | QuantMind paper history and extraction (auth) |
-| `/api/ghost-liquidity/analyze` | POST | Ghost liquidity analysis |
-| `/api/black-swan/analyze` | POST | Black swan detection |
-| `/api/backtesting/run` | POST | Run backtest |
-| `/api/market-data/quote/{symbol}` | GET | Real-time quote |
-| `/api/market-data/history/{symbol}` | GET | Historical data |
-| `/api/reports/pdf` | POST | Generate PDF report |
-| `/api/reports/csv` | POST | Generate CSV export |
+Every router is mounted under `/api` in [backend/main.py](backend/main.py); most require a bearer token (see `/api/auth/register` and `/api/auth/login`). With the backend running, the full interactive reference is at:
+
+- **Swagger UI** — `http://localhost:8000/docs`
+- **ReDoc** — `http://localhost:8000/redoc`
+
+| Prefix | Area |
+|--------|------|
+| `/api/auth` | Registration & JWT login |
+| `/api/pricing` | Black-Scholes, Monte Carlo, Binomial, Finite Difference, vol surface, strategies |
+| `/api/risk` | VaR, CVaR, stress testing, GARCH |
+| `/api/hedge` | Dynamic hedging |
+| `/api/portfolio` | Markowitz, max Sharpe, min variance, risk parity, Black-Litterman |
+| `/api/ml` | Research protocol (purged walk-forward, real estimators) |
+| `/api/neural-sde` | Neural SDE simulation |
+| `/api/ghost-liquidity` | Cross-venue duplicate & phantom order detection |
+| `/api/black-swan` | Tail risk, regime change, composite risk score |
+| `/api/market-data` | Quotes & history |
+| `/api/ibovespa` | Ibovespa dashboard data |
+| `/api/backtesting` | Strategy backtests |
+| `/api/capm` | CAPM & Kelly sizing |
+| `/api/evt` | Extreme Value Theory (tail risk) |
+| `/api/copulas` | Dependence / contagion modeling |
+| `/api/reports` | CSV/JSON export, AI-generated analysis |
+| `/api/screener` | Multi-AI B3 screener |
+| `/api/autopilot` | Options playbook generation |
+| `/api/binance` | Binance crypto market data |
+| `/api/derivatives` | Derivatives desk planner |
+| `/api/sources` | Market data source quality/monitoring |
+| `/api/research` | QuantMind paper history & extraction |
+| `/api/paper-trades` | Manual paper-trading journal |
 
 ---
 
@@ -214,13 +210,20 @@ cp .env.example .env
 ```
 
 Key environment variables:
-- `SECRET_KEY` — JWT signing key
-- `DATABASE_URL` — PostgreSQL connection string
-- `MONGODB_URL` — MongoDB connection string
-- `REDIS_URL` — Redis connection string
+- `SECRET_KEY` — JWT signing key (required in production, 32+ bytes)
+- `ATOM_DB_PATH` — path to the SQLite database file (optional, defaults to `atom_reports.db` at the repo root)
+- `REDIS_URL` — Redis connection string (optional; falls back to an in-memory cache when unset or unreachable)
+
+See [.env.example](.env.example) for the full list, including AI provider keys and market data providers.
+
+---
+
+## Paper Trading
+
+O acompanhamento manual de [operações simuladas](docs/PAPER-TRADING.md) registra entrada, evolução e saída dos planos de derivativos, com custos e histórico por usuário.
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)
