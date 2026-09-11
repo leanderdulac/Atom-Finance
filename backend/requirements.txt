@@ -38,6 +38,13 @@ python-dotenv>=1.2.2,<2
 httpx~=0.27.2
 redis~=5.1.1
 
+# Postgres migration spike (spike/postgres-migration branch only — see
+# docs/POSTGRES-MIGRATION-SPIKE.md). Alembic pulls in SQLAlchemy + greenlet
+# for its own async engine; the app itself queries via asyncpg directly.
+asyncpg~=0.30.0
+alembic~=1.19.2
+greenlet~=3.1.1
+
 # Rate limiting
 slowapi~=0.1.9
 

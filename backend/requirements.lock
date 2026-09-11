@@ -2,6 +2,8 @@
 #    uv pip compile backend/requirements.txt --universal --torch-backend cpu --emit-index-url -o backend/requirements.lock
 --index-url https://pypi.org/simple
 
+alembic==1.19.2
+    # via -r backend/requirements.txt
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -16,6 +18,8 @@ anyio==4.15.1
     #   openai
     #   starlette
     #   watchfiles
+asyncpg==0.30.0
+    # via -r backend/requirements.txt
 bcrypt==4.2.1
     # via -r backend/requirements.txt
 beautifulsoup4==4.15.0
@@ -71,6 +75,10 @@ google-auth==2.58.0
     # via google-genai
 google-genai==1.2.0
     # via -r backend/requirements.txt
+greenlet==3.1.1
+    # via
+    #   -r backend/requirements.txt
+    #   sqlalchemy
 h11==0.16.0
     # via
     #   httpcore
@@ -114,8 +122,12 @@ limits==5.8.0
     # via slowapi
 lxml==6.1.3
     # via yfinance
+mako==1.4.1
+    # via alembic
 markupsafe==3.0.3
-    # via jinja2
+    # via
+    #   jinja2
+    #   mako
 mpmath==1.3.0
     # via sympy
 multitasking==0.0.13
@@ -223,6 +235,8 @@ sniffio==1.3.1
     #   openai
 soupsieve==2.9.2
     # via beautifulsoup4
+sqlalchemy==2.0.52
+    # via alembic
 starlette==1.6.0
     # via
     #   -r backend/requirements.txt
@@ -253,6 +267,7 @@ truststore==0.10.4 ; sys_platform != 'emscripten'
     #   httpx2
 typing-extensions==4.16.0
     # via
+    #   alembic
     #   anthropic
     #   anyio
     #   beautifulsoup4
@@ -265,6 +280,7 @@ typing-extensions==4.16.0
     #   pydantic
     #   pydantic-core
     #   pytest-asyncio
+    #   sqlalchemy
     #   starlette
     #   torch
     #   typing-inspection
