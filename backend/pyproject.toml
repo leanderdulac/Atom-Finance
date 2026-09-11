@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = ["app/models/kronos"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports/vars, undefined names)
+    "I",   # isort
+    "B",   # bugbear (common bug patterns)
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line length handled loosely; long f-strings/URLs are common here
+    "E701",  # compound statements (`if x: y`) — pre-existing style, not worth a mass rewrite
+    "E702",
+    "B008",  # FastAPI's Depends()/Query()/Security() in defaults is the framework's own idiom
+    "B007",  # unused loop variables here are all harmless iteration counters (checked individually)
+    "E741",  # ambiguous single-letter names (`l`) — cosmetic, checked individually for real bugs
+    "E402",  # main.py deliberately calls load_dotenv() before importing modules that read env vars at import time
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixtures are imported and then re-declared as parameter names — standard pytest pattern.
+"tests/*" = ["B018", "F811"]
