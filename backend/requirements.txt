@@ -45,6 +45,9 @@ asyncpg~=0.30.0
 alembic~=1.19.2
 greenlet~=3.1.1
 
+# Observability — optional (no-op without SENTRY_DSN set)
+sentry-sdk[fastapi]~=2.19.0
+
 # Rate limiting
 slowapi~=0.1.9
 

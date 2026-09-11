@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 6: observability foundations (Fase 2)
+
+### Added
+- `backend/app/core/observability.py`: per-request `X-Request-ID` (middleware, honors an inbound id from a proxy/client or generates a UUID) threaded through every log line of that request via a `contextvars`-backed logging filter — attached at the handler level so it applies to every module's logger, not just the ones that opt in. Verified against a real request: a forced DB-outage 503 shows the same request id on the client response header and on the server's `ERROR ... Database readiness failed` log line.
+- Optional Sentry error tracking (`sentry-sdk[fastapi]`), gated entirely on `SENTRY_DSN` — unset (the default in dev/CI/`.env.example`) means `init_sentry()` is a no-op and nothing about the app's behavior changes. `SENTRY_TRACES_SAMPLE_RATE` defaults to `0.0`: this adds error capture, not performance tracing, which isn't worth the event volume at pilot scale yet.
+- `docs/PRODUCTION.md` updated: request-id correlation and Sentry documented under "Controles implementados" and "Validação e limites".
+
+### Notes
+- Deliberately did not add structured (JSON) logging or a metrics/Prometheus endpoint in this round — the request-id + Sentry combination covers the concrete gap (an operator today has no way to trace one request's story or get paged on an unhandled exception); log-shipping/metrics infrastructure is a decision for whoever stands up the real observability stack, not something to guess at from this repo alone.
+
 ## [Unreleased] — round 5: Heston smile, Johansen, live books, EDGAR
 
 ### Added

@@ -42,15 +42,14 @@ from app.api import (  # noqa: E402
 from app.api.research import router as research_router
 from app.core.cache import Cache  # noqa: E402
 from app.core.limiter import limiter
+from app.core.observability import configure_logging, init_sentry, request_id_middleware
 from app.core.runtime import exclusive_runtime
 from app.core.security import get_current_user
 from app.db.database import readiness
 from app.db.postgres import close_pool
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
-)
+configure_logging()
+init_sentry()
 logger = logging.getLogger(__name__)
 
 # Shared rate limiter instance
@@ -81,7 +80,8 @@ app = FastAPI(
     description=(
         "Advanced quantitative finance tools: options pricing, risk analysis, "
         "portfolio optimisation, purged walk-forward research, Neural SDE, "
-        "ghost liquidity & black swan detection."
+        "ghost liquidity & black swan detection, and from-scratch desk papers "
+        "(Heston CF, Engle–Granger, Avellaneda–Stoikov, Fama–French 5, scanners)."
     ),
     version="1.0.0",
     lifespan=lifespan,
@@ -91,6 +91,11 @@ app = FastAPI(
 )
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
+# Added first so it's outermost (Starlette runs the first-added middleware
+# first on the way in, last on the way out): every other layer below —
+# SlowAPI, CORS, the request itself — runs with the request id already set,
+# so their log lines (and any error Sentry captures) carry it too.
+app.middleware("http")(request_id_middleware)
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 from slowapi import _rate_limit_exceeded_handler
@@ -142,9 +147,11 @@ protected.include_router(binance_router,         prefix="/api/binance",       ta
 protected.include_router(ai_proxy_router,        prefix="/api/ai",            tags=["AI Proxy"])
 
 
+from app.api.desk import router as desk_router
 from app.api.paper_trades import router as paper_trades_router
 
 protected.include_router(paper_trades_router, prefix="/api/paper-trades", tags=["Paper Trading"])
+protected.include_router(desk_router, prefix="/api/desk", tags=["Quant Desk"])
 app.include_router(protected)
 
 @app.middleware("http")
