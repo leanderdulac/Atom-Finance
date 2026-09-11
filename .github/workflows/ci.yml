@@ -54,7 +54,7 @@ jobs:
             -x \
             --cov=app \
             --cov-report=term-missing \
-            --cov-fail-under=40
+            --cov-fail-under=50
 
       - name: Audit Python dependencies
         run: |
