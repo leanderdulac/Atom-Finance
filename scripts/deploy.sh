@@ -25,8 +25,17 @@ fi
 "${compose[@]}" config --quiet
 "${compose[@]}" build backend frontend
 # Online backup using the currently running image, before changing the service.
+# Storage is Postgres (managed, outside this compose) since round 3 — pg_dump
+# runs inside the container (it has ATOM_DATABASE_URL and, since the Dockerfile
+# started installing postgresql-client, the pg_dump binary), then the dump is
+# copied out to the host: the container's /tmp does not survive `compose up`
+# replacing it.
 if [[ -n "$("${compose[@]}" ps --status running -q backend)" ]]; then
-  "${compose[@]}" exec -T backend python -c 'import os,sqlite3,sys; p=sys.argv[1]; fd=os.open(p,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600); os.close(fd); src=sqlite3.connect("file:/data/atom_reports.db?mode=ro",uri=True); dst=sqlite3.connect(p); src.backup(dst); assert dst.execute("PRAGMA integrity_check").fetchall()==[("ok",)]; dst.close(); src.close()' "/data/predeploy-$(date -u +%Y%m%dT%H%M%SZ).db"
+  mkdir -p "$APP_DIR/backups"
+  backup_file="predeploy-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  "${compose[@]}" exec -T backend python -m app.db.maintenance backup "/tmp/$backup_file"
+  "${compose[@]}" cp "backend:/tmp/$backup_file" "$APP_DIR/backups/$backup_file"
+  chmod 600 "$APP_DIR/backups/$backup_file"
 fi
 # --wait fails the release if any container fails readiness. Retain images/worktrees.
 "${compose[@]}" up -d --wait --wait-timeout 180 "${services[@]}"

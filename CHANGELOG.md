@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 7: closing out Fase 1 (real infra provisioning)
+
+The Postgres migration itself (round 3) ported schema and code; this round
+closes the operational gaps that were left pointing at the old SQLite-era
+setup — found by reading the deploy/provisioning scripts end to end rather
+than just the app code.
+
+### Fixed
+- `scripts/deploy.sh`'s pre-deploy backup step still ran the *old SQLite* backup one-liner (`sqlite3.connect("file:/data/atom_reports.db...")`) — since round 3, there is no `/data` SQLite file and the backend container has no `/data` volume at all, so every deploy's backup step would have failed outright the first time it actually ran against a live backend. Replaced with `python -m app.db.maintenance backup` (pg_dump) run inside the container, then copied out to `$APP_DIR/backups/` on the host (mode 600) — the container's own filesystem doesn't survive `compose up` replacing it.
+- `backend/Dockerfile` never installed `postgresql-client` — `pg_dump`/`pg_restore` (added in round 3) were missing from the actual production image the whole time. CI's backup/restore test passed anyway because it installs `postgresql-client` on the *runner*, not inside the image, so this went undetected. Also dropped the dead `mkdir -p /data` (leftover from the SQLite volume, unused by any service since round 3).
+- `scripts/setup-server.sh`'s generated `.env.prod` template never had an `ATOM_DATABASE_URL` line — following it literally produced a production env file with no database configured at all. Added it (with a `REPLACE_WITH_...` placeholder, matching `.env.example`'s convention) plus `SENTRY_DSN`, and added a migrations step to the script's own "next steps" output so `alembic upgrade head` isn't skipped on a fresh host.
+
+### Added
+- `scripts/provision-digitalocean.sh`: `doctl`-based provisioning for a managed Postgres cluster (`postgres` subcommand — cluster, database, user, and prints the resulting `ATOM_DATABASE_URL`) and a staging droplet (`staging` subcommand, reuses `setup-server.sh` for the actual host setup). Idempotent — re-running with the same names reuses existing resources instead of creating duplicates. Requires `doctl auth init` and `jq`; creates real, billed DigitalOcean resources, so it prompts for confirmation unless `--yes` is passed, and is never invoked by CI or any other script. Every `doctl` flag used was checked against `doctl <cmd> --help` locally (this environment had no credentials or network access to actually provision anything, so the JSON-parsing logic was instead verified against hand-built fixtures matching doctl's documented output shape).
+- `docs/PRODUCTION.md`: new "Staging" section (same compose and setup script, separate droplet and Postgres cluster from production) and a "Segredos" section explaining, explicitly, why this pilot uses a `.env.prod` file rather than a dedicated secrets vault (Vault, AWS Secrets Manager, ...) — single-host, one operator, no rotation requirement the file doesn't already cover; a vault would be an operational dependency without a problem it solves yet at this scale.
+
+### Notes
+- This closes every code-side and documentation-side gap in Fase 1. What remains is provisioning itself — actually running `scripts/provision-digitalocean.sh` against a real account — which needs a human with billing authority and DigitalOcean credentials, not something to do from inside this repo.
+
 ## [Unreleased] — round 6: observability foundations (Fase 2)
 
 ### Added

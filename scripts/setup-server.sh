@@ -106,16 +106,25 @@ else
     cat > "$PROD_ENV" << EOF
 # ── ATOM Production Environment ──────────────────────────────────
 # Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-# IMPORTANT: Fill in your API keys below before starting.
+# IMPORTANT: Fill in your API keys and ATOM_DATABASE_URL below before starting.
 
 ATOM_ENV=production
 
 # Security (auto-generated — do NOT change after first start)
 SECRET_KEY=${SECRET}
 
+# Managed Postgres — this compose stack does not run its own database.
+# Provision one first (scripts/provision-digitalocean.sh, or manually — see
+# docs/PRODUCTION.md) and run \`alembic upgrade head\` against it before the
+# first start.
+ATOM_DATABASE_URL=postgresql+asyncpg://REPLACE_WITH_USER:REPLACE_WITH_PASSWORD@REPLACE_WITH_HOST:5432/REPLACE_WITH_DB
+
 # Domain (update to your actual domain)
 FRONTEND_URL=https://atom.yourdomain.com
 ALLOWED_ORIGINS=https://atom.yourdomain.com
+
+# Optional error tracking — leave empty to keep Sentry fully disabled.
+SENTRY_DSN=
 
 # B3 Market Data — https://brapi.dev (free tier: 15 req/min)
 BRAPI_TOKEN=
@@ -179,19 +188,26 @@ echo -e "${GREEN}═════════════════════
 echo ""
 echo "  Next steps:"
 echo ""
-echo "  1. Fill in your API keys:"
+echo "  1. Provision a managed Postgres instance if you haven't yet"
+echo "     (bash ${APP_DIR}/scripts/provision-digitalocean.sh postgres — or any"
+echo "     managed provider) and fill in ATOM_DATABASE_URL plus your API keys:"
 echo "     nano ${PROD_ENV}"
 echo ""
-echo "  2. Start ATOM:"
+echo "  2. Apply migrations against that database (from a machine with network"
+echo "     access to it — this host, once docker is up, works):"
+echo "     cd ${APP_DIR} && docker compose -f docker-compose.prod.yml run --rm --entrypoint '' \\"
+echo "       --env-file ${PROD_ENV} backend alembic upgrade head"
+echo ""
+echo "  3. Start ATOM:"
 echo "     systemctl start atom"
 echo ""
-echo "  3. Check logs:"
+echo "  4. Check logs:"
 echo "     journalctl -u atom -f"
 echo "     docker compose -f ${APP_DIR}/docker-compose.prod.yml logs -f"
 echo ""
-echo "  4. Point your domain to this server:"
+echo "  5. Point your domain to this server:"
 echo "     A record → ${SERVER_IP}"
 echo ""
-echo "  5. (Optional) Set up TLS via Cloudflare or Certbot:"
+echo "  6. (Optional) Set up TLS via Cloudflare or Certbot:"
 echo "     bash ${APP_DIR}/scripts/setup-ssl.sh yourdomain.com"
 echo ""

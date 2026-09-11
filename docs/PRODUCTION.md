@@ -16,8 +16,8 @@ Esta configuração suporta um piloto privado de pesquisa e planejamento condici
 
 ## Instalação e configuração
 
-1. Provisionar um Postgres gerenciado (DigitalOcean Managed Databases, RDS, Cloud SQL, ...) — este compose não sobe Postgres próprio; backups/HA/PITR ficam por conta do provedor. Anotar a connection string.
-2. Preparar um host com Docker Compose v2, Git, espaço para as imagens. A configuração de aplicação é single-host (um único worker; ver nota acima sobre recuperação de experimentos).
+1. Provisionar um Postgres gerenciado (DigitalOcean Managed Databases, RDS, Cloud SQL, ...) — este compose não sobe Postgres próprio; backups/HA/PITR ficam por conta do provedor. Anotar a connection string. No DigitalOcean, `scripts/provision-digitalocean.sh postgres` automatiza a criação do cluster, banco e usuário (idempotente — rodar de novo reaproveita o que já existe) e imprime a `ATOM_DATABASE_URL` pronta; exige `doctl` autenticado (`doctl auth init`) e `jq` na máquina de onde é executado. Um cluster novo não aceita conexão nenhuma até uma regra de firewall ser adicionada — o próprio script lembra o comando (`doctl databases firewalls append`) apontando para o host da aplicação.
+2. Preparar um host com Docker Compose v2, Git, espaço para as imagens. A configuração de aplicação é single-host (um único worker; ver nota acima sobre recuperação de experimentos). `scripts/setup-server.sh` faz esse preparo (usuário sem privilégio, firewall, fail2ban, Docker, clone do repo, serviço systemd) numa droplet Ubuntu 22.04 nova — inclusive `scripts/provision-digitalocean.sh staging` para criar essa droplet.
 3. Criar `.env.prod` fora dos releases, com modo 600. Definir `SECRET_KEY` aleatório, `ATOM_DATABASE_URL` (do passo 1, no formato `postgresql+asyncpg://usuario:senha@host:5432/banco`), `FRONTEND_URL` e `ALLOWED_ORIGINS` com a origem HTTPS real. Definir tokens licenciados e respectivos `OPLAB_OWNER`/`CEDRO_OWNER` apenas se contratados. Não copiar credenciais de negociação para o serviço.
 4. Aplicar as migrations contra o banco do passo 1 antes do primeiro deploy: `cd backend && ATOM_DATABASE_URL=... alembic upgrade head` (rodar de uma máquina com acesso à rede do banco, ou via `docker compose exec backend alembic upgrade head` após o primeiro `up`). Se já existir um `atom_reports.db` (SQLite) de uma instalação anterior a este corte para Postgres, migrar os dados uma única vez logo em seguida: `python -m app.db.migrate_legacy_sqlite /caminho/atom_reports.db` (aceita `--dry-run` para conferir as contagens antes; recusa rodar se as tabelas de destino já tiverem linhas, a menos que `--force` seja passado).
 5. Terminar TLS em um proxy do host apontando para `127.0.0.1:8080`. Configurar certificado, renovação e encaminhamento apropriado. O compose não instala TLS. Nunca abrir a porta HTTP diretamente à internet.
@@ -50,11 +50,19 @@ Parar o serviço antes de restaurar sobre o banco ativo, ou restaurar num banco 
 
 ## Publicação e recuperação
 
-Instalar a versão revisada de `scripts/deploy.sh` no host antes de habilitar o workflow. O script exige `TARGET_SHA`, rejeita releases atrasados em relação a `origin/main`, cria worktree separado, recusa alterações no checkout do release e nunca executa `git reset --hard`. Preserva imagens e releases anteriores. Antes de substituir um backend existente, gera backup consistente no volume.
+Instalar a versão revisada de `scripts/deploy.sh` no host antes de habilitar o workflow. O script exige `TARGET_SHA`, rejeita releases atrasados em relação a `origin/main`, cria worktree separado, recusa alterações no checkout do release e nunca executa `git reset --hard`. Preserva imagens e releases anteriores. Antes de substituir um backend existente, roda `pg_dump` de dentro do container atual e copia o arquivo para `$APP_DIR/backups/` no host (modo 600) — o Postgres em si nunca fica no volume deste compose, então é isso, e não uma cópia de arquivo local, que garante ter algo pra restaurar se o deploy for adiante com um schema quebrado.
 
 A implantação só registra `deployed-sha` depois que `compose up --wait` confirma os serviços saudáveis. Falha interrompe a publicação; não há rollback automático de esquema. Para recuperar: bloquear tráfego, examinar logs, usar o compose do release anterior e, se necessário, restaurar backup em volume novo. Manter o mesmo nome de projeto `atom` e o mesmo arquivo de ambiente. Não apagar imagens antigas até encerrar a janela de recuperação.
 
 Configurar no GitHub o environment `production` e os secrets `DO_HOST`, `DO_USER`, `DO_SSH_KEY`. Nenhum servidor foi publicado por esta entrega local.
+
+## Staging
+
+Mesmo compose (`docker-compose.prod.yml`), mesmo `scripts/setup-server.sh`, um droplet e um cluster Postgres à parte — nunca aponte staging para o banco ou o `.env.prod` de produção. `scripts/provision-digitalocean.sh staging` cria o droplet; `scripts/provision-digitalocean.sh postgres` com `ATOM_DO_PG_NAME=atom-postgres-staging` cria o banco. Fora isso, é o mesmo passo a passo da seção "Instalação e configuração" acima, começando do zero num host novo.
+
+## Segredos
+
+Este piloto guarda segredos num `.env.prod` fora dos releases, modo 600, nunca versionado — não num cofre dedicado (Vault, AWS Secrets Manager, ...). Para uma implantação single-host, sem múltiplos serviços consumindo o mesmo segredo nem rotação automática, um cofre adicionaria uma dependência operacional nova sem resolver um problema que essa configuração já não resolva; `scripts/setup-server.sh` já gera `SECRET_KEY` aleatoriamente e cuida da permissão do arquivo. Reconsiderar isso quando houver mais de um serviço ou operador precisando do mesmo segredo, ou um requisito de rotação que o arquivo sozinho não cubra.
 
 ## Validação e limites
 
