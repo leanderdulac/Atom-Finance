@@ -89,7 +89,7 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 | Frontend | React 18, TypeScript, Vite 5, MUI 7 |
 | Backend | Python 3.12, FastAPI, NumPy, SciPy, Pandas |
 | ML | PyTorch, torchsde, scikit-learn |
-| Storage | SQLite (file-based), Redis (optional cache, falls back to in-memory) |
+| Storage | PostgreSQL (asyncpg, no ORM), Redis (optional cache, falls back to in-memory) |
 | Deployment | Docker, docker-compose |
 | Auth | JWT (HS256) + bcrypt |
 
@@ -113,12 +113,15 @@ The app will be available at `http://localhost:5173` with the API at `http://loc
 
 ### Option 2: Manual Setup
 
-**Backend:**
+**Backend:** needs a Postgres instance — `docker run -d -e POSTGRES_USER=atom -e POSTGRES_PASSWORD=atom_dev -e POSTGRES_DB=atom_dev -p 5432:5432 postgres:16-alpine` works for local dev.
+
 ```bash
 cd backend
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 pip install -r requirements.lock   # pinned, reproducible — matches CI
+export ATOM_DATABASE_URL=postgresql+asyncpg://atom:atom_dev@localhost:5432/atom_dev
+alembic upgrade head                # apply the schema
 uvicorn main:app --reload --port 8000
 ```
 
@@ -143,7 +146,7 @@ Atom-Finance/
 │   ├── app/
 │   │   ├── api/            # One module per router (auth, pricing, risk, portfolio, ml, ...)
 │   │   ├── core/           # Security (JWT/bcrypt), cache, rate limiter, AI provider factory
-│   │   ├── db/             # SQLite access layer (stdlib sqlite3, no ORM)
+│   │   ├── db/             # Postgres access layer (asyncpg, no ORM) — schema in alembic/versions/
 │   │   ├── models/         # Quantitative models: pricing, volatility, risk, portfolio,
 │   │   │                   # backtesting, ghost liquidity, black swan, CAPM, EVT, copulas, Kronos (ML)
 │   │   └── services/       # External data providers (Brapi/B3, Binance, OpenBB, live quotes)
@@ -211,7 +214,7 @@ cp .env.example .env
 
 Key environment variables:
 - `SECRET_KEY` — JWT signing key (required in production, 32+ bytes)
-- `ATOM_DB_PATH` — path to the SQLite database file (optional, defaults to `atom_reports.db` at the repo root)
+- `ATOM_DATABASE_URL` — Postgres connection string (`postgresql+asyncpg://user:pass@host:5432/db`); run `alembic upgrade head` from `backend/` after pointing it at a fresh database
 - `REDIS_URL` — Redis connection string (optional; falls back to an in-memory cache when unset or unreachable)
 
 See [.env.example](.env.example) for the full list, including AI provider keys and market data providers.

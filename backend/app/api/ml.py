@@ -53,28 +53,28 @@ async def policy():
 @limiter.limit('5/minute')
 async def evaluate(request: Request, req: ExperimentRequest, owner: str = Depends(get_current_user)):
     inputs = req.model_dump(mode='json')
-    run_id = await asyncio.to_thread(experiments.begin, owner, inputs)
+    run_id = await experiments.begin(owner, inputs)
     try:
         result = await asyncio.to_thread(evaluate_experiment, **inputs)
     except ValueError as exc:
-        await asyncio.to_thread(experiments.finish, run_id, error=str(exc))
+        await experiments.finish(run_id, error=str(exc))
         raise HTTPException(422, str(exc)) from None
     except Exception:
-        await asyncio.to_thread(experiments.finish, run_id, error='Falha no processamento. Crie uma nova tentativa para repetir.')
+        await experiments.finish(run_id, error='Falha no processamento. Crie uma nova tentativa para repetir.')
         raise HTTPException(500, 'Experimento falhou; tentativa preservada no diário.') from None
     result['run_id'] = run_id
-    await asyncio.to_thread(experiments.finish, run_id, result=result)
+    await experiments.finish(run_id, result=result)
     return result
 
 
 @router.get('/experiments')
 async def history(owner: str = Depends(get_current_user), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
-    return await asyncio.to_thread(experiments.history, owner, limit, offset)
+    return await experiments.history(owner, limit, offset)
 
 
 @router.get('/experiments/{run_id}')
 async def detail(run_id: str, owner: str = Depends(get_current_user)):
-    item = await asyncio.to_thread(experiments.detail, owner, run_id)
+    item = await experiments.detail(owner, run_id)
     if item is None: raise HTTPException(404, 'Experimento não encontrado.')
     return item
 
@@ -87,9 +87,9 @@ class ReviewRequest(BaseModel):
 
 @router.post('/experiments/{run_id}/reviews')
 async def review(run_id: str, req: ReviewRequest, owner: str = Depends(get_current_user)):
-    if not await asyncio.to_thread(experiments.review, owner, run_id, req.decision, req.rationale):
+    if not await experiments.review(owner, run_id, req.decision, req.rationale):
         raise HTTPException(404, 'Experimento concluído não encontrado.')
-    return await asyncio.to_thread(experiments.detail, owner, run_id)
+    return await experiments.detail(owner, run_id)
 
 
 @router.post('/predict')

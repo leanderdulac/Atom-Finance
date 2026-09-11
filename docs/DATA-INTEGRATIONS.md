@@ -31,7 +31,7 @@ A restrição por usuário permite testar uma assinatura individual sem comparti
 - Selic SGS 11 é percentual ao dia útil. A anualização usa composição de 252 dias e não é uma curva de desconto por vencimento.
 - ITR/DFP listam documentos publicados. Não sinalizam que um calendário de eventos futuros foi conferido.
 - URLs dos provedores são fixas, redirects desativados, timeout 20 s e resposta limitada a 8 MB. Erros externos não expõem corpo ou credenciais.
-- Snapshots são gravados no SQLite existente e recuperados somente pelo próprio usuário. Não há sincronização agendada, stream contínuo, retenção automática ou garantia operacional de disponibilidade.
+- Snapshots são gravados no Postgres existente e recuperados somente pelo próprio usuário. Não há sincronização agendada, stream contínuo, retenção automática ou garantia operacional de disponibilidade.
 
 ## Próximo passo necessário para planos com mercado real
 Homologar OpLab ou Cedro com acesso autorizado: confirmar atraso contratado, timestamps, unidades de quantidades, lote, fator de cotação, origem do spot e estilo de exercício. Depois acrescentar a ponte server-side para o planejador e o calendário oficial de sessões/eventos. Não transformar EOD em cotação atual para contornar esse requisito.

@@ -115,9 +115,7 @@ def test_forest_and_baselines_compare_identical_periods():
     assert len({len(m['equity']) for m in report['results'].values()}) == 1
 
 
-def test_api_rejects_bad_data_and_legacy_predictions(tmp_path, monkeypatch):
-    from app.db import database
-    monkeypatch.setattr(database, '_DB_PATH', str(tmp_path / 'experiments.db'))
+def test_api_rejects_bad_data_and_legacy_predictions():
     prices, dates = dataset()
     base = dict(prices=prices, dates=dates, hypothesis='Economic hypothesis for a controlled unit test.', data_source='synthetic_demo')
     for update in ({'dates': dates[::-1]}, {'prices': [0] + prices[1:]}, {'dates': dates[:-1]}, {'hypothesis': 'LSTM'}, {'model': 'lstm'}, {'commission_bps': float('nan')}):

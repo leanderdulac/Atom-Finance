@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -78,8 +79,8 @@ def test_missing_duplicate_ticker_and_liquidation_side(client):
 def test_api_is_owner_scoped_read_only_and_list_omits_raw(client):
     client.app.include_router(market_sources.router,prefix='/sources')
     trade=tracked(client)
-    own=market_sources.save('alice',snapshot(trade))
-    other=market_sources.save('bob',snapshot(trade))
+    own=asyncio.run(market_sources.save('alice',snapshot(trade)))
+    other=asyncio.run(market_sources.save('bob',snapshot(trade)))
     path=f"/paper/{trade['id']}/source-check/"
     before=client.get('/paper/'+trade['id']).json()
     response=client.get(path+own['snapshot_id'])

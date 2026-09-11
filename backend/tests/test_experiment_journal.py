@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -8,12 +9,11 @@ from app.api.binance import router as binance_router
 from app.api.ml import router
 from app.core.limiter import limiter
 from app.core.security import get_current_user
-from app.db import database, experiments
+from app.db import experiments
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(database, '_DB_PATH', str(tmp_path / 'journal.db'))
+def client():
     app = FastAPI(); app.state.limiter = limiter
     app.include_router(router, prefix='/ml'); app.include_router(binance_router, prefix='/binance')
     app.dependency_overrides[get_current_user] = lambda: 'alice'
@@ -51,7 +51,7 @@ def test_failures_and_repeated_attempts_preserved(client):
     a,b = rows['items']
     assert a['id'] != b['id'] and a['input_hash'] == b['input_hash']
     assert a['status'] == b['status'] == 'failed'
-    experiments.finish(a['id'], result={'overwrite': True})
+    asyncio.run(experiments.finish(a['id'], result={'overwrite': True}))
     assert client.get(f"/ml/experiments/{a['id']}").json()['status'] == 'failed'
 
 def test_exchange_routes_never_touch_private_account(client):

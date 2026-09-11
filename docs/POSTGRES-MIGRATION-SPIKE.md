@@ -1,5 +1,7 @@
 # Spike: SQLite → PostgreSQL migration
 
+> **Update:** the recommendation below was carried out on `feature/postgres-migration` (see `CHANGELOG.md`). This document is kept as-is for the historical record — the findings and gotchas below are exactly what shaped that follow-up work, including the `paper_trades.py` locking design and the two bugs (DDL transactionality, a CancelledError-shaped one this doc doesn't cover) that came up during the real migration too.
+
 **Branch:** `spike/postgres-migration` (not merged — throwaway by design)
 **Goal:** validate the real effort and surface real gotchas before committing Fase 1 of the enterprise roadmap to this migration.
 **Time-boxed to:** one focused session.

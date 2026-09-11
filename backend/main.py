@@ -45,6 +45,7 @@ from app.core.limiter import limiter
 from app.core.runtime import exclusive_runtime
 from app.core.security import get_current_user
 from app.db.database import readiness
+from app.db.postgres import close_pool
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,8 +70,9 @@ async def lifespan(_app: FastAPI):
         logger.info("Cache backend: Redis")
     else:
         logger.warning("Cache backend: in-memory (Redis not available)")
-    with exclusive_runtime():
+    async with exclusive_runtime():
         yield
+    await close_pool()
     logger.info("ATOM shutting down…")
 
 
@@ -162,9 +164,9 @@ def live():
 
 @app.get("/api/health")
 @limiter.exempt
-def health_check():
+async def health_check():
     try:
-        readiness()
+        await readiness()
     except Exception:
         logger.exception("Database readiness failed")
         return JSONResponse(status_code=503, content={"status": "unavailable"})

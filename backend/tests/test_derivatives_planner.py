@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from app.api.derivatives import router
 from app.core.limiter import limiter
 from app.core.security import get_current_user
-from app.db import database
 from app.models.derivatives_planner import PlanRequest, make_plans
 
 NOW = datetime(2026, 9, 8, 15, tzinfo=UTC)
@@ -92,8 +91,7 @@ def test_schema_rejects_ambiguous_or_invalid_data():
     data=payload();data['theses'][0]['options'][0]['bid']=10
     with pytest.raises(ValueError): PlanRequest(**data)
 
-def test_saved_plan_owner_isolation(tmp_path, monkeypatch):
-    monkeypatch.setattr(database,'_DB_PATH',str(tmp_path/'plans.db'))
+def test_saved_plan_owner_isolation():
     app=FastAPI();app.state.limiter=limiter;app.include_router(router,prefix='/derivatives')
     client=TestClient(app)
     assert client.get('/derivatives/plans').status_code==401

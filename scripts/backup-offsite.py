@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Online SQLite snapshot -> encrypted restic repository. Never prune backups."""
+"""Online Postgres dump -> encrypted restic repository. Never prune backups.
+
+The managed Postgres provider's own automated backups (daily + PITR) are the
+primary recovery mechanism — this is a secondary, encrypted, offsite copy on
+top of that, not a replacement for it."""
 import json
 import os
 from pathlib import Path
@@ -25,20 +29,20 @@ def backup():
     state_dir = Path(os.environ.get('ATOM_OPS_STATE', '/var/lib/atom-ops'))
     compose = ['docker', 'compose', '-p', 'atom', '--env-file', env_file,
                '-f', str(release / 'docker-compose.prod.yml')]
-    name = 'offsite-' + str(uuid4()) + '.db'
-    remote = '/data/' + name
+    name = 'offsite-' + str(uuid4()) + '.dump'
+    remote = '/tmp/' + name
     snapshot_created = False
     try:
         run(compose + ['exec', '-T', 'backend', 'python', '-m', 'app.db.maintenance',
-                       'backup', '/data/atom_reports.db', remote])
+                       'backup', remote])
         snapshot_created = True
         with tempfile.TemporaryDirectory(prefix='atom-backup-') as staging:
-            local = Path(staging) / 'atom.db'
+            local = Path(staging) / 'atom.dump'
             run(compose + ['cp', 'backend:' + remote, str(local)])
             local.chmod(0o600)
             # Stable stdin filename prevents ephemeral paths from splitting history.
             with local.open('rb') as source:
-                subprocess.run(['restic', 'backup', '--stdin', '--stdin-filename', 'atom.db',
+                subprocess.run(['restic', 'backup', '--stdin', '--stdin-filename', 'atom.dump',
                                 '--tag', 'atom-core'], stdin=source, check=True, timeout=1800)
         state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         # Only advance freshness after a fully successful upload.

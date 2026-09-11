@@ -9,13 +9,11 @@ from fastapi.testclient import TestClient
 from app.api.market_sources import router
 from app.core.limiter import limiter
 from app.core.security import get_current_user
-from app.db import database
 from app.services import market_sources as sources
 
 
 @pytest.fixture
-def client(tmp_path,monkeypatch):
-    monkeypatch.setattr(database,'_DB_PATH',str(tmp_path/'sources.db'))
+def client():
     app=FastAPI();app.state.limiter=limiter;app.include_router(router,prefix='/sources')
     app.dependency_overrides[get_current_user]=lambda:'alice'
     return TestClient(app)

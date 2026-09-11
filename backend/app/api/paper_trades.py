@@ -1,6 +1,14 @@
-"""Auditable paper positions from saved plans. Never sends broker orders."""
+"""Auditable paper positions from saved plans. Never sends broker orders.
+
+Locking note (see docs/POSTGRES-MIGRATION-SPIKE.md): the SQLite version used
+BEGIN IMMEDIATE to serialize all writes globally (SQLite only ever has one
+writer). Postgres has real per-row MVCC, so instead of a global lock we take
+a Postgres advisory transaction lock keyed by owner
+(pg_advisory_xact_lock(hashtext(owner))) — it serializes only one owner's
+concurrent writes against each other (what the aggregate risk-budget check
+below actually needs), not unrelated owners against each other.
+"""
 import hashlib
-import json
 from datetime import UTC, datetime
 from decimal import ROUND_UP, Decimal
 from typing import Literal, NoReturn
@@ -9,29 +17,12 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import AwareDatetime, Field, model_validator
 
-from app.api.derivatives import setup as setup_plans
 from app.core.limiter import limiter
 from app.core.security import get_current_user
-from app.db.database import _get_conn
+from app.db.postgres import get_pool
 from app.models.derivatives_planner import Nonnegative, Positive, StrictModel
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
-
-
-def setup(conn):
-    setup_plans(conn)
-    conn.execute('''CREATE TABLE IF NOT EXISTS paper_trades (
-        id TEXT PRIMARY KEY, owner TEXT NOT NULL, plan_id TEXT NOT NULL,
-        plan_index INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL,
-        plan TEXT NOT NULL, context TEXT NOT NULL,
-        UNIQUE(owner, plan_id, plan_index))''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS paper_events (
-        id TEXT PRIMARY KEY, trade_id TEXT NOT NULL, request_id TEXT NOT NULL,
-        payload_hash TEXT NOT NULL, created_at TEXT NOT NULL, kind TEXT NOT NULL,
-        payload TEXT NOT NULL, result TEXT NOT NULL, UNIQUE(trade_id, request_id))''')
-    conn.execute('CREATE INDEX IF NOT EXISTS paper_owner ON paper_trades(owner, created_at)')
-    conn.execute('CREATE INDEX IF NOT EXISTS paper_event_trade ON paper_events(trade_id, created_at)')
-    conn.commit()
 
 
 class TrackRequest(StrictModel):
@@ -75,67 +66,78 @@ def reject(detail, code=422) -> NoReturn:
     raise HTTPException(code, detail)
 
 
-def read_record(conn, owner, trade_id):
-    row = conn.execute('SELECT * FROM paper_trades WHERE id=? AND owner=?', (trade_id, owner)).fetchone()
+async def lock_owner(conn, owner: str) -> None:
+    """Serializes this owner's concurrent writes within the current transaction."""
+    await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", owner)
+
+
+async def read_record(conn, owner, trade_id):
+    row = await conn.fetchrow('SELECT * FROM paper_trades WHERE id=$1 AND owner=$2', trade_id, owner)
     if not row:
         reject('Operação simulada não encontrada.', 404)
     result = dict(row)
-    result['plan'] = json.loads(result['plan'])
-    result['context'] = json.loads(result['context'])
-    result['events'] = [dict(event) | {'payload': json.loads(event['payload']), 'result': json.loads(event['result'])}
-                        for event in conn.execute('SELECT * FROM paper_events WHERE trade_id=? ORDER BY rowid', (trade_id,))]
+    events = await conn.fetch('SELECT * FROM paper_events WHERE trade_id=$1 ORDER BY seq', trade_id)
+    result['events'] = [dict(event) for event in events]
     result['eligible_for_live_trading'] = False
     return result
 
 
 @router.post('', status_code=201)
-def track(req: TrackRequest, owner: str = Depends(get_current_user)):
-    with _get_conn() as conn:
-        setup(conn)
-        conn.execute('BEGIN IMMEDIATE')
-        saved = conn.execute('SELECT payload,result FROM derivative_plans WHERE id=? AND owner=?', (str(req.plan_id), owner)).fetchone()
+async def track(req: TrackRequest, owner: str = Depends(get_current_user)):
+    pool = await get_pool()
+    async with pool.acquire() as conn, conn.transaction():
+        await lock_owner(conn, owner)
+        saved = await conn.fetchrow(
+            'SELECT payload,result FROM derivative_plans WHERE id=$1 AND owner=$2', str(req.plan_id), owner,
+        )
         if saved is None:
             reject('Plano não encontrado.', 404)
-        report, inputs = json.loads(saved['result']), json.loads(saved['payload'])
+        report, inputs = saved['result'], saved['payload']
         if req.plan_index >= len(report['plans']):
             reject('O plano não contém essa operação.')
-        existing = conn.execute('SELECT id FROM paper_trades WHERE owner=? AND plan_id=? AND plan_index=?',
-                                (owner, str(req.plan_id), req.plan_index)).fetchone()
+        existing = await conn.fetchrow(
+            'SELECT id FROM paper_trades WHERE owner=$1 AND plan_id=$2 AND plan_index=$3',
+            owner, str(req.plan_id), req.plan_index,
+        )
         trade_id = existing['id'] if existing else str(uuid4())
         if not existing:
             context = {k: inputs[k] for k in ('source','provenance','capital','total_risk_pct','existing_risk_brl','fee_per_contract_side')}
-            conn.execute('INSERT INTO paper_trades VALUES (?,?,?,?,?,?,?,?)',
-                         (trade_id, owner, str(req.plan_id), req.plan_index, 'watching', datetime.now(UTC).isoformat(),
-                          json.dumps(report['plans'][req.plan_index]), json.dumps(context)))
-        conn.commit()
-        return read_record(conn, owner, trade_id)
+            await conn.execute(
+                'INSERT INTO paper_trades (id, owner, plan_id, plan_index, status, created_at, plan, context) '
+                'VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+                trade_id, owner, str(req.plan_id), req.plan_index, 'watching', datetime.now(UTC),
+                report['plans'][req.plan_index], context,
+            )
+        return await read_record(conn, owner, trade_id)
 
 
 @router.get('')
-def history(owner: str = Depends(get_current_user)):
-    with _get_conn() as conn:
-        setup(conn)
-        rows = conn.execute('SELECT id,status,created_at,plan,context FROM paper_trades WHERE owner=? ORDER BY created_at DESC LIMIT 100', (owner,))
-        return [dict(row) | {'plan':json.loads(row['plan']), 'context':json.loads(row['context'])} for row in rows]
+async def history(owner: str = Depends(get_current_user)):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        'SELECT id,status,created_at,plan,context FROM paper_trades WHERE owner=$1 ORDER BY created_at DESC LIMIT 100',
+        owner,
+    )
+    return [dict(row) for row in rows]
 
 
 @router.get('/{trade_id}')
-def detail(trade_id: UUID, owner: str = Depends(get_current_user)):
-    with _get_conn() as conn:
-        setup(conn)
-        return read_record(conn, owner, str(trade_id))
+async def detail(trade_id: UUID, owner: str = Depends(get_current_user)):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        return await read_record(conn, owner, str(trade_id))
 
 
 @router.post('/{trade_id}/events')
 @limiter.limit('30/minute')
-def observe(request: Request, trade_id: UUID, req: Observation, owner: str = Depends(get_current_user)):
+async def observe(request: Request, trade_id: UUID, req: Observation, owner: str = Depends(get_current_user)):
     now = datetime.now(UTC)
-    payload = req.model_dump_json()
-    fingerprint = hashlib.sha256(payload.encode()).hexdigest()
-    with _get_conn() as conn:
-        setup(conn)
-        conn.execute('BEGIN IMMEDIATE')
-        record = read_record(conn, owner, str(trade_id))
+    payload = req.model_dump(mode='json')
+    fingerprint = hashlib.sha256(req.model_dump_json().encode()).hexdigest()
+    pool = await get_pool()
+    async with pool.acquire() as conn, conn.transaction():
+        await lock_owner(conn, owner)
+        record = await read_record(conn, owner, str(trade_id))
         previous = next((e for e in record['events'] if e['request_id'] == str(req.request_id)), None)
         if previous:
             if previous['payload_hash'] != fingerprint:
@@ -150,7 +152,7 @@ def observe(request: Request, trade_id: UUID, req: Observation, owner: str = Dep
             reject('Observação futura ou com mais de 15 minutos.')
         if record['events'] and req.as_of < datetime.fromisoformat(record['events'][-1]['payload']['as_of']):
             reject('Observação anterior ao último evento.')
-        if req.as_of < datetime.fromisoformat(record['created_at']):
+        if req.as_of < record['created_at']:
             reject('Observação anterior à criação do acompanhamento.')
         result = {'mode':'paper_only', 'eligible_for_live_trading':False, 'alerts':[]}
         if req.action == 'cancel':
@@ -191,9 +193,15 @@ def observe(request: Request, trade_id: UUID, req: Observation, owner: str = Dep
                     reject('Débito simulado inválido ou acima do limite do plano.')
                 risk = cash + 2 * fees
                 open_risk = D(0)
-                for active in conn.execute("SELECT id FROM paper_trades WHERE owner=? AND status='open'", (owner,)):
-                    first = conn.execute("SELECT result FROM paper_events WHERE trade_id=? AND kind='open'", (active['id'],)).fetchone()
-                    open_risk += D(json.loads(first['result'])['reserved_risk_brl'])
+                # Safe from races: lock_owner() above holds this owner's
+                # advisory lock for the whole transaction, so no concurrent
+                # "open" for this owner can be mid-flight right now.
+                active_trades = await conn.fetch("SELECT id FROM paper_trades WHERE owner=$1 AND status='open'", owner)
+                for active in active_trades:
+                    first = await conn.fetchrow(
+                        "SELECT result FROM paper_events WHERE trade_id=$1 AND kind='open'", active['id'],
+                    )
+                    open_risk += D(first['result']['reserved_risk_brl'])
                 budget = D(context['capital']) * D(context['total_risk_pct']) / 100 - D(context['existing_risk_brl'])
                 if open_risk + risk > budget:
                     reject('A entrada excede o orçamento agregado, considerando outras simulações abertas.')
@@ -215,23 +223,24 @@ def observe(request: Request, trade_id: UUID, req: Observation, owner: str = Dep
                 if now.date().isoformat() >= plan['close_by']: result['alerts'].append('Data-limite de saída alcançada')
                 if now.date().isoformat() >= plan['expiry']: result['alerts'].append('Vencimento alcançado: registro contábil simulado; exercício e liquidação não modelados')
                 new_status = 'closed' if req.action == 'close' else 'open'
-        conn.execute('INSERT INTO paper_events VALUES (?,?,?,?,?,?,?,?)',
-                     (str(uuid4()), str(trade_id), str(req.request_id), fingerprint, now.isoformat(), req.action, payload, json.dumps(result)))
-        conn.execute('UPDATE paper_trades SET status=? WHERE id=?', (new_status, str(trade_id)))
-        conn.commit()
-        return read_record(conn, owner, str(trade_id))
+        await conn.execute(
+            'INSERT INTO paper_events (id, trade_id, request_id, payload_hash, created_at, kind, payload, result) '
+            'VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+            str(uuid4()), str(trade_id), str(req.request_id), fingerprint, now, req.action, payload, result,
+        )
+        await conn.execute('UPDATE paper_trades SET status=$1 WHERE id=$2', new_status, str(trade_id))
+        return await read_record(conn, owner, str(trade_id))
 
 
 @router.get('/{trade_id}/source-check/{snapshot_id}')
-def source_check(trade_id: UUID, snapshot_id: UUID, owner: str = Depends(get_current_user)):
-    from app.api.market_sources import setup as setup_sources
+async def source_check(trade_id: UUID, snapshot_id: UUID, owner: str = Depends(get_current_user)):
     from app.services.source_quality import assess
-    with _get_conn() as conn:
-        setup(conn)
-        record = read_record(conn, owner, str(trade_id))
-        setup_sources(conn)
-        row = conn.execute('SELECT payload FROM source_snapshots WHERE id=? AND owner=?',
-                           (str(snapshot_id), owner)).fetchone()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        record = await read_record(conn, owner, str(trade_id))
+        row = await conn.fetchrow(
+            'SELECT payload FROM source_snapshots WHERE id=$1 AND owner=$2', str(snapshot_id), owner,
+        )
         if row is None:
             reject('Snapshot não encontrado.', 404)
-        return assess(record, json.loads(row['payload']))
+        return assess(record, row['payload'])

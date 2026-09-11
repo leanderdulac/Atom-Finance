@@ -3,8 +3,14 @@
 #  Usage: docker-compose -f docker-compose.prod.yml up -d
 #
 #  Required env vars (set in a .env file or via secrets manager):
-#    SECRET_KEY, BRAPI_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY,
-#    XAI_API_KEY, PERPLEXITY_API_KEY
+#    SECRET_KEY, ATOM_DATABASE_URL, BRAPI_TOKEN, ANTHROPIC_API_KEY,
+#    OPENAI_API_KEY, XAI_API_KEY, PERPLEXITY_API_KEY
+#
+#  ATOM_DATABASE_URL must point at a managed Postgres instance (e.g.
+#  DigitalOcean/RDS/Cloud SQL) — this stack deliberately does not run its
+#  own Postgres container, so backups/HA/PITR come from the provider
+#  instead of being reinvented here. Run `alembic upgrade head` (from
+#  backend/, with ATOM_DATABASE_URL set) against it before first deploy.
 # ════════════════════════════════════════════════════════════════
 
 services:
@@ -25,7 +31,7 @@ services:
       - OPLAB_OWNER=${OPLAB_OWNER:-}
       - CEDRO_SESSION_COOKIE=${CEDRO_SESSION_COOKIE:-}
       - CEDRO_OWNER=${CEDRO_OWNER:-}
-      - ATOM_DB_PATH=/data/atom_reports.db
+      - ATOM_DATABASE_URL=${ATOM_DATABASE_URL:?ATOM_DATABASE_URL is required — see the header comment above}
       - REDIS_URL=redis://redis:6379/0
       - FRONTEND_URL=${FRONTEND_URL:-https://atom.yourdomain.com}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://atom.yourdomain.com}
@@ -39,8 +45,6 @@ services:
       - BINANCE_FUTURES_URL=${BINANCE_FUTURES_URL:-https://fapi.binance.com}
       - BRIDGEWISE_TOKEN=${BRIDGEWISE_TOKEN:-}
       - ACCESS_TOKEN_EXPIRE_HOURS=24
-    volumes:
-      - sqlite_data:/data
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
@@ -107,11 +111,31 @@ services:
     networks:
       - internal
 
+  # ── Throwaway Postgres for CI's container smoke test only ──────
+  # `docker compose --profile ci up` starts this; a plain `up` (real
+  # deployment) never does — ATOM_DATABASE_URL must point at the
+  # managed instance instead (see header comment).
+  postgres:
+    profiles: [ci]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atom
+      POSTGRES_PASSWORD: atom_ci
+      POSTGRES_DB: atom_ci
+    expose:
+      - "5432"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atom"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 networks:
   internal:
     driver: bridge
 
 volumes:
-  sqlite_data:
   redis_data:
   research_data:

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -9,13 +10,12 @@ from app.api.derivatives import save
 from app.api.paper_trades import router
 from app.core.limiter import limiter
 from app.core.security import get_current_user
-from app.db import database
+from app.db.postgres import get_pool
 from app.models.derivatives_planner import PlanRequest, make_plans
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(database, '_DB_PATH', str(tmp_path / 'paper.db'))
+def client():
     limiter.reset()
     app = FastAPI(); app.state.limiter = limiter
     app.include_router(router, prefix='/paper')
@@ -31,7 +31,7 @@ def plan(total_risk=3):
         holding_days=15,events_checked=True,options=[dict(symbol=f'DEMOC{k}',kind='call',strike=k,
         expiry=(now+timedelta(days=50)).date(),exercise='european',bid=b,ask=a,bid_size=1000,ask_size=1000,multiplier=1,lot_size=1)
         for k,b,a in [(100,4.9,5),(110,4,4.1)]] )])
-    return save('alice',req,make_plans(req))
+    return asyncio.run(save('alice',req,make_plans(req)))
 
 
 def tracked(client, total_risk=3):
@@ -122,14 +122,15 @@ def test_cancel_and_auth_boundary(client):
 def test_long_option_and_multiplier_accounting(client):
     saved=plan()
     # A separate immutable plan with one purchased contract leg, quoted per unit.
-    with database._get_conn() as conn:
-        import json
+    async def _rewrite_plan():
         report=saved.copy();p=report['plans'][0].copy()
         p.update(strategy='long_call',legs=[dict(symbol='DEMOC100',side='buy',quantity=2,limit_reference=5)],
                  quantity_per_leg=2,multiplier=10)
         p['entry']=p['entry'] | {'max_net_debit_per_unit':5}
         report['plans']=[p]
-        conn.execute('UPDATE derivative_plans SET result=? WHERE id=?',(json.dumps(report),saved['id']));conn.commit()
+        pool = await get_pool()
+        await pool.execute('UPDATE derivative_plans SET result=$1 WHERE id=$2', report, saved['id'])
+    asyncio.run(_rewrite_plan())
     trade=client.post('/paper',json={'plan_id':saved['id'],'plan_index':0}).json()
     entry=event();entry['quotes']=entry['quotes'][:1]
     assert send(client,trade,entry).json()['events'][0]['result']['entry_debit_brl']==100

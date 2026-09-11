@@ -70,7 +70,7 @@ def decode_token(token: str) -> str | None:
         return None
 
 
-def get_current_user(
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
 ) -> str:
     """FastAPI dependency — returns the authenticated username."""
@@ -80,7 +80,7 @@ def get_current_user(
     if username is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     from app.db.database import get_user_by_username
-    user = get_user_by_username(username)
+    user = await get_user_by_username(username)
     if not user:
         raise HTTPException(status_code=401, detail="Account unavailable")
     return user["username"]

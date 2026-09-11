@@ -1,6 +1,5 @@
 """
-Authentication API — JWT with bcrypt password hashing, backed by SQLite.
-Users persist across restarts via the shared ATOM database.
+Authentication API — JWT with bcrypt password hashing, backed by Postgres.
 """
 
 import asyncio
@@ -55,12 +54,12 @@ async def register(request: Request, req: RegisterRequest):
     allowed = os.getenv("ATOM_ALLOW_REGISTRATION", "false" if os.getenv("ATOM_ENV") == "production" else "true")
     if allowed.lower() != "true":
         raise HTTPException(status_code=403, detail="Registration is disabled; contact the operator.")
-    already_taken = await asyncio.to_thread(user_exists, req.username)
+    already_taken = await user_exists(req.username)
     if already_taken:
         raise HTTPException(status_code=400, detail="Username already exists.")
 
     pw_hash = await asyncio.to_thread(hash_password, req.password)
-    uid = await asyncio.to_thread(create_user, req.username, req.email, pw_hash)
+    uid = await create_user(req.username, req.email, pw_hash)
 
     if uid is None:
         raise HTTPException(
@@ -75,7 +74,7 @@ async def register(request: Request, req: RegisterRequest):
 @router.post("/login")
 @limiter.limit("10/minute")
 async def login(request: Request, req: LoginRequest):
-    user = await asyncio.to_thread(get_user_by_username, req.username)
+    user = await get_user_by_username(req.username)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 
@@ -94,7 +93,7 @@ async def login(request: Request, req: LoginRequest):
 
 @router.get("/me")
 async def get_me(username: str = Depends(get_current_user)):
-    user = await asyncio.to_thread(get_user_by_username, username)
+    user = await get_user_by_username(username)
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     return {
@@ -108,7 +107,7 @@ async def get_me(username: str = Depends(get_current_user)):
 @router.get("/users")
 async def admin_list_users(current_user: str = Depends(get_current_user)):
     """Admin-only: list all registered users (no password hashes)."""
-    me = await asyncio.to_thread(get_user_by_username, current_user)
+    me = await get_user_by_username(current_user)
     if not me or me.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
-    return await asyncio.to_thread(list_users)
+    return await list_users()

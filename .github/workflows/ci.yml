@@ -16,9 +16,29 @@ jobs:
     name: Backend Tests & Dependency Audit
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: atom
+          POSTGRES_PASSWORD: atom_ci
+          POSTGRES_DB: atom_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     defaults:
       run:
         working-directory: backend
+
+    env:
+      ATOM_ENV: test
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      ATOM_DATABASE_URL: postgresql+asyncpg://atom:atom_ci@localhost:5432/atom_ci
 
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +49,9 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.lock
+
+      - name: Install postgresql-client (pg_dump/pg_restore for the backup/restore test)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
       - name: Install dependencies
         run: pip install -r requirements.lock
@@ -43,10 +66,10 @@ jobs:
           pip install basedpyright
           basedpyright
 
+      - name: Run database migrations
+        run: alembic upgrade head
+
       - name: Run pytest (unit tests — no external APIs)
-        env:
-          ATOM_ENV: test
-          SECRET_KEY: ci-test-secret-key-not-for-production
         run: |
           python -m pytest tests/ \
             --tb=short \
@@ -107,17 +130,20 @@ jobs:
     needs: [backend, frontend]
     env:
       SECRET_KEY: ci-container-only-secret-at-least-32-bytes
+      ATOM_DATABASE_URL: postgresql+asyncpg://atom:atom_ci@postgres:5432/atom_ci
       ATOM_HTTP_PORT: "18080"
       ATOM_SMOKE_USER: production_test
       ATOM_SMOKE_PASSWORD: isolated-test-only-password
     steps:
       - uses: actions/checkout@v4
       - name: Build and start isolated production stack
-        run: docker compose -p atom-ci -f docker-compose.prod.yml up -d --build --wait --wait-timeout 180
+        run: docker compose -p atom-ci -f docker-compose.prod.yml --profile ci up -d --build --wait --wait-timeout 180
+      - name: Run database migrations
+        run: docker compose -p atom-ci -f docker-compose.prod.yml exec -T backend alembic upgrade head
       - name: Provision test identity and verify API persistence
         run: |
-          docker compose -p atom-ci -f docker-compose.prod.yml exec -T backend python -c 'from app.db.database import create_user; from app.core.security import hash_password; create_user("production_test", "production@example.test", hash_password("isolated-test-only-password"))'
+          docker compose -p atom-ci -f docker-compose.prod.yml exec -T backend python -c 'import asyncio; from app.db.database import create_user; from app.core.security import hash_password; asyncio.run(create_user("production_test", "production@example.test", hash_password("isolated-test-only-password")))'
           python3 scripts/smoke-production.py
       - name: Stop test stack
         if: always()
-        run: docker compose -p atom-ci -f docker-compose.prod.yml down -v
+        run: docker compose -p atom-ci -f docker-compose.prod.yml --profile ci down -v

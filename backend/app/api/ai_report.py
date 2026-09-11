@@ -732,7 +732,7 @@ async def ai_analysis(request: Request, req: AnalysisRequest, owner: str = Depen
     and returns a BUY CALL / BUY PUT / STRADDLE recommendation with holding period.
     """
     result = await _full_analysis(req.ticker)
-    await asyncio.to_thread(_db_save, req.ticker.upper(), result, owner=owner)
+    await _db_save(req.ticker.upper(), result, owner=owner)
     return result
 
 
@@ -763,19 +763,19 @@ async def ai_analysis_stream(request: Request, req: AnalysisRequest):
 @router.get("/history")
 async def reports_history(limit: int = Query(20, ge=1, le=100), owner: str = Depends(get_current_user)):
     """Returns the most recent AI analysis reports (all tickers)."""
-    return await asyncio.to_thread(_db_list, None, limit, owner=owner)
+    return await _db_list(None, limit, owner=owner)
 
 
 @router.get("/history/{ticker}")
 async def reports_history_ticker(ticker: str, limit: int = Query(10, ge=1, le=100), owner: str = Depends(get_current_user)):
     """Returns recent AI analysis reports for a specific ticker."""
-    return await asyncio.to_thread(_db_list, ticker, limit, owner=owner)
+    return await _db_list(ticker, limit, owner=owner)
 
 
 @router.get("/history/detail/{report_id}")
 async def report_detail(report_id: int, owner: str = Depends(get_current_user)):
     """Returns the full saved report JSON for a given report ID."""
-    report = await asyncio.to_thread(_db_get, report_id, owner=owner)
+    report = await _db_get(report_id, owner=owner)
     if report is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Report {report_id} not found.")

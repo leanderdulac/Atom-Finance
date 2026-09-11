@@ -1,27 +1,31 @@
-"""Single-process SQLite pilot runtime: exclusive lock and crash recovery."""
-import fcntl
-from contextlib import contextmanager
+"""Startup readiness check and crash recovery.
 
-from app.db import database, experiments
+The old SQLite runtime held an fcntl file lock for the process's lifetime
+because SQLite can't safely take concurrent writers from multiple processes
+("ATOM SQLite requires one process per database"). Postgres has no such
+constraint — that's a large part of why this migration exists — so the lock
+is gone.
+
+CAUTION for whoever implements Fase 4 (scaling the app tier / multiple
+workers or replicas): the crash-recovery UPDATE below marks every orphaned
+'running' experiment as failed on startup. That's correct for a single
+process today. With more than one worker/replica, a worker starting up
+would incorrectly fail another worker's in-flight experiment. This needs a
+per-worker or per-run recovery scope (e.g. a worker/lease id on the row)
+before Fase 4 ships — don't just remove this comment and add --workers.
+"""
+from contextlib import asynccontextmanager
+
+from app.db import database
+from app.db.postgres import get_pool
 
 
-@contextmanager
-def exclusive_runtime():
-    # Hold throughout lifespan. A second worker/replica sharing this DB fails closed.
-    with open(database._DB_PATH + '.runtime.lock', 'a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise RuntimeError('ATOM SQLite requires one process per database') from exc
-        try:
-            with database._get_conn() as conn:
-                conn.execute("PRAGMA journal_mode=WAL")
-            database.readiness()
-            with database._get_conn() as conn:
-                experiments.setup(conn)
-                conn.execute("UPDATE experiments SET status='failed', error=? WHERE status='running'",
-                             ('Process interrupted; create a new experiment to retry.',))
-                conn.commit()
-            yield
-        finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
+@asynccontextmanager
+async def exclusive_runtime():
+    await database.readiness()
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE experiments SET status='failed', error=$1 WHERE status='running'",
+        'Process interrupted; create a new experiment to retry.',
+    )
+    yield

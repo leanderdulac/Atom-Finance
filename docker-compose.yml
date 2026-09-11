@@ -8,10 +8,11 @@ services:
     environment:
       - QUANTMIND_URL=http://quantmind:8010
       - QUANTMIND_SERVICE_TOKEN=${QUANTMIND_SERVICE_TOKEN:-}
-      - ATOM_DB_PATH=/app/atom_reports.db
+      - ATOM_DATABASE_URL=postgresql+asyncpg://atom:atom_dev@postgres:5432/atom_dev
       - REDIS_URL=redis://redis:6379/0
       - FRONTEND_URL=http://localhost:5173
     depends_on:
+      - postgres
       - redis
     volumes:
       - ./backend:/app
@@ -48,5 +49,17 @@ services:
     ports:
       - "6379:6379"
 
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atom
+      POSTGRES_PASSWORD: atom_dev
+      POSTGRES_DB: atom_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
 volumes:
   research_data:
+  postgres_data:
