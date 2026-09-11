@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 8: security review (Fase 3, part 1)
+
+Read-through of auth, RBAC, and injection surface rather than a fix-everything
+pass — most of what this looked for was already solid (parameterized asyncpg
+queries throughout, every owner-scoped query keys off the JWT-derived owner
+rather than a client-supplied field, timing-safe login via a dummy bcrypt
+hash, JWT algorithm pinned + placeholder-secret rejection, per-endpoint rate
+limits already tuned on the newer desk.py routes, dependency audits already
+wired into CI). One real gap found and closed:
+
+### Added
+- `Content-Security-Policy` header on `docker/nginx.conf`: `default-src 'self'`, `script-src 'self'`, `connect-src 'self'` (the frontend only ever calls same-origin `/api/`, confirmed by reading every `fetch()` call site), Google Fonts allowed for `style-src`/`font-src`, `frame-ancestors 'none'` (clickjacking, redundant with the existing `X-Frame-Options: DENY` but the modern equivalent). No `dangerouslySetInnerHTML` anywhere in the frontend, so this is defense-in-depth rather than a fix for a known injection point. Verified against a live app rather than reasoned about in the abstract: registered a real user, logged in, and drove the derivatives desk (heavy MUI forms) and the Ibovespa dashboard (recharts, icon-heavy cards) through the browser with the policy active — zero violations — before writing it into nginx.
+
+### Notes
+- Flagged separately (not fixed here): `docker/nginx-local.conf`, `atom-frontend.service`, `atom-backend.service`, and `ops/systemd/atom-*.service` look like a legacy bare-metal deploy path (one hardcodes `/home/exp/Downloads/ATOM/dist`) that isn't referenced anywhere in `docs/PRODUCTION.md`'s Docker-based flow. Spun off as its own follow-up rather than deleting anything without confirming it's actually dead first.
+- Next in Fase 3: dependency audit results review (pip-audit/npm audit already run in CI — worth reading what they currently report, not just confirming they run) and a closer look at token-revocation limits: deactivating an account does immediately invalidate its tokens (confirmed — `get_user_by_username` filters `is_active = TRUE`, so `get_current_user` rejects it), but there's no way to revoke one specific leaked token without deactivating the whole account, and no refresh-token rotation — worth deciding if that's acceptable at pilot scale or worth a token-version/blocklist column.
+
 ## [Unreleased] — round 7: closing out Fase 1 (real infra provisioning)
 
 The Postgres migration itself (round 3) ported schema and code; this round
