@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 5: Heston smile, Johansen, live books, EDGAR
+
+### Added
+- **Heston smile calibration** (`POST /api/desk/heston/calibrate`) — least-squares on European prices; payload includes smile IV dump and unidentified-parameter `what_broke`.
+- **Johansen trace test** (`POST /api/desk/pairs/johansen`); pairs backtest now also reports rank when the sample is long enough.
+- **Live unsigned perp mids** (`GET /api/desk/perp-arb/live`) — Binance USDM bookTicker + Hyperliquid L2; no keys, no orders.
+- **SEC EDGAR Form 4 pull** (`POST /api/desk/insider-clusters/edgar`) — open-market P/S only; requires `ATOM_SEC_USER_AGENT` with a contact email.
+- Desk Lab tabs for calibration, Johansen, live perps, and EDGAR ticker lookup.
+
+## [Unreleased] — round 4: desk math, papers, and production hygiene
+
+### Fixed
+- **EVT CVaR** now uses McNeil `(VaR + σ − ξu)/(1−ξ)`; GPD `n_total` is the full loss sample so zeta is not overstated.
+- **Parametric VaR** scales the mean by `h` and vol by `√h`; historical multi-day VaR uses overlapping compounded returns; Student-t CVaR is the t expected-shortfall formula, not `1.1×VaR`.
+- **Heston `price_option`** uses `n_steps = round(252·T)` instead of a hardcoded 252-step grid of `dt=T/252`; Europeans also have a characteristic-function pricer.
+- **GARCH** optimizer no longer floors `β` at 0.5; **EWMA** includes the latest return; **Sortino** uses downside deviation.
+- JWT stream, Ibovespa Excel export, and Binance Kelly now send auth / capital correctly; futures-account polling (410) is gone.
+- Alpha engine expected returns no longer peek at the held-out last row.
+- Placeholder `SECRET_KEY` values are rejected; rate limits key off the JWT subject; AI screener is 2/hour and defaults to 6 tickers.
+
+### Added
+- Desk papers at `/api/desk` and `/desk`: Heston CF, Engle–Granger pairs, Avellaneda–Stoikov, Fama–French 5, mean-reversion scanner, perp basis calculator, insider clusters. Each payload includes `what_broke`.
+- `docs/WHAT-BROKE.md` — formula bugs and remaining theatre, written the way a reviewer actually reads a quant repo.
+
 ## [Unreleased]
 
 ### Fixed
@@ -63,3 +87,4 @@ Fase 1 of the enterprise roadmap. Storage is now PostgreSQL end to end — `ATOM
 ### Added
 - Test isolation: since tests now share one real Postgres instead of each getting an implicit fresh SQLite file, an autouse fixture (`backend/tests/conftest.py`) truncates every table before each test. Uses a standalone connection rather than the app's shared pool, specifically to avoid the loop-mismatch issue above.
 - `docs/POSTGRES-MIGRATION-SPIKE.md` findings carried through: the copula/EVT-style "attribute set in `fit()`, used unguarded elsewhere" pattern doesn't apply here, but the DDL-transactionality gotcha documented there recurred verbatim in `readiness()`'s real port and is fixed the same way (`CREATE TABLE` commits on its own, separate from the transaction that gets rolled back).
+- `backend/app/db/migrate_legacy_sqlite.py`: one-time data migration for any pre-cutover `atom_reports.db` — copies `users`, `reports`, `experiments`, `experiment_reviews` into the new Postgres schema (the other four tables added by this round never existed in SQLite, so there's nothing to carry over for them). Runs inside one transaction, refuses to run against a target that already has rows unless `--force`, and supports `--dry-run`. Verified end to end against a throwaway Postgres container using the project's real dev `atom_reports.db` (2 experiment rows; no users/reports had been created yet).
