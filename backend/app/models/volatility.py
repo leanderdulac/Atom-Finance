@@ -5,6 +5,8 @@ Volatility Models
 - EWMA Volatility
 """
 
+from typing import Literal
+
 import numpy as np
 from scipy.optimize import minimize
 
@@ -335,7 +337,13 @@ class HestonModel:
         for raw in quotes:
             K = float(raw["K"])
             T = float(raw["T"])
-            otype = str(raw.get("option_type", "call"))
+            # BlackScholes.price prices anything that is not exactly "call" as a
+            # put, so an unchecked "CALL" here would silently calibrate to the
+            # wrong side of the smile.
+            otype_raw = str(raw.get("option_type", "call")).strip().lower()
+            if otype_raw not in ("call", "put"):
+                raise ValueError(f"option_type must be 'call' or 'put', got {raw.get('option_type')!r}")
+            otype: Literal["call", "put"] = "call" if otype_raw == "call" else "put"
             if T <= 0 or K <= 0:
                 raise ValueError("Each quote needs positive K and T")
             if raw.get("price") is not None:

@@ -33,11 +33,13 @@ def _close_series(symbol: str) -> pd.Series | None:
     df = DataFetcher.get_historical_data(symbol, period="2y", interval="1d")
     if df is None or df.empty or "Close" not in df.columns:
         return None
-    s = df["Close"].astype(float).dropna()
-    idx = pd.to_datetime(s.index)
-    if getattr(idx, "tz", None) is not None:
+    s = pd.Series(df["Close"]).astype(float).dropna()
+    idx = pd.DatetimeIndex(pd.to_datetime(s.index))
+    if idx.tz is not None:
         idx = idx.tz_convert("UTC").tz_localize(None)
-    s.index = idx.normalize()
+    # Via the Series .dt accessor: the stubs do not expose normalize/floor on
+    # DatetimeIndex itself, and the result is the same midnight-aligned index.
+    s.index = pd.DatetimeIndex(pd.Series(idx).dt.normalize())
     return s
 
 
@@ -63,9 +65,9 @@ def fetch_fred_oas(
     frame = pd.read_csv(StringIO(resp.text))
     date_col = next(c for c in frame.columns if c.lower() == "date" or c.lower() == "observation_date")
     val_col = next(c for c in frame.columns if c != date_col)
-    s = pd.to_numeric(frame[val_col], errors="coerce")
+    s = pd.Series(pd.to_numeric(frame[val_col], errors="coerce"))
     idx = pd.to_datetime(frame[date_col]).dt.normalize()
-    out = pd.Series(s.values, index=idx, name=series_id).dropna()
+    out = pd.Series(s.to_numpy(), index=idx, name=series_id).dropna()
     return out
 
 
@@ -135,5 +137,5 @@ def fetch_live_payload(
             "curve": f"{YIELD_10Y} minus {YIELD_2Y} (13-week, not 2-year)",
         },
         "n_obs": int(len(frame)),
-        "as_of_session": str(frame.index[-1].date()),
+        "as_of_session": str(pd.Series(frame.index).dt.date.iloc[-1]),
     }
