@@ -136,14 +136,25 @@ jobs:
       ATOM_SMOKE_PASSWORD: isolated-test-only-password
     steps:
       - uses: actions/checkout@v4
+      # Migrations must precede the backend, not follow it: its lifespan calls
+      # exclusive_runtime(), which UPDATEs the experiments table, so it cannot
+      # start against an unmigrated database. Starting the stack first left the
+      # backend crash-looping, --wait never satisfied, and the migration step
+      # unreachable. docs/PRODUCTION.md step 4 migrates before the first deploy
+      # for this reason; the smoke test now exercises that same order.
+      - name: Start database
+        run: docker compose -p atom-ci -f docker-compose.prod.yml --profile ci up -d --wait postgres
+      - name: Run database migrations
+        run: docker compose -p atom-ci -f docker-compose.prod.yml run --rm --build backend alembic upgrade head
       - name: Build and start isolated production stack
         run: docker compose -p atom-ci -f docker-compose.prod.yml --profile ci up -d --build --wait --wait-timeout 180
-      - name: Run database migrations
-        run: docker compose -p atom-ci -f docker-compose.prod.yml exec -T backend alembic upgrade head
       - name: Provision test identity and verify API persistence
         run: |
           docker compose -p atom-ci -f docker-compose.prod.yml exec -T backend python -c 'import asyncio; from app.db.database import create_user; from app.core.security import hash_password; asyncio.run(create_user("production_test", "production@example.test", hash_password("isolated-test-only-password")))'
           python3 scripts/smoke-production.py
+      - name: Container logs on failure
+        if: failure()
+        run: docker compose -p atom-ci -f docker-compose.prod.yml logs --tail 100
       - name: Stop test stack
         if: always()
         run: docker compose -p atom-ci -f docker-compose.prod.yml --profile ci down -v
