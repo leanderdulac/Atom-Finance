@@ -14,14 +14,13 @@ Implemented:
 - empirical_copula — transforma dados em pseudo-observações uniformes
 """
 
-import numpy as np
 from dataclasses import dataclass
-from functools import partial
-from scipy import stats
-from scipy.optimize import minimize_scalar, minimize
-from scipy.special import gammaln
-from typing import Optional
+from typing import Protocol
 
+import numpy as np
+from scipy import stats
+from scipy.optimize import minimize_scalar
+from scipy.special import gammaln
 
 # ── Data class ────────────────────────────────────────────────────────────────
 
@@ -94,8 +93,10 @@ class GaussianCopula:
             interpretation="Dependência simétrica, sem clustering de cauda — condições normais de mercado.",
         )
 
-    def simulate(self, n: int, corr_matrix: Optional[np.ndarray] = None) -> np.ndarray:
+    def simulate(self, n: int, corr_matrix: np.ndarray | None = None) -> np.ndarray:
         R = corr_matrix if corr_matrix is not None else self.corr_matrix
+        if R is None:
+            raise RuntimeError("Model not fitted — call fit() first, or pass corr_matrix explicitly.")
         L = np.linalg.cholesky(R)
         d = R.shape[0]
         z = np.random.standard_normal((n, d))
@@ -132,7 +133,12 @@ class StudentTCopula:
             - (d / 2.0) * np.log(df * np.pi)
             - 0.5 * log_det
         )
-        marg_const = d * (gammaln((df + 1) / 2.0) - gammaln(df / 2.0) - 0.5 * np.log(df * np.pi))
+        # Copula log-density = log f_t,ν,Σ(joint) − Σ_i log f_t,ν(marginal_i).
+        # `joint` below already includes the full multivariate-t normalizing
+        # constant (log_const), and `marg` uses scipy's t.logpdf, which already
+        # includes the univariate normalizing constant for each dimension —
+        # so both terms are complete and `ll = joint - marg` is the correct,
+        # unbiased copula log-likelihood; no separate marginal constant needed.
         for i in range(n):
             ti = t_obs[i]
             quad = float(ti @ inv_corr @ ti)
@@ -141,7 +147,7 @@ class StudentTCopula:
             ll += joint - marg
         return ll
 
-    def fit(self, u: np.ndarray, df_grid: Optional[np.ndarray] = None) -> CopulaFitResult:
+    def fit(self, u: np.ndarray, df_grid: np.ndarray | None = None) -> CopulaFitResult:
         u = _clip(u)
         n, d = u.shape
         if df_grid is None:
@@ -173,20 +179,20 @@ class StudentTCopula:
             td = float(
                 2.0
                 * stats.t.cdf(
-                    -np.sqrt((self.df + 1.0) * (1.0 - rho) / (1.0 + rho)),
-                    df=self.df + 1.0,
+                    -np.sqrt((best_df + 1.0) * (1.0 - rho) / (1.0 + rho)),
+                    df=best_df + 1.0,
                 )
             )
         else:
             td = float(np.mean(
-                [2.0 * stats.t.cdf(-np.sqrt((self.df + 1) * (1 - self.corr_matrix[i, j]) / (1 + self.corr_matrix[i, j])), df=self.df + 1)
+                [2.0 * stats.t.cdf(-np.sqrt((best_df + 1) * (1 - self.corr_matrix[i, j]) / (1 + self.corr_matrix[i, j])), df=best_df + 1)
                  for i in range(d) for j in range(d) if i < j]
             )) if d > 2 else 0.0
 
         n_params = d * (d - 1) / 2 + 1
         return CopulaFitResult(
             copula_type="student_t",
-            parameters={"df": float(self.df), "correlation_matrix": self.corr_matrix.tolist()},
+            parameters={"df": float(best_df), "correlation_matrix": self.corr_matrix.tolist()},
             log_likelihood=best_ll,
             aic=-2.0 * best_ll + 2.0 * n_params,
             bic=-2.0 * best_ll + n_params * np.log(n),
@@ -196,6 +202,8 @@ class StudentTCopula:
         )
 
     def simulate(self, n: int) -> np.ndarray:
+        if self.corr_matrix is None or self.df is None:
+            raise RuntimeError("Model not fitted — call fit() first.")
         d = self.corr_matrix.shape[0]
         L = np.linalg.cholesky(self.corr_matrix)
         z = np.random.standard_normal((n, d))
@@ -237,9 +245,12 @@ class ClaytonCopula:
             except Exception:
                 return 1e12
 
+        # scipy-stubs can't narrow minimize_scalar's return type from the
+        # runtime `method="bounded"` string, so it always types `res` as
+        # `object`; it is really an OptimizeResult with `.x`/`.fun`.
         res = minimize_scalar(neg_ll, bounds=(1e-6, 30.0), method="bounded")
-        self.theta = float(res.x)
-        ll = float(-res.fun)
+        self.theta = float(res.x)  # pyright: ignore[reportAttributeAccessIssue]
+        ll = float(-res.fun)  # pyright: ignore[reportAttributeAccessIssue]
         tail_l = float(2.0 ** (-1.0 / self.theta))
 
         return CopulaFitResult(
@@ -254,6 +265,8 @@ class ClaytonCopula:
         )
 
     def simulate(self, n: int) -> np.ndarray:
+        if self.theta is None:
+            raise RuntimeError("Model not fitted — call fit() first.")
         u = np.random.uniform(0, 1, n)
         t = np.random.uniform(0, 1, n)
         # Conditional quantile of Clayton
@@ -302,8 +315,8 @@ class GumbelCopula:
                 return 1e12
 
         res = minimize_scalar(neg_ll, bounds=(1.0, 30.0), method="bounded")
-        self.theta = float(max(1.0, res.x))
-        ll = float(-res.fun)
+        self.theta = float(max(1.0, res.x))  # pyright: ignore[reportAttributeAccessIssue]
+        ll = float(-res.fun)  # pyright: ignore[reportAttributeAccessIssue]
         tail_u = float(2.0 - 2.0 ** (1.0 / self.theta))
 
         return CopulaFitResult(
@@ -319,6 +332,8 @@ class GumbelCopula:
 
     def simulate(self, n: int) -> np.ndarray:
         """Marshall-Olkin frailty simulation."""
+        if self.theta is None:
+            raise RuntimeError("Model not fitted — call fit() first.")
         alpha = 1.0 / self.theta
         # Stable frailty via Chambers-Mallows-Stuck method (α-stable, β=1)
         uniform_samples = np.random.uniform(0, np.pi, n)
@@ -369,8 +384,8 @@ class FrankCopula:
                 return 1e12
 
         res = minimize_scalar(neg_ll, bounds=(-30.0, 30.0), method="bounded")
-        self.theta = float(res.x)
-        ll = float(-res.fun)
+        self.theta = float(res.x)  # pyright: ignore[reportAttributeAccessIssue]
+        ll = float(-res.fun)  # pyright: ignore[reportAttributeAccessIssue]
 
         return CopulaFitResult(
             copula_type="frank",
@@ -384,6 +399,8 @@ class FrankCopula:
         )
 
     def simulate(self, n: int) -> np.ndarray:
+        if self.theta is None:
+            raise RuntimeError("Model not fitted — call fit() first.")
         u = np.random.uniform(0.0, 1.0, n)
         t = np.random.uniform(0.0, 1.0, n)
         theta = self.theta
@@ -397,7 +414,12 @@ class FrankCopula:
 
 # ── Model selection ───────────────────────────────────────────────────────────
 
-def fit_best_copula(u: np.ndarray) -> dict:
+class _Copula(Protocol):
+    """Structural type for the fittable copula models above."""
+    def fit(self, u: np.ndarray) -> CopulaFitResult: ...
+
+
+def fit_best_copula(u: np.ndarray) -> dict[str, dict | str]:
     """
     Fit multiple copulas and rank by AIC.
 
@@ -405,9 +427,9 @@ def fit_best_copula(u: np.ndarray) -> dict:
     For d = 2 all five copulas are tried.
     """
     d = u.shape[1]
-    results: dict[str, dict] = {}
+    results: dict[str, dict | str] = {}
 
-    candidates: dict[str, object]
+    candidates: dict[str, _Copula]
     if d == 2:
         candidates = {
             "gaussian": GaussianCopula(),
@@ -437,7 +459,7 @@ def fit_best_copula(u: np.ndarray) -> dict:
         except Exception as exc:
             results[name] = {"error": str(exc)}
 
-    valid = {k: v for k, v in results.items() if "aic" in v}
+    valid: dict[str, dict] = {k: v for k, v in results.items() if isinstance(v, dict) and "aic" in v}
     if valid:
         results["best_copula"] = min(valid, key=lambda k: valid[k]["aic"])
 

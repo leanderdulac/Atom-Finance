@@ -3,8 +3,9 @@ News Monitor Service — Uses Gemini 1.5 Pro to analyze market news
 fetched from Yahoo Finance or other sources.
 """
 from __future__ import annotations
+
 import logging
-from typing import List, Dict, Any
+from typing import Any
 
 from app.core.ai_factory import AIFactory
 from app.services.data_fetcher import _get_yfinance
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class NewsMonitor:
     
     @staticmethod
-    async def get_latest_news(ticker: str) -> List[Dict[str, Any]]:
+    async def get_latest_news(ticker: str) -> list[dict[str, Any]]:
         """Fetch news from Yahoo Finance for a given ticker."""
         yf = _get_yfinance()
         if not yf: return []
@@ -33,7 +34,7 @@ class NewsMonitor:
             return []
 
     @classmethod
-    async def analyze_sentiment(cls, ticker: str) -> Dict[str, Any]:
+    async def analyze_sentiment(cls, ticker: str) -> dict[str, Any]:
         """
         Fetches latest news and uses Gemini to analyze impact and sentiment.
         """

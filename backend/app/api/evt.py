@@ -6,7 +6,6 @@ Endpoints para análise de caudas gordas, VaR/CVaR via GPD/POT e GEV.
 
 import asyncio
 from functools import partial
-from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
@@ -14,7 +13,6 @@ from pydantic import BaseModel, Field
 
 from app.models.evt import (
     GeneralizedExtremeValue,
-    GeneralizedParetoDistribution,
     compute_evt_risk,
     hill_estimator,
 )
@@ -44,7 +42,7 @@ class GEVRequest(BaseModel):
 
 class HillRequest(BaseModel):
     returns: list[float] = Field(..., description="Série de retornos diários")
-    k: Optional[int] = Field(None, description="Número de estatísticas de ordem superiores")
+    k: int | None = Field(None, description="Número de estatísticas de ordem superiores")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -73,7 +71,7 @@ async def evt_analyze(req: EVTAnalyzeRequest):
             ),
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     tail_label = (
         "Cauda muito pesada (ξ > 0.5) — risco extremo subestimado pela normal"
@@ -122,7 +120,7 @@ async def gev_fit(req: GEVRequest):
         gev = GeneralizedExtremeValue()
         fit = await loop.run_in_executor(None, partial(gev.fit, losses, req.block_size))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Return levels in blocks; convert to years
     trading_days_per_year = 252

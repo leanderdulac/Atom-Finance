@@ -171,7 +171,7 @@ function RecommendationBanner({ rec }: { rec: any }) {
 const STEPS = [
   { icon: <ShowChart />, label: 'Buscando dados de mercado...' },
   { icon: <AutoGraph />, label: 'Executando Black-Scholes e CAPM...' },
-  { icon: <Psychology />, label: 'Rodando previsão LSTM...' },
+  { icon: <Psychology />, label: 'Rodando baseline de suavização exponencial...' },
   { icon: <Security />, label: 'Calculando VaR e Black Swan...' },
   { icon: <AutoGraph />, label: 'Gerando relatório com IA...' },
 ];

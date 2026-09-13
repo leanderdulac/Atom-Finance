@@ -1,11 +1,11 @@
 """Reports API - PDF/CSV export."""
+import csv
+import io
+import json
+
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
-import io
-import csv
-import json
 
 router = APIRouter()
 

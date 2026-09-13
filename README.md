@@ -1,8 +1,20 @@
+> Produção: consulte [o runbook do piloto privado](docs/PRODUCTION.md) antes de implantar. Planejamento condicional não autoriza negociação real.
+
+> **Produto atual: ATOM Research — piloto local.** A jornada principal é hipótese → avaliação temporal → diário → decisão de pesquisa. Veja [escopo, limites e critérios do piloto](docs/PRODUCT-PILOT.md). Descrições legadas abaixo não representam validação institucional nem autorização de negociação.
+
 # ATOM - Advanced Trading & Options Modeler
+
+[![ATOM CI](https://github.com/leanderdulac/Atom-Finance/actions/workflows/ci.yml/badge.svg)](https://github.com/leanderdulac/Atom-Finance/actions/workflows/ci.yml)
+[![Deploy](https://github.com/leanderdulac/Atom-Finance/actions/workflows/deploy.yml/badge.svg)](https://github.com/leanderdulac/Atom-Finance/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A comprehensive quantitative finance platform integrating pricing engines, risk analytics, ML predictions, portfolio optimization, and advanced market microstructure analysis.
 
 ![ATOM](public/atom.svg)
+
+## Integração QuantMind
+
+A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de artigos e histórico por usuário. A biblioteca está incorporada em `research/quantmind`, com ambiente independente. Consulte [análise da fusão e execução local](docs/LOCAL-MERGE.md).
 
 ## Features
 
@@ -15,9 +27,22 @@ A comprehensive quantitative finance platform integrating pricing engines, risk 
 - **Options Strategies** — Straddle, Iron Condor, Butterfly, Custom combos
 
 ### Volatility Modeling
-- **GARCH(1,1)** — Maximum Likelihood Estimation with forecasting
-- **Heston Stochastic Volatility** — Monte Carlo simulation & option pricing
-- **EWMA** — Exponentially Weighted Moving Average
+- **GARCH(1,1)** — MLE with α,β ∈ [0,1) and α+β<1 (no silent β≥0.5 floor)
+- **Heston 1993** — characteristic-function European pricing (Albrecher branch) plus Euler MC with a calendar time grid
+- **EWMA** — RiskMetrics recursion that includes the latest return
+
+### Quant desk papers (`/desk`)
+- **Heston 1993** — CF Europeans, Euler MC, smile calibration (price RMSE; five params on one expiry are unidentified)
+- **Engle–Granger pairs** — residual ADF, expanding z-score, fill at t+1, costs on both legs
+- **Johansen 1991** — trace test and cointegration rank on a price panel
+- **Avellaneda–Stoikov** — reservation price and inventory-skewed quotes
+- **Fama–French 5** — OLS loadings; caller supplies factor returns
+- **Mean-reversion scanner** — OU half-life, Hurst, ADF
+- **Perp basis** — after-fee calculator plus unsigned Binance USDM / Hyperliquid top-of-book (no orders)
+- **Insider clusters** — CMP-style bursts; optional Form 4 P/S via EDGAR (`ATOM_SEC_USER_AGENT` required)
+- **Regime classifier** (`/regime`) — live Yahoo+FRED books, 4h job, softmax P(regime), holdout, paper flatten at last mark (no broker)
+
+Every desk endpoint returns a `what_broke` list. See [docs/WHAT-BROKE.md](docs/WHAT-BROKE.md). Signal catalog: [docs/strategy/signals.md](docs/strategy/signals.md).
 
 ### Risk Analysis
 - **Value at Risk (VaR)** — Historical, Parametric, Monte Carlo methods
@@ -32,10 +57,11 @@ A comprehensive quantitative finance platform integrating pricing engines, risk 
 - **Black-Litterman** — Bayesian views-based allocation
 
 ### Machine Learning
-- **LSTM** — Sequence prediction for price forecasting
-- **Random Forest** — Ensemble-based directional prediction
-- **ARIMA** — Autoregressive time series modeling
-- **DQN (Reinforcement Learning)** — Trading signal generation
+- **Laboratório Quant** — Hipótese econômica, features causais de retornos e risco
+- **Ridge e Random Forest reais** — Comparação com previsão zero e momentum
+- **Validação purgada por grupos** — Walk-forward mensal, intervalo antes do teste e normalização apenas no treino
+- **Risco líquido** — Drawdown, alvo de volatilidade, custos, turnover e estabilidade por janela
+- **Uso de pesquisa** — Sem autorização automática de execução; veja [regras de negócio](docs/RESEARCH-POLICY.md)
 
 ### Ghost Liquidity Analysis
 - Cross-venue duplicate detection
@@ -74,10 +100,11 @@ A comprehensive quantitative finance platform integrating pricing engines, risk 
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 18, TypeScript, Vite 5, MUI 7 |
-| Backend | Python 3.11, FastAPI, NumPy, SciPy, Pandas |
-| Databases | PostgreSQL, MongoDB, Redis |
+| Backend | Python 3.12, FastAPI, NumPy, SciPy, Pandas |
+| ML | PyTorch, torchsde, scikit-learn |
+| Storage | PostgreSQL (asyncpg, no ORM), Redis (optional cache, falls back to in-memory) |
 | Deployment | Docker, docker-compose |
-| Auth | JWT (HMAC-SHA256) |
+| Auth | JWT (HS256) + bcrypt |
 
 ---
 
@@ -85,7 +112,7 @@ A comprehensive quantitative finance platform integrating pricing engines, risk 
 
 ### Prerequisites
 - Node.js 20+
-- Python 3.11+
+- Python 3.12+
 - Docker & Docker Compose (optional)
 
 ### Option 1: Docker (Recommended)
@@ -99,12 +126,15 @@ The app will be available at `http://localhost:5173` with the API at `http://loc
 
 ### Option 2: Manual Setup
 
-**Backend:**
+**Backend:** needs a Postgres instance — `docker run -d -e POSTGRES_USER=atom -e POSTGRES_PASSWORD=atom_dev -e POSTGRES_DB=atom_dev -p 5432:5432 postgres:16-alpine` works for local dev.
+
 ```bash
 cd backend
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-pip install -r requirements.txt
+pip install -r requirements.lock   # pinned, reproducible — matches CI
+export ATOM_DATABASE_URL=postgresql+asyncpg://atom:atom_dev@localhost:5432/atom_dev
+alembic upgrade head                # apply the schema
 uvicorn main:app --reload --port 8000
 ```
 
@@ -121,80 +151,69 @@ Open `http://localhost:5173` in your browser.
 ## Project Structure
 
 ```
-ATOM/
+Atom-Finance/
 ├── backend/
-│   ├── main.py                    # FastAPI entry point
-│   ├── requirements.txt           # Python dependencies
+│   ├── main.py             # FastAPI entry point — wires every router below
+│   ├── requirements.txt    # Direct dependencies (backend/requirements.lock is the pinned, uv-compiled lockfile)
 │   ├── Dockerfile
-│   └── app/
-│       ├── api/                   # API route handlers
-│       │   ├── auth.py            # JWT authentication
-│       │   ├── pricing.py         # Options pricing endpoints
-│       │   ├── risk.py            # Risk analysis endpoints
-│       │   ├── portfolio.py       # Portfolio optimization
-│       │   ├── ml.py              # ML prediction endpoints
-│       │   ├── ghost_liquidity.py # Ghost liquidity analysis
-│       │   ├── black_swan.py      # Black swan detection
-│       │   ├── market_data.py     # Market data (synthetic)
-│       │   ├── reports.py         # PDF/CSV export
-│       │   └── backtesting.py     # Backtesting endpoints
-│       └── models/                # Core quantitative models
-│           ├── pricing.py         # BS, MC, Binomial, FD
-│           ├── volatility.py      # GARCH, Heston, EWMA
-│           ├── risk.py            # VaR, CVaR, Stress Test
-│           ├── portfolio.py       # Portfolio optimization
-│           ├── ml_models.py       # LSTM, RF, ARIMA, DQN
-│           ├── ghost_liquidity.py # Ghost liquidity analyzer
-│           ├── black_swan.py      # Black swan detector
-│           └── backtesting.py     # Backtesting engine
+│   ├── app/
+│   │   ├── api/            # One module per router (auth, pricing, risk, portfolio, ml, ...)
+│   │   ├── core/           # Security (JWT/bcrypt), cache, rate limiter, AI provider factory
+│   │   ├── db/             # Postgres access layer (asyncpg, no ORM) — schema in alembic/versions/
+│   │   ├── models/         # Quantitative models: pricing, volatility, risk, portfolio,
+│   │   │                   # backtesting, ghost liquidity, black swan, CAPM, EVT, copulas, Kronos (ML)
+│   │   └── services/       # External data providers (Brapi/B3, Binance, OpenBB, live quotes)
+│   └── tests/               # pytest suite (unit tests, no external network calls)
 ├── src/
-│   ├── main.tsx                   # React entry point
-│   ├── App.tsx                    # Main app with routing
-│   ├── theme/ThemeProvider.tsx     # MUI theme (dark/light)
-│   ├── services/api.ts            # API client
-│   └── pages/                     # Feature pages
-│       ├── Dashboard.tsx
-│       ├── PricingPage.tsx
-│       ├── RiskPage.tsx
-│       ├── PortfolioPage.tsx
-│       ├── MLPage.tsx
-│       ├── GhostLiquidityPage.tsx
-│       ├── BlackSwanPage.tsx
-│       ├── BacktestingPage.tsx
-│       └── StrategiesPage.tsx
-├── docker-compose.yml
-├── Dockerfile.frontend
-├── vite.config.ts
-├── index.html
+│   ├── main.tsx             # React entry point
+│   ├── App.tsx              # Routing
+│   ├── theme/               # MUI theme (dark/light)
+│   ├── services/api.ts      # API client
+│   ├── components/
+│   └── pages/                # One page per feature area (pricing, risk, portfolio, ML,
+│                              # backtesting, ghost liquidity, black swan, derivatives, paper trading, ...)
+├── research/quantmind/       # Embedded QuantMind research library (own README/tests/tooling)
+├── docs/                     # Product scope, pilot rules, production runbook, research policy
+├── docker-compose*.yml       # dev / prod / edge stacks
 └── package.json
 ```
 
+For the exhaustive, always-current list of files and endpoints, browse the tree directly or use the interactive API docs below — a hand-written list here would just go stale again.
+
 ---
 
-## API Endpoints
+## API
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/auth/register` | POST | Register new user |
-| `/api/auth/login` | POST | Login & get JWT |
-| `/api/pricing/black-scholes` | POST | Black-Scholes pricing |
-| `/api/pricing/monte-carlo` | POST | Monte Carlo pricing |
-| `/api/pricing/binomial` | POST | Binomial tree pricing |
-| `/api/pricing/finite-difference` | POST | FD pricing |
-| `/api/pricing/volatility-surface` | POST | Vol surface generation |
-| `/api/pricing/strategy` | POST | Options strategy analysis |
-| `/api/risk/var` | POST | Value at Risk |
-| `/api/risk/stress-test` | POST | Stress testing |
-| `/api/risk/garch` | POST | GARCH volatility |
-| `/api/portfolio/optimize` | POST | Portfolio optimization |
-| `/api/ml/predict` | POST | ML price prediction |
-| `/api/ghost-liquidity/analyze` | POST | Ghost liquidity analysis |
-| `/api/black-swan/analyze` | POST | Black swan detection |
-| `/api/backtesting/run` | POST | Run backtest |
-| `/api/market-data/quote/{symbol}` | GET | Real-time quote |
-| `/api/market-data/history/{symbol}` | GET | Historical data |
-| `/api/reports/pdf` | POST | Generate PDF report |
-| `/api/reports/csv` | POST | Generate CSV export |
+Every router is mounted under `/api` in [backend/main.py](backend/main.py); most require a bearer token (see `/api/auth/register` and `/api/auth/login`). With the backend running, the full interactive reference is at:
+
+- **Swagger UI** — `http://localhost:8000/docs`
+- **ReDoc** — `http://localhost:8000/redoc`
+
+| Prefix | Area |
+|--------|------|
+| `/api/auth` | Registration & JWT login |
+| `/api/pricing` | Black-Scholes, Monte Carlo, Binomial, Finite Difference, vol surface, strategies |
+| `/api/risk` | VaR, CVaR, stress testing, GARCH |
+| `/api/hedge` | Dynamic hedging |
+| `/api/portfolio` | Markowitz, max Sharpe, min variance, risk parity, Black-Litterman |
+| `/api/ml` | Research protocol (purged walk-forward, real estimators) |
+| `/api/neural-sde` | Neural SDE simulation |
+| `/api/ghost-liquidity` | Cross-venue duplicate & phantom order detection |
+| `/api/black-swan` | Tail risk, regime change, composite risk score |
+| `/api/market-data` | Quotes & history |
+| `/api/ibovespa` | Ibovespa dashboard data |
+| `/api/backtesting` | Strategy backtests |
+| `/api/capm` | CAPM & Kelly sizing |
+| `/api/evt` | Extreme Value Theory (tail risk) |
+| `/api/copulas` | Dependence / contagion modeling |
+| `/api/reports` | CSV/JSON export, AI-generated analysis |
+| `/api/screener` | Multi-AI B3 screener |
+| `/api/autopilot` | Options playbook generation |
+| `/api/binance` | Binance crypto market data |
+| `/api/derivatives` | Derivatives desk planner |
+| `/api/sources` | Market data source quality/monitoring |
+| `/api/research` | QuantMind paper history & extraction |
+| `/api/desk` | Heston CF/calibrate, Engle–Granger, Johansen, Avellaneda–Stoikov, FF5, live perp books, EDGAR Form 4, regime classifier |
 
 ---
 
@@ -207,13 +226,21 @@ cp .env.example .env
 ```
 
 Key environment variables:
-- `SECRET_KEY` — JWT signing key
-- `DATABASE_URL` — PostgreSQL connection string
-- `MONGODB_URL` — MongoDB connection string
-- `REDIS_URL` — Redis connection string
+- `SECRET_KEY` — JWT signing key (required in production, 32+ bytes)
+- `ATOM_DATABASE_URL` — Postgres connection string (`postgresql+asyncpg://user:pass@host:5432/db`); run `alembic upgrade head` from `backend/` after pointing it at a fresh database
+- `REDIS_URL` — Redis connection string (optional; falls back to an in-memory cache when unset or unreachable)
+- `ATOM_SEC_USER_AGENT` — SEC fair-access header for Form 4 pulls; must include a contact email (e.g. `ATOM Research desk@yourdomain.com`)
+
+See [.env.example](.env.example) for the full list, including AI provider keys and market data providers.
+
+---
+
+## Paper Trading
+
+O acompanhamento manual de [operações simuladas](docs/PAPER-TRADING.md) registra entrada, evolução e saída dos planos de derivativos, com custos e histórico por usuário.
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)

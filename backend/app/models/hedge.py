@@ -11,10 +11,9 @@ TailRiskAnalyzer    : GBM-based probability that price reaches liquidation level
 """
 from __future__ import annotations
 
-import math
 import logging
-from dataclasses import dataclass, field
-from typing import Optional
+import math
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -97,7 +96,7 @@ class RebalanceDecision:
     adjust_hedge: bool
     target_short_size: float          # novo_tamanho_alvo
     rationale: str                    # justificativa
-    order_side: Optional[str] = None  # "increase_short" | "reduce_short" | None
+    order_side: str | None = None  # "increase_short" | "reduce_short" | None
     order_delta: float = 0.0          # contracts to add/remove
     tail_risk_prob: float = 0.0       # GBM liquidation probability (0–1)
 
@@ -187,7 +186,7 @@ class TailRiskAnalyzer:
         horizon_hours: float = 8.0,
         n_paths: int = 10_000,
         n_steps: int = 480,
-        seed: Optional[int] = 42,
+        seed: int | None = 42,
     ) -> dict:
         """
         Returns
@@ -320,7 +319,7 @@ class DeltaHedgeEngine:
         state: HedgeState,
         volatility_annual: float = 0.80,
         horizon_hours: float = 8.0,
-        perp_position: Optional[PerpPosition] = None,
+        perp_position: PerpPosition | None = None,
         n_paths: int = 10_000,
     ) -> RebalanceDecision:
         """

@@ -1,3 +1,4 @@
+import type { PaperRecord, PaperSummary, SourceCheck, SourceSnapshotSummary } from '../types/paperTrading';
 const API_BASE = '/api';
 const TOKEN_KEY = 'atom_jwt';
 
@@ -13,12 +14,66 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'API Error');
+    throw new Error(Array.isArray(err.detail) ? err.detail.map((item: { msg: string }) => item.msg).join('; ') : (err.detail || 'API Error'));
   }
   return res.json();
 }
 
+export interface ResearchPaper {
+  id: string;
+  root_node_id: string;
+  nodes: Record<string, { node_id: string; title: string; summary: string; content?: string; citations: { source_id: string; quote?: string; page?: number }[] }>;
+  authors: string[];
+  asset_classes: string[];
+  as_of: string;
+}
+export interface ResearchSummary { id: string; title: string; created_at: string }
+
+export interface QuantMetrics {
+  gross_return_pct: number; net_return_pct: number; sharpe_net: number;
+  annualized_volatility_pct: number; max_drawdown_pct: number; turnover_total: number;
+  cost_paid_pct_initial: number; mse_oos?: number; equity: number[];
+}
+export interface QuantExperiment {
+  run_id?: string; experiment_id: string; policy_version: string; assessment: string;
+  config: { model: string }; reasons: string[]; limitations: string[];
+  results: Record<string, QuantMetrics>;
+  folds: { fold: number; train_end: string; last_train_label_end: string; test_start: string; test_end: string; test_count: number; net_return_pct: number }[];
+}
+export interface ExperimentSummary { id: string; created_at: string; status: string; input_hash: string; error: string | null; hypothesis: string; data_source: string; model: string; assessment: string | null }
+export interface ExperimentDetail {
+  id: string; created_at: string; status: string; input_hash: string; error: string | null;
+  inputs: { hypothesis: string; data_source: string; prices: number[]; dates: string[]; price_basis: string; commission_bps: number; slippage_bps: number; target_volatility: number; max_drawdown: number };
+  result: QuantExperiment | null;
+  reviews: { id: string; created_at: string; decision: string; rationale: string }[];
+}
 export const api = {
+  sourceSnapshots: (ticker:string) => request<SourceSnapshotSummary[]>(`/sources/snapshots?ticker=${encodeURIComponent(ticker)}`),
+  paperSourceCheck: (id:string,snapshotId:string) => request<SourceCheck>(`/paper-trades/${encodeURIComponent(id)}/source-check/${encodeURIComponent(snapshotId)}`),
+  sourceStatus: () => request<Record<string,{configured?:boolean;access?:string;data_mode?:string}>>('/sources/status'),
+  sourceExpirations: (ticker:string) => request<{expirations:string[]}>(`/sources/expirations?ticker=${encodeURIComponent(ticker)}`),
+  sourceChain: (provider:string,ticker:string,expiry:string) => request<unknown>(`/sources/chain?provider=${provider}&ticker=${encodeURIComponent(ticker)}${expiry?'&expiry='+encodeURIComponent(expiry):''}`),
+  sourceSnapshot: (id:string) => request<unknown>(`/sources/snapshots/${encodeURIComponent(id)}`),
+  sourceSelic: () => request<{value:number;observed_date:string;annualized_252_pct:number;note:string}>('/sources/selic'),
+  sourceCvm: (kind:string) => request<{dataset:string;note:string;resources:{name:string;url:string;format:string}[]}>(`/sources/cvm?kind=${kind}`),
+  paperTrack: (plan_id:string,plan_index:number) => request<PaperRecord>('/paper-trades', {method:'POST',body:JSON.stringify({plan_id,plan_index})}),
+  paperHistory: () => request<PaperSummary[]>('/paper-trades'),
+  paperRecord: (id:string) => request<PaperRecord>(`/paper-trades/${encodeURIComponent(id)}`),
+  paperEvent: (id:string,data:object) => request<PaperRecord>(`/paper-trades/${encodeURIComponent(id)}/events`, {method:'POST',body:JSON.stringify(data)}),
+  derivativePlan: (data: object) => request<unknown>('/derivatives/plan', { method: 'POST', body: JSON.stringify(data) }),
+  derivativeHistory: () => request<{id: string; created_at: string}[]>('/derivatives/plans'),
+  derivativeRecord: (id: string) => request<{inputs: unknown; result: unknown}>(`/derivatives/plans/${encodeURIComponent(id)}`),
+  experiments: (offset = 0) => request<{items: ExperimentSummary[]; total: number}>(`/ml/experiments?offset=${offset}`),
+  experiment: (id: string) => request<ExperimentDetail>(`/ml/experiments/${encodeURIComponent(id)}`),
+  reviewExperiment: (id: string, decision: string, rationale: string) => request<ExperimentDetail>(`/ml/experiments/${encodeURIComponent(id)}/reviews`, { method: 'POST', body: JSON.stringify({ decision, rationale }) }),
+  researchMarketHistory: (ticker: string) => request<{close: number[]; dates: string[]; provider?: string; source?: string}>(`/market-data/history/${encodeURIComponent(ticker)}?days=1825&period=5y&provider=yfinance`),
+  quantEvaluate: (data: object) => request<QuantExperiment>('/ml/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  screenerTopPicks: () => request<any[]>('/screener/top-picks'),
+  autopilotGenerate: (data: { capital: number; horizon_days: number }) =>
+    request<any>('/autopilot/generate', { method: 'POST', body: JSON.stringify(data) }),
+  researchHistory: () => request<ResearchSummary[]>('/research/papers'),
+  researchPaper: (id: string) => request<ResearchPaper>(`/research/papers/${encodeURIComponent(id)}`),
+  researchExtract: (kind: 'text' | 'arxiv', content: string) => request<ResearchPaper>('/research/papers', { method: 'POST', body: JSON.stringify({ kind, content }) }),
   // Health
   health: () => request<{ status: string }>('/health'),
 
@@ -48,18 +103,9 @@ export const api = {
   riskParity: (data: any) => request('/portfolio/risk-parity', { method: 'POST', body: JSON.stringify(data) }),
   blackLitterman: (data: any) => request('/portfolio/black-litterman', { method: 'POST', body: JSON.stringify(data) }),
 
-  // ML
-  predict: (data: any) => request('/ml/predict', { method: 'POST', body: JSON.stringify(data) }),
-
-  // Ghost Liquidity
-  ghostLiquidity: (data?: any) => request('/ghost-liquidity/analyze', { method: 'POST', body: JSON.stringify(data || {}) }),
-  ghostMonitor: (n?: number) => request(`/ghost-liquidity/monitor?n_snapshots=${n || 100}`),
-  ghostDemo: () => request('/ghost-liquidity/demo'),
-
-  // Black Swan
+  // Tail risk
   tailRisk: (data: any) => request('/black-swan/tail-risk', { method: 'POST', body: JSON.stringify(data) }),
   regimeChange: (data: any) => request('/black-swan/regime-change', { method: 'POST', body: JSON.stringify(data) }),
-  newsSentiment: (data?: any) => request('/black-swan/news-sentiment', { method: 'POST', body: JSON.stringify(data || {}) }),
   blackSwanFull: (data: any) => request('/black-swan/full-analysis', { method: 'POST', body: JSON.stringify(data) }),
   blackSwanDemo: () => request('/black-swan/demo'),
 
@@ -107,7 +153,7 @@ export const api = {
     const controller = new AbortController();
     fetch('/api/reports/ai-analysis/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ ticker }),
       signal: controller.signal,
     }).then(async (res) => {
@@ -168,4 +214,20 @@ export const api = {
 
   // Fetch financials from ticker (yfinance)
   getTickerFinancials: (ticker: string) => request<{ current: any, previous: any }>(`/reports/ticker-financials/${ticker}`),
+
+  deskHestonPrice: (data: object) => request<any>('/desk/heston/price', { method: 'POST', body: JSON.stringify(data) }),
+  deskHestonCalibrate: (data: object) => request<any>('/desk/heston/calibrate', { method: 'POST', body: JSON.stringify(data) }),
+  deskEngleGranger: (data: object) => request<any>('/desk/pairs/engle-granger', { method: 'POST', body: JSON.stringify(data) }),
+  deskJohansen: (data: object) => request<any>('/desk/pairs/johansen', { method: 'POST', body: JSON.stringify(data) }),
+  deskPairsBacktest: (data: object) => request<any>('/desk/pairs/backtest', { method: 'POST', body: JSON.stringify(data) }),
+  deskMarketMaking: (data: object) => request<any>('/desk/market-making/quotes', { method: 'POST', body: JSON.stringify(data) }),
+  deskFamaFrench: (data: object) => request<any>('/desk/fama-french/decompose', { method: 'POST', body: JSON.stringify(data) }),
+  deskMeanReversion: (data: object) => request<any>('/desk/mean-reversion/scan', { method: 'POST', body: JSON.stringify(data) }),
+  deskPerpArb: (data: object) => request<any>('/desk/perp-arb/scan', { method: 'POST', body: JSON.stringify(data) }),
+  deskPerpLive: (symbol = 'BTCUSDT') => request<any>(`/desk/perp-arb/live?symbol=${encodeURIComponent(symbol)}`),
+  deskInsiderClusters: (data: object) => request<any>('/desk/insider-clusters/detect', { method: 'POST', body: JSON.stringify(data) }),
+  deskEdgar: (data: object) => request<any>('/desk/insider-clusters/edgar', { method: 'POST', body: JSON.stringify(data) }),
+  deskRegime: (data: object) => request<any>('/desk/regime/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskRegimeLive: (flatten = false) =>
+    request<any>(`/desk/regime/live?flatten=${flatten ? 'true' : 'false'}`, { method: 'POST', body: '{}' }),
 };

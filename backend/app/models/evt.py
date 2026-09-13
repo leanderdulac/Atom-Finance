@@ -6,12 +6,11 @@ Extreme Value Theory (EVT) Models
 - EVT-based VaR, CVaR and Return Levels
 """
 
-import numpy as np
 from dataclasses import dataclass
-from functools import partial
-from scipy import stats
-from scipy.optimize import minimize, minimize_scalar
 
+import numpy as np
+from scipy import stats
+from scipy.optimize import minimize
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -114,19 +113,24 @@ class GeneralizedParetoDistribution:
     # ------------------------------------------------------------------
     def var_evt(self, confidence: float, n_total: int, n_excess: int) -> float:
         """EVT-VaR at *confidence* level (expressed as a loss, i.e. positive)."""
-        if self.xi is None:
+        if self.xi is None or self.sigma is None or self.threshold is None:
             raise RuntimeError("Model not fitted — call fit() first.")
-        zeta = n_excess / n_total  # exceedance rate
+        zeta = n_excess / n_total
+        if abs(self.xi) < 1e-10:
+            return self.threshold + self.sigma * np.log(zeta / (1.0 - confidence))
         return self.threshold + (self.sigma / self.xi) * (
             ((1.0 - confidence) / zeta) ** (-self.xi) - 1.0
         )
 
     def cvar_evt(self, var_value: float) -> float:
-        """EVT-CVaR (Expected Shortfall) given a VaR value."""
-        if self.xi is None:
+        """GPD expected shortfall: (VaR + σ − ξu) / (1 − ξ) for ξ < 1 (McNeil et al.)."""
+        if self.xi is None or self.sigma is None or self.threshold is None:
             raise RuntimeError("Model not fitted — call fit() first.")
-        excess_over_u = var_value - self.threshold
-        return (var_value + self.sigma + self.xi * excess_over_u) / (1.0 - self.xi)
+        if self.xi >= 1.0:
+            return float("inf")
+        if abs(self.xi) < 1e-10:
+            return var_value + self.sigma
+        return (var_value + self.sigma - self.xi * self.threshold) / (1.0 - self.xi)
 
     def return_level(
         self,
@@ -136,8 +140,12 @@ class GeneralizedParetoDistribution:
         n_excess: int,
     ) -> float:
         """Return level for a given multi-year return period."""
+        if self.xi is None or self.sigma is None or self.threshold is None:
+            raise RuntimeError("Model not fitted — call fit() first.")
         zeta = n_excess / n_total
         p = 1.0 / (return_period_years * n_obs_per_year)
+        if abs(self.xi) < 1e-10:
+            return self.threshold + self.sigma * np.log(zeta / p)
         return self.threshold + (self.sigma / self.xi) * (
             (p / zeta) ** (-self.xi) - 1.0
         )
@@ -226,11 +234,14 @@ def compute_evt_risk(
     threshold_quantile : quantile used to define the POT threshold
     trading_days_per_year : for annualised return level calculations
     """
-    losses = -returns                       # work in loss space
-    losses_pos = losses[losses > 0]
+    losses = np.asarray(-returns, dtype=np.float64)
+
+    if np.max(losses) <= 0:
+        raise ValueError("No positive losses in the sample; EVT-POT is undefined.")
 
     gpd = GeneralizedParetoDistribution()
-    fit = gpd.fit(losses_pos, threshold_quantile)
+    # Fit on the full loss sample so zeta = N_u / N, not N_u / N_positive.
+    fit = gpd.fit(losses, threshold_quantile)
 
     var = gpd.var_evt(confidence, fit.n_total, fit.n_exceedances)
     cvar = gpd.cvar_evt(var)

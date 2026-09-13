@@ -7,32 +7,33 @@ import asyncio
 import json
 import logging
 import math
-import os
 from datetime import date
 from functools import partial
-from typing import Optional
 
 import numpy as np
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from app.core.limiter import limiter
 from pydantic import BaseModel, Field
 
+from app.core.ai_factory import AIFactory
+from app.core.limiter import limiter
+from app.core.security import get_current_user
+from app.db.database import get_report_by_id as _db_get
+from app.db.database import list_reports as _db_list
+from app.db.database import save_report as _db_save
+from app.models.black_swan import BlackSwanDetector
+from app.models.bridgewise_b3 import BridgewiseB3
 from app.models.capm import CAPMAnalyzer
-from app.models.ml_models import LSTMPredictor
+from app.models.evt import compute_evt_risk as _evt_risk
+from app.models.investment_agents import aggregate_signals, run_all_agents
+from app.models.kelly_derivatives import kelly_derivatives as compute_kelly
+from app.models.ml_models import ExponentialSmoothingForecast
 from app.models.pricing import BlackScholes
 from app.models.risk import ValueAtRisk as RiskCalculator
-from app.models.black_swan import BlackSwanDetector
-from app.models.investment_agents import run_all_agents, aggregate_signals
-from app.models.evt import compute_evt_risk as _evt_risk
 from app.services.brapi_service import BrapiService, _is_br_ticker
 from app.services.data_fetcher import DataFetcher
-from app.services.openbb_service import OpenBBService
-from app.core.ai_factory import AIFactory
 from app.services.news_monitor import NewsMonitor
-from app.models.bridgewise_b3 import BridgewiseB3
-from app.models.kelly_derivatives import kelly_derivatives as compute_kelly
-from app.db.database import save_report as _db_save, list_reports as _db_list, get_report_by_id as _db_get
+from app.services.openbb_service import OpenBBService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -277,11 +278,16 @@ def _rule_based_narrative(ticker: str, report: dict) -> str:
     price = mkt['price']
     strike = rec['suggested_strike']
 
-    # Mathematical Payoff Calculation for Rule-Based fallback
+    # Mathematical Payoff Calculation for Rule-Based fallback.
+    # No option premium is priced in this lightweight (non-LLM) path, so the
+    # break-even is approximated by the strike itself (hence "(Est.)" below).
     is_call = "CALL" in rec['action']
-    be = strike if is_call else strike # Simplified
-    scenario_up = ((strike * 1.10) - strike) if is_call else 0
-    
+    be = strike
+    # Gross (pre-premium) intrinsic value if the underlying rises 10% from the
+    # current price — only meaningful for the long-CALL recommendation; a PUT
+    # or STRADDLE benefits from a different move and isn't captured here.
+    scenario_up = max(price * 1.10 - strike, 0.0) if is_call else 0.0
+
     parts = [
         f"## Relatório de Análise Estática — {ticker}\n",
         f"**Preço atual:** {price:.2f} {currency}  |  "
@@ -292,10 +298,16 @@ def _rule_based_narrative(ticker: str, report: dict) -> str:
         f"- **Volatilidade Implícita:** **{scores['iv_pct']:.1f}%**.\n",
         "\n### 📊 ANÁLISE DE RISCO E PAYOFF (MATEMÁTICO)\n",
         f"- **Estratégia:** {rec['action']} @ {strike:.2f}\n",
-        f"- **Ponto de Equilíbrio (Est.):** {strike:.2f} {currency}\n",
-        f"- **Cenário +10% Valorização:** O retorno estimado no payoff seria de lucro bruto.\n",
+        f"- **Ponto de Equilíbrio (Est.):** {be:.2f} {currency}\n",
+        (
+            f"- **Cenário +10% Valorização:** Lucro bruto estimado de "
+            f"**{scenario_up:.2f} {currency}** por ação (pré-prêmio).\n"
+            if is_call else
+            "- **Cenário +10% Valorização:** Este cenário favorece a perna CALL; "
+            "a estratégia atual não captura ganho na alta.\n"
+        ),
         f"- **Risco de Cauda:** Score de {scores['black_swan_score']:.0f}/100 indica risco {'elevado' if scores['black_swan_score'] > 60 else 'controlado'}.\n",
-        f"\n### Recomendação Técnica\n",
+        "\n### Recomendação Técnica\n",
         f"**{rec['emoji']} {rec['action']}** — Confiança: **{rec['confidence']}**\n\n",
         f"{rec['reasoning']}\n\n",
         f"**Strike sugerido:** {rec['suggested_strike']:.2f}  |  "
@@ -340,7 +352,7 @@ async def _full_analysis(ticker: str) -> dict:
     bench_closes = [float(x) for x in (bench_history.get("close") or []) if x]
 
     # Run models concurrently
-    ml_task = _run(LSTMPredictor().predict, np.array(closes), 30)
+    ml_task = _run(ExponentialSmoothingForecast().predict, np.array(closes), 30)
     var_task = _run(RiskCalculator.historical, rets, 0.95)
     swan_task = _run(BlackSwanDetector.analyze_tail_risk, rets)
 
@@ -349,13 +361,13 @@ async def _full_analysis(ticker: str) -> dict:
     )
 
     # Handle exceptions gracefully
-    if isinstance(ml_result, Exception):
+    if isinstance(ml_result, BaseException):
         logger.warning("ML forecast failed for %s: %s", ticker, ml_result)
         ml_result = {"predictions": [price] * 30, "predicted_return": 0}
-    if isinstance(var_result, Exception):
+    if isinstance(var_result, BaseException):
         logger.warning("VaR failed for %s: %s", ticker, var_result)
         var_result = {"var_percentage": 2.0}
-    if isinstance(swan_result, Exception):
+    if isinstance(swan_result, BaseException):
         logger.warning("Black Swan failed for %s: %s", ticker, swan_result)
         swan_result = {"combined_score": 50.0}
 
@@ -403,7 +415,7 @@ async def _full_analysis(ticker: str) -> dict:
     garch_vol = float(np.std(rets[-30:]) * math.sqrt(252)) if len(rets) >= 30 else iv
 
     # ── 3. Build scores ──────────────────────────────────────────────────
-    ml_return_pct = float(getattr(ml_result, "get", lambda k, d=None: d)("predicted_return", 0)) if isinstance(ml_result, dict) else 0
+    ml_return_pct = float(ml_result.get("predicted_return", 0) or 0) if isinstance(ml_result, dict) else 0
     var_pct = float(var_result.get("var_percentage", 2.0)) if isinstance(var_result, dict) else 2.0
     swan_score = float(swan_result.get("combined_score", 50.0)) if isinstance(swan_result, dict) else 50.0
     momentum = _momentum_score(closes)
@@ -519,11 +531,11 @@ async def _full_analysis(ticker: str) -> dict:
         "returns_for_var": [round(float(r), 6) for r in rets[-252:]],
         "evt_metrics": evt_metrics,
         "specialized_analysis": {
-            "news_monitoring_gemini": news_res if not isinstance(news_res, Exception) else "Erro Gemini",
-            "fundamental_claude": fundamental_res if not isinstance(fundamental_res, Exception) else "Erro Claude",
-            "quant_strategy_gpt": quant_res if not isinstance(quant_res, Exception) else "Erro GPT",
-            "pulse_grok": pulse_res if not isinstance(pulse_res, Exception) else "Erro Grok",
-            "search_perplexity": search_res if not isinstance(search_res, Exception) else "Erro Perplexity",
+            "news_monitoring_gemini": news_res if not isinstance(news_res, BaseException) else "Erro Gemini",
+            "fundamental_claude": fundamental_res if not isinstance(fundamental_res, BaseException) else "Erro Claude",
+            "quant_strategy_gpt": quant_res if not isinstance(quant_res, BaseException) else "Erro GPT",
+            "pulse_grok": pulse_res if not isinstance(pulse_res, BaseException) else "Erro Grok",
+            "search_perplexity": search_res if not isinstance(search_res, BaseException) else "Erro Perplexity",
             "bridgewise_b3": bridgewise_res
         },
         "generated_at": date.today().isoformat(),
@@ -616,7 +628,7 @@ class OptionsData(BaseModel):
 class EarningsPredictionRequest(BaseModel):
     current_period: FinancialPeriod
     previous_period: FinancialPeriod
-    options: Optional[OptionsData] = None
+    options: OptionsData | None = None
 
 @router.post("/earnings-prediction")
 @limiter.limit("5/hour")
@@ -648,8 +660,8 @@ async def get_ticker_financials(ticker: str):
     Fetches the last 2 years of financial statements (Income Stmt, Balance Sheet, Cash Flow)
     via yfinance and maps them to the 14 required metrics.
     """
-    import yfinance as yf
     import pandas as pd
+    import yfinance as yf
     
     # Heuristic for B3
     symbol = ticker.upper()
@@ -710,18 +722,17 @@ async def get_ticker_financials(ticker: str):
         }
     except Exception as e:
         logger.error(f"Error fetching ticker financials for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch financials") from e
 
 @router.post("/ai-analysis")
 @limiter.limit("10/hour")
-async def ai_analysis(request: Request, req: AnalysisRequest):
+async def ai_analysis(request: Request, req: AnalysisRequest, owner: str = Depends(get_current_user)):
     """
     Full AI-powered analysis: fetches market data, runs all quant models,
     and returns a BUY CALL / BUY PUT / STRADDLE recommendation with holding period.
     """
     result = await _full_analysis(req.ticker)
-    # Persist asynchronously (fire-and-forget, never blocks the response)
-    asyncio.create_task(asyncio.to_thread(_db_save, req.ticker.upper(), result))
+    await _db_save(req.ticker.upper(), result, owner=owner)
     return result
 
 
@@ -750,21 +761,21 @@ async def ai_analysis_stream(request: Request, req: AnalysisRequest):
 
 
 @router.get("/history")
-async def reports_history(limit: int = 20):
+async def reports_history(limit: int = Query(20, ge=1, le=100), owner: str = Depends(get_current_user)):
     """Returns the most recent AI analysis reports (all tickers)."""
-    return await asyncio.to_thread(_db_list, None, limit)
+    return await _db_list(None, limit, owner=owner)
 
 
 @router.get("/history/{ticker}")
-async def reports_history_ticker(ticker: str, limit: int = 10):
+async def reports_history_ticker(ticker: str, limit: int = Query(10, ge=1, le=100), owner: str = Depends(get_current_user)):
     """Returns recent AI analysis reports for a specific ticker."""
-    return await asyncio.to_thread(_db_list, ticker, limit)
+    return await _db_list(ticker, limit, owner=owner)
 
 
 @router.get("/history/detail/{report_id}")
-async def report_detail(report_id: int):
+async def report_detail(report_id: int, owner: str = Depends(get_current_user)):
     """Returns the full saved report JSON for a given report ID."""
-    report = await asyncio.to_thread(_db_get, report_id)
+    report = await _db_get(report_id, owner=owner)
     if report is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Report {report_id} not found.")
@@ -807,18 +818,18 @@ async def _full_analysis_streaming(ticker: str):
 
     yield sse("progress", {"step": 3, "total": 7, "message": "Rodando modelos quantitativos (ML, VaR, Black Swan)..."})
 
-    ml_task = _run(LSTMPredictor().predict, np.array(closes), 30)
+    ml_task = _run(ExponentialSmoothingForecast().predict, np.array(closes), 30)
     var_task = _run(RiskCalculator.historical, rets, 0.95)
     swan_task = _run(BlackSwanDetector.analyze_tail_risk, rets)
     ml_result, var_result, swan_result = await asyncio.gather(ml_task, var_task, swan_task, return_exceptions=True)
 
-    if isinstance(ml_result, Exception):
+    if isinstance(ml_result, BaseException):
         logger.warning("ML forecast failed (stream) for %s: %s", ticker, ml_result)
         ml_result = {"predictions": [price] * 30, "predicted_return": 0}
-    if isinstance(var_result, Exception):
+    if isinstance(var_result, BaseException):
         logger.warning("VaR failed (stream) for %s: %s", ticker, var_result)
         var_result = {"var_percentage": 2.0}
-    if isinstance(swan_result, Exception):
+    if isinstance(swan_result, BaseException):
         logger.warning("Black Swan failed (stream) for %s: %s", ticker, swan_result)
         swan_result = {"combined_score": 50.0}
 
@@ -861,7 +872,7 @@ async def _full_analysis_streaming(ticker: str):
     bs_put = BlackScholes.greeks(price, price, ttm, rf, iv, "put")
     garch_vol = float(np.std(rets[-30:]) * math.sqrt(252)) if len(rets) >= 30 else iv
 
-    ml_return_pct = float(ml_result.get("predicted_return", 0)) if isinstance(ml_result, dict) else 0
+    ml_return_pct = float(ml_result.get("predicted_return", 0) or 0) if isinstance(ml_result, dict) else 0
     var_pct = float(var_result.get("var_percentage", 2.0)) if isinstance(var_result, dict) else 2.0
     swan_score = float(swan_result.get("combined_score", 50.0)) if isinstance(swan_result, dict) else 50.0
     momentum = _momentum_score(closes)
@@ -897,11 +908,11 @@ async def _full_analysis_streaming(ticker: str):
 
     keys = list(tasks.keys())
     results_raw = await asyncio.gather(*tasks.values(), return_exceptions=True)
-    results = {k: v for k, v in zip(keys, results_raw)}
+    results = {k: v for k, v in zip(keys, results_raw, strict=False)}
 
     # Process agents
     agents_res = results.get("agents")
-    consensus = aggregate_signals(agents_res) if not isinstance(agents_res, Exception) else {"consensus": "Erro", "consensus_pct": 0}
+    consensus = aggregate_signals(agents_res) if isinstance(agents_res, list) else {"consensus": "Erro", "consensus_pct": 0}
 
     yield sse("progress", {"step": 6, "total": 7, "message": "Gerando narrativa com IA (Claude)..."})
 
@@ -933,12 +944,12 @@ async def _full_analysis_streaming(ticker: str):
         "returns_for_var": [round(float(r), 6) for r in rets[-252:]],
         "evt_metrics": evt_metrics_stream,
         "specialized_analysis": {
-            "news_monitoring_gemini": results["news"] if not isinstance(results["news"], Exception) else "Erro Gemini",
-            "fundamental_claude": results["fundamental"] if not isinstance(results["fundamental"], Exception) else "Erro Claude",
-            "quant_strategy_gpt": results["quant"] if not isinstance(results["quant"], Exception) else "Erro GPT",
-            "pulse_grok": results["pulse"] if not isinstance(results["pulse"], Exception) else "Erro Grok",
-            "search_perplexity": results["search"] if not isinstance(results["search"], Exception) else "Erro Perplexity",
-            "bridgewise_b3": results.get("bridgewise") if not isinstance(results.get("bridgewise"), Exception) else None
+            "news_monitoring_gemini": results["news"] if not isinstance(results["news"], BaseException) else "Erro Gemini",
+            "fundamental_claude": results["fundamental"] if not isinstance(results["fundamental"], BaseException) else "Erro Claude",
+            "quant_strategy_gpt": results["quant"] if not isinstance(results["quant"], BaseException) else "Erro GPT",
+            "pulse_grok": results["pulse"] if not isinstance(results["pulse"], BaseException) else "Erro Grok",
+            "search_perplexity": results["search"] if not isinstance(results["search"], BaseException) else "Erro Perplexity",
+            "bridgewise_b3": results.get("bridgewise") if not isinstance(results.get("bridgewise"), BaseException) else None
         },
         "generated_at": date.today().isoformat(),
     }

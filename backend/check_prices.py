@@ -1,12 +1,13 @@
+import asyncio
 import os
 import sys
-import asyncio
 
 # Adiciona o diretório backend ao path para importar app
 sys.path.append(os.getcwd())
 
-from app.services.brapi_service import BrapiService
 from app.models.ibovespa import IBOVESPA_ASSETS
+from app.services.brapi_service import BrapiService
+
 
 async def check_prices():
     print(f"{'Ticker':<10} | {'Hardcoded S0':<15} | {'Real Price (Brapi)':<20} | {'Status'}")

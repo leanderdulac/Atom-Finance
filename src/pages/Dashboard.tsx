@@ -4,7 +4,7 @@ import {
   Table, TableBody, TableCell, TableRow, Alert,
 } from '@mui/material';
 import {
-  ShowChart, TrendingUp, TrendingDown, Warning, Water, Hub,
+  ShowChart, TrendingUp, TrendingDown, Warning, Hub,
 } from '@mui/icons-material';
 import { api } from '../services/api';
 
@@ -39,11 +39,10 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const [liveQuote, providerStatus, ghostData, swanData] = await Promise.all([
+        const [liveQuote, providerStatus, swanData] = await Promise.all([
           api.quote('AAPL', 'auto').catch(() => null),
           api.marketProviders().catch(() => null),
-          api.ghostDemo().catch(() => ({ ghost_ratio: 0.42, liquidity_score: 58.0, risk_level: 'MEDIUM' })),
-          api.blackSwanDemo().catch(() => ({ combined_score: 34.2, alert_level: 'MODERATE' })),
+          api.blackSwanDemo().catch(() => null),
         ]);
 
         // Price real BS with live AAPL spot if available
@@ -59,7 +58,7 @@ export default function Dashboard() {
           if (bs?.price) bsResult = bs;
         }
 
-        setData({ bs: bsResult, ghost: ghostData, swan: swanData, liveQuote, providerStatus });
+        setData({ bs: bsResult, swan: swanData, liveQuote, providerStatus });
       } catch (e) {
         console.error(e);
       } finally {
@@ -92,13 +91,8 @@ export default function Dashboard() {
             icon={<TrendingUp />} color="#06b6d4" trend="up" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Ghost Liquidity" value={`${((data.ghost?.ghost_ratio || 0) * 100).toFixed(1)}%`}
-            subtitle={`Score: ${data.ghost?.liquidity_score || '—'}`} icon={<Water />}
-            color="#f59e0b" trend="down" />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Black Swan Score" value={data.swan?.combined_score?.toFixed(1) || '—'}
-            subtitle={`Alert: ${data.swan?.alert_level || '—'}`} icon={<Warning />}
+          <StatCard title="Tail Risk Score (demo series)" value={data.swan?.combined_score?.toFixed(1) ?? 'indisponível'}
+            subtitle={data.swan ? `Alert: ${data.swan.alert_level}` : 'sem resposta do backend'} icon={<Warning />}
             color={data.swan?.combined_score > 50 ? '#ef4444' : '#10b981'} />
         </Grid>
       </Grid>
@@ -156,10 +150,10 @@ export default function Dashboard() {
                 {[
                   'OpenBB', 'Black-Scholes', 'Monte Carlo', 'Binomial Tree', 'Finite Difference',
                   'GARCH', 'Heston Model', 'VaR/CVaR', 'Markowitz',
-                  'Risk Parity', 'Black-Litterman', 'LSTM', 'Random Forest',
-                  'ARIMA', 'DQN Trading', 'Ghost Liquidity', 'Black Swan Detection',
+                  'Risk Parity', 'Black-Litterman', 'Ridge', 'Random Forest',
+                  'Purged Walk-Forward', 'Net Risk', 'Tail Risk (EVT)',
                   'Greeks', 'IV Surface', 'Straddle', 'Iron Condor', 'Butterfly',
-                  'Backtesting', 'Stress Testing', 'NLP Sentiment',
+                  'Backtesting', 'Stress Testing',
                 ].map((cap) => (
                   <Chip key={cap} label={cap} size="small" variant="outlined"
                     sx={{ fontSize: '0.75rem', borderColor: 'primary.main', color: 'primary.light' }} />

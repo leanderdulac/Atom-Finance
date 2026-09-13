@@ -3,14 +3,14 @@ ATOM AI Factory — Centralized hub for multi-model intelligence.
 Manages Claude (Fundamentals), GPT (Quant/Backtesting), and Gemini (News).
 """
 from __future__ import annotations
-import os
+
 import logging
-from typing import Literal, Optional, Any
+import os
 from abc import ABC, abstractmethod
 
 import anthropic
 import openai
-import google.generativeai as genai
+from google import genai
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class CreditException(LLMException):
 
 class LLMProvider(ABC):
     @abstractmethod
-    async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
+    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         pass
 
 class ClaudeProvider(LLMProvider):
@@ -36,7 +36,7 @@ class ClaudeProvider(LLMProvider):
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
         self.model = "claude-3-5-sonnet-20241022"
 
-    async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
+    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         try:
             message = await self.client.messages.create(
                 model=self.model,
@@ -44,25 +44,28 @@ class ClaudeProvider(LLMProvider):
                 system=system_prompt if system_prompt else "Você é um analista financeiro sênior.",
                 messages=[{"role": "user", "content": prompt}]
             )
-            return message.content[0].text
+            block = message.content[0]
+            if not isinstance(block, anthropic.types.TextBlock):
+                raise LLMException(f"Unexpected Claude response block type: {type(block).__name__}")
+            return block.text
         except anthropic.BadRequestError as e:
             if "credit balance" in str(e).lower():
                 logger.error(f"Claude Credit Error: {e}")
-                raise CreditException(str(e))
-            raise LLMException(str(e))
+                raise CreditException(str(e)) from e
+            raise LLMException(str(e)) from e
         except anthropic.RateLimitError as e:
             logger.error(f"Claude Quota Error: {e}")
-            raise QuotaException(str(e))
+            raise QuotaException(str(e)) from e
         except Exception as e:
             logger.error(f"Claude General Error: {e}")
-            raise LLMException(str(e))
+            raise LLMException(str(e)) from e
 
 class GPTProvider(LLMProvider):
     def __init__(self, api_key: str):
         self.client = openai.AsyncOpenAI(api_key=api_key)
         self.model = "gpt-4o" # Placeholder for latest GPT
 
-    async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
+    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -77,29 +80,34 @@ class GPTProvider(LLMProvider):
             err_msg = str(e).lower()
             if "insufficient_quota" in err_msg or "rate_limit" in err_msg:
                 logger.error(f"GPT Quota Error: {e}")
-                raise QuotaException(str(e))
+                raise QuotaException(str(e)) from e
             elif "insufficient_balance" in err_msg:
                 logger.error(f"GPT Credit Error: {e}")
-                raise CreditException(str(e))
-            
+                raise CreditException(str(e)) from e
+
             logger.error(f"GPT General Error: {e}")
-            raise LLMException(str(e))
+            raise LLMException(str(e)) from e
 
 class GeminiProvider(LLMProvider):
     def __init__(self, api_key: str):
-        genai.configure(api_key=api_key)
+        self.client = genai.Client(api_key=api_key)
         # Using flash as it is more likely to be available on free/low-tier accounts
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = "gemini-3.5-flash"
 
-    async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
+    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         try:
-            # Gemini handles system instructions in the model constructor or as a prefix
+            # Gemini handles system instructions as a prefix here for parity with the previous provider behavior
             full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-            response = await self.model.generate_content_async(full_prompt)
+            response = await self.client.aio.models.generate_content(
+                model=self.model,
+                contents=full_prompt,
+            )
+            if response.text is None:
+                raise LLMException("Gemini returned no text (likely blocked by safety filters).")
             return response.text
         except Exception as e:
             logger.error(f"Gemini error: {e}")
-            raise LLMException(str(e))
+            raise LLMException(str(e)) from e
 
 class GrokProvider(LLMProvider):
     def __init__(self, api_key: str):
@@ -107,7 +115,7 @@ class GrokProvider(LLMProvider):
         self.client = openai.AsyncOpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
         self.model = "grok-3"
 
-    async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
+    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -128,7 +136,7 @@ class PerplexityProvider(LLMProvider):
         self.client = openai.AsyncOpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
         self.model = "sonar-pro"
 
-    async def complete(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
+    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -148,7 +156,7 @@ class AIFactory:
     
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(AIFactory, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance._init_providers()
         return cls._instance
 
@@ -161,14 +169,14 @@ class AIFactory:
             "perplexity": PerplexityProvider(os.getenv("PERPLEXITY_API_KEY", "")) if os.getenv("PERPLEXITY_API_KEY") else None,
         }
 
-    def get_provider(self, name: str) -> Optional[LLMProvider]:
+    def get_provider(self, name: str) -> LLMProvider | None:
         return self.providers.get(name)
 
     async def generate_robust_complete(
         self, 
         prompt: str, 
-        system_prompt: Optional[str] = None, 
-        preferred_order: Optional[list[str]] = None,
+        system_prompt: str | None = None, 
+        preferred_order: list[str] | None = None,
         **kwargs
     ) -> str:
         """

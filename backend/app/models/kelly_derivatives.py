@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def kelly_derivatives(win_prob: float, payout_ratio: float, bankroll: float, fraction: float = 1.0) -> dict:
     """
     Calcula o tamanho da aposta usando Critério de Kelly adaptado para Derivativos (Calls/Puts).

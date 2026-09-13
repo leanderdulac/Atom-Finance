@@ -1,23 +1,20 @@
 """
-Black Swan Detection Engine
-- NLP-based sentiment analysis for rare event detection
-- Tail risk analysis
-- Cross-market anomaly detection
-- News feed analysis
+Tail-risk diagnostics on a realised return series.
+
+Scope: distribution statistics (skew, excess kurtosis, sigma-exceedance counts,
+Hill tail index, max drawdown) and a rolling-volatility change flag. This is not
+a regime model — see `app/models/regime.py` for the percentile classifier.
 """
-import numpy as np
-from typing import Optional
-from datetime import datetime, timedelta
 import math
+
+import numpy as np
 
 
 class BlackSwanDetector:
     """
-    Detect potential black swan events by analyzing:
-    1. Market data anomalies (fat tails, regime changes)
-    2. News sentiment (extreme negative/positive)
-    3. Cross-asset correlations breakdown
-    4. Volume/volatility spikes
+    Tail-risk diagnostics computed from returns:
+    1. Distribution shape vs the Gaussian benchmark (fat tails, skew)
+    2. Rolling-volatility shifts
     """
 
     @staticmethod
@@ -142,104 +139,15 @@ class BlackSwanDetector:
         }
 
     @staticmethod
-    def analyze_news_sentiment(articles: Optional[list[dict]] = None) -> dict:
-        """
-        Analyze news articles for black swan indicators.
-        articles: [{"title": "...", "description": "...", "source": "...", "date": "..."}]
-        """
-        if articles is None:
-            # Generate synthetic news analysis for demo
-            articles = BlackSwanDetector._generate_sample_news()
-
-        # Simple keyword-based sentiment (production would use transformers)
-        negative_keywords = [
-            "crash", "crisis", "collapse", "default", "bankruptcy", "recession",
-            "panic", "sell-off", "plunge", "catastrophe", "meltdown", "contagion",
-            "black swan", "unprecedented", "extreme", "devastation", "war", "sanctions",
-        ]
-        positive_keywords = [
-            "rally", "surge", "boom", "recovery", "growth", "breakthrough",
-            "record high", "bullish", "optimistic", "stimulus",
-        ]
-        tail_risk_keywords = [
-            "systemic", "contagion", "liquidity crisis", "margin call",
-            "flash crash", "circuit breaker", "tail risk", "fat tail",
-        ]
-
-        analyzed = []
-        sentiment_scores = []
-        tail_risk_flags = []
-
-        for article in articles:
-            text = (article.get("title", "") + " " + article.get("description", "")).lower()
-
-            neg_count = sum(1 for kw in negative_keywords if kw in text)
-            pos_count = sum(1 for kw in positive_keywords if kw in text)
-            tail_count = sum(1 for kw in tail_risk_keywords if kw in text)
-
-            # Sentiment score: -1 to 1
-            total = neg_count + pos_count + 1
-            sentiment = (pos_count - neg_count) / total
-
-            sentiment_scores.append(sentiment)
-            if tail_count > 0:
-                tail_risk_flags.append(article.get("title", "Unknown"))
-
-            analyzed.append({
-                "title": article.get("title", ""),
-                "source": article.get("source", ""),
-                "sentiment": round(float(sentiment), 3),
-                "sentiment_label": "negative" if sentiment < -0.2 else ("positive" if sentiment > 0.2 else "neutral"),
-                "tail_risk_flag": tail_count > 0,
-                "negative_keywords_found": neg_count,
-            })
-
-        avg_sentiment = BlackSwanDetector._finite_float(np.mean(sentiment_scores)) if sentiment_scores else 0.0
-        alert_level = "CRITICAL" if avg_sentiment < -0.5 else (
-            "WARNING" if avg_sentiment < -0.2 else (
-                "WATCH" if avg_sentiment < 0 else "NORMAL"
-            )
-        )
-
-        return {
-            "articles_analyzed": len(analyzed),
-            "articles": analyzed[:20],
-            "aggregate_sentiment": round(avg_sentiment, 4),
-            "alert_level": alert_level,
-            "tail_risk_mentions": tail_risk_flags[:10],
-            "sentiment_distribution": {
-                "negative": sum(1 for s in sentiment_scores if s < -0.2),
-                "neutral": sum(1 for s in sentiment_scores if -0.2 <= s <= 0.2),
-                "positive": sum(1 for s in sentiment_scores if s > 0.2),
-            },
-        }
-
-    @staticmethod
-    def _generate_sample_news() -> list[dict]:
-        return [
-            {"title": "Markets show resilience amid uncertainty", "description": "Stocks recovered from early losses as investors assessed economic data.", "source": "Reuters", "date": "2026-03-13"},
-            {"title": "Fed signals potential rate cuts", "description": "Federal Reserve officials hint at monetary policy easing amid growth concerns.", "source": "Bloomberg", "date": "2026-03-13"},
-            {"title": "Tech sector faces regulatory scrutiny", "description": "Major tech companies under investigation for monopolistic practices.", "source": "CNBC", "date": "2026-03-12"},
-            {"title": "Oil prices surge on geopolitical tensions", "description": "Crude oil prices spike amid escalating geopolitical crisis in key regions.", "source": "Reuters", "date": "2026-03-12"},
-            {"title": "Banking sector liquidity concerns emerge", "description": "Several regional banks report liquidity pressures amid systemic risk fears.", "source": "FT", "date": "2026-03-11"},
-            {"title": "Global trade data shows unprecedented decline", "description": "International trade volumes collapse to record lows amid extreme uncertainty.", "source": "Bloomberg", "date": "2026-03-11"},
-            {"title": "Crypto market faces contagion fears", "description": "Major cryptocurrency exchange faces potential default and margin call cascade.", "source": "CoinDesk", "date": "2026-03-10"},
-            {"title": "Emerging markets rally on stimulus hopes", "description": "Emerging market stocks surge on expectations of coordinated global stimulus.", "source": "Reuters", "date": "2026-03-10"},
-        ]
-
-    @staticmethod
-    def combined_analysis(returns: np.ndarray, articles: Optional[list[dict]] = None) -> dict:
-        """Full black swan analysis combining market data and news."""
+    def combined_analysis(returns: np.ndarray) -> dict:
+        """Tail-risk score from the realised return series alone."""
         tail = BlackSwanDetector.analyze_tail_risk(returns)
         regime = BlackSwanDetector.detect_regime_change(returns)
-        news = BlackSwanDetector.analyze_news_sentiment(articles)
 
-        # Combined score
         market_score = BlackSwanDetector._finite_float(tail["black_swan_score"])
-        news_score = max(0.0, min(100.0, BlackSwanDetector._finite_float((1 - (news["aggregate_sentiment"] + 1) / 2) * 100)))
         regime_score = min(100.0, BlackSwanDetector._finite_float(regime["n_regime_changes"] * 10))
 
-        combined_score = BlackSwanDetector._finite_float(0.4 * market_score + 0.35 * news_score + 0.25 * regime_score)
+        combined_score = BlackSwanDetector._finite_float(0.6 * market_score + 0.4 * regime_score)
 
         return {
             "combined_score": round(combined_score, 1),
@@ -247,11 +155,9 @@ class BlackSwanDetector:
             "components": {
                 "market_tail_risk": tail,
                 "regime_analysis": regime,
-                "news_sentiment": news,
             },
             "scores": {
                 "market_score": round(market_score, 1),
-                "news_score": round(news_score, 1),
                 "regime_score": round(regime_score, 1),
             },
         }

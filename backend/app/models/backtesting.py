@@ -4,8 +4,8 @@ Backtesting Engine
 - Performance metrics (Sharpe, Sortino, Calmar, etc.)
 - Drawdown analysis
 """
+
 import numpy as np
-from typing import Optional
 
 
 class BacktestEngine:
@@ -13,12 +13,17 @@ class BacktestEngine:
 
     @staticmethod
     def run_strategy(prices: np.ndarray, strategy: str = "sma_crossover",
-                     params: Optional[dict] = None, initial_capital: float = 100_000,
-                     commission: float = 0.001, seed: Optional[int] = 42) -> dict:
+                     params: dict | None = None, initial_capital: float = 100_000,
+                     commission: float = 0.001, seed: int | None = 42,
+                     slippage: float = 0.0005) -> dict:
         if seed is not None:
             np.random.seed(seed)
 
         prices = np.asarray(prices, dtype=np.float64)
+        if len(prices) < 2 or not np.all(np.isfinite(prices)) or np.any(prices <= 0):
+            raise ValueError("Prices must be positive and finite")
+        if not 0 <= commission <= 0.01 or not 0 <= slippage <= 0.01:
+            raise ValueError("Invalid transaction costs")
         params = params or {}
         returns = np.diff(prices) / prices[:-1]
         n = len(prices)
@@ -42,21 +47,29 @@ class BacktestEngine:
         portfolio_values = [capital]
         trades = []
 
+        traded_notional = 0.0
+        total_costs = 0.0
         cost_basis = 0.0  # total cost paid at last buy (including commission)
         for i in range(1, n):
-            if signals[i] == 1 and position <= 0:  # Buy
-                shares = int(capital / prices[i])
-                cost = shares * prices[i] * (1 + commission)
-                if cost <= capital:
+            if signals[i - 1] == 1 and position <= 0 and i < n - 1:  # Buy
+                execution_price = prices[i] * (1 + slippage)
+                shares = int(capital / (execution_price * (1 + commission)))
+                cost = shares * execution_price * (1 + commission)
+                if shares > 0 and cost <= capital:
+                    traded_notional += shares * execution_price
+                    total_costs += cost - shares * prices[i]
                     capital -= cost
                     cost_basis = cost
                     position = 1
-                    trades.append({"day": i, "type": "BUY", "price": round(float(prices[i]), 2), "shares": shares})
-            elif signals[i] == -1 and position > 0:  # Sell
-                revenue = shares * prices[i] * (1 - commission)
+                    trades.append({"day": i, "type": "BUY", "price": round(float(execution_price), 2), "shares": shares})
+            elif signals[i - 1] == -1 and position > 0:  # Sell
+                execution_price = prices[i] * (1 - slippage)
+                revenue = shares * execution_price * (1 - commission)
+                traded_notional += shares * execution_price
+                total_costs += shares * prices[i] - revenue
                 capital += revenue
                 pnl = revenue - cost_basis
-                trades.append({"day": i, "type": "SELL", "price": round(float(prices[i]), 2), "shares": shares, "pnl": round(float(pnl), 2)})
+                trades.append({"day": i, "type": "SELL", "price": round(float(execution_price), 2), "shares": shares, "pnl": round(float(pnl), 2)})
                 shares = 0
                 position = 0
                 cost_basis = 0.0
@@ -66,7 +79,15 @@ class BacktestEngine:
 
         # Close any open position
         if shares > 0:
-            capital += shares * prices[-1] * (1 - commission)
+            execution_price = prices[-1] * (1 - slippage)
+            revenue = shares * execution_price * (1 - commission)
+            traded_notional += shares * execution_price
+            total_costs += shares * prices[-1] - revenue
+            capital += revenue
+            trades.append({"day": n - 1, "type": "SELL", "reason": "final_liquidation",
+                           "price": round(float(execution_price), 2), "shares": shares,
+                           "pnl": round(float(revenue - cost_basis), 2)})
+            portfolio_values[-1] = capital
 
         portfolio_values = np.array(portfolio_values)
 
@@ -75,11 +96,26 @@ class BacktestEngine:
         bh_returns = returns  # Buy and hold
 
         metrics = BacktestEngine._calculate_metrics(portfolio_values, pv_returns, bh_returns, initial_capital)
+        metrics["validation"] = {"status": "exploratory_backtest", "eligible_for_live_trading": False,
+                                 "out_of_sample": False, "execution_delay_bars": 1,
+                                 "note": "Use the ML research protocol for chronological out-of-sample validation."}
+        metrics["performance"]["transaction_costs"] = round(float(total_costs), 2)
+        metrics["performance"]["turnover_initial_capital"] = round(float(traded_notional / initial_capital), 4)
+        metrics["assumptions"] = {"commission": commission, "slippage": slippage,
+                                  "benchmark": "buy-and-hold gross, without costs"}
         metrics["trades"] = trades[-50:]
         metrics["n_trades"] = len(trades)
         metrics["strategy"] = strategy
-        metrics["portfolio_values"] = [round(float(v), 2) for v in portfolio_values[::max(1, len(portfolio_values) // 200)]]
-        metrics["buy_hold_values"] = [round(float(v), 2) for v in (initial_capital * prices / prices[0])[::max(1, n // 200)]]
+        step = max(1, len(portfolio_values) // 200)
+        sampled = [round(float(v), 2) for v in portfolio_values[::step]]
+        if sampled[-1] != round(float(portfolio_values[-1]), 2):
+            sampled.append(round(float(portfolio_values[-1]), 2))
+        bh = initial_capital * prices / prices[0]
+        bh_sampled = [round(float(v), 2) for v in bh[::step]]
+        if bh_sampled[-1] != round(float(bh[-1]), 2):
+            bh_sampled.append(round(float(bh[-1]), 2))
+        metrics["portfolio_values"] = sampled
+        metrics["buy_hold_values"] = bh_sampled
 
         return metrics
 
@@ -90,9 +126,9 @@ class BacktestEngine:
         n = len(prices)
         signals = np.zeros(n)
 
-        for i in range(long_window, n):
-            sma_short = np.mean(prices[i - short_window:i])
-            sma_long = np.mean(prices[i - long_window:i])
+        for i in range(long_window - 1, n):
+            sma_short = np.mean(prices[i - short_window + 1:i + 1])
+            sma_long = np.mean(prices[i - long_window + 1:i + 1])
             if sma_short > sma_long:
                 signals[i] = 1
             elif sma_short < sma_long:
@@ -166,10 +202,9 @@ class BacktestEngine:
         # Sharpe Ratio
         sharpe = float(np.mean(pv_returns) / max(np.std(pv_returns), 1e-8) * np.sqrt(252))
 
-        # Sortino Ratio
-        downside_returns = pv_returns[pv_returns < 0]
-        downside_std = float(np.std(downside_returns)) if len(downside_returns) > 0 else 0.001
-        sortino = float(np.mean(pv_returns) / downside_std * np.sqrt(252))
+        # Sortino: downside deviation = sqrt(E[min(r,0)²]), not std of negative days only.
+        downside_dev = float(np.sqrt(np.mean(np.minimum(pv_returns, 0.0) ** 2)))
+        sortino = float(np.mean(pv_returns) / max(downside_dev, 1e-8) * np.sqrt(252))
 
         # Maximum Drawdown
         running_max = np.maximum.accumulate(portfolio_values)

@@ -1,8 +1,7 @@
 import logging
-from typing import Optional, Dict
+from datetime import timedelta
 
 import pandas as pd
-from datetime import timedelta
 
 from app.services.data_fetcher import DataFetcher
 
@@ -14,7 +13,7 @@ class KronosAgent:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(KronosAgent, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
         return cls._instance
 
     @classmethod
@@ -22,7 +21,7 @@ class KronosAgent:
         if cls._predictor is None:
             logger.info("Initializing Kronos models from HuggingFace...")
             try:
-                from app.models.kronos import Kronos, KronosTokenizer, KronosPredictor
+                from app.models.kronos import Kronos, KronosPredictor, KronosTokenizer
                 tokenizer = KronosTokenizer.from_pretrained("NeoQuasar/Kronos-Tokenizer-base")
                 model = Kronos.from_pretrained("NeoQuasar/Kronos-mini")
                 cls._predictor = KronosPredictor(model, tokenizer, max_context=512)
@@ -33,7 +32,7 @@ class KronosAgent:
         return cls._predictor
 
     @classmethod
-    def predict(cls, symbol: str, pred_len: int = 30) -> Optional[Dict]:
+    def predict(cls, symbol: str, pred_len: int = 30) -> dict | None:
         """
         Uses Kronos to predict the next `pred_len` days of price action for `symbol`.
         Retrieves the last year of data to feed up to 512 context tokens.

@@ -6,8 +6,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Query, Request
-from app.core.limiter import limiter
 
+from app.core.limiter import limiter
 from app.models.pricing import BlackScholes
 from app.services.brapi_service import BrapiService, _is_br_ticker
 from app.services.data_fetcher import DataFetcher
@@ -38,7 +38,10 @@ def _safe_float(value: object, default: float = 0.0) -> float:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return default
     try:
-        return float(value)
+        # `value: object` is intentionally broad; the try/except below is the
+        # real type guard, which the checker can't see through float()'s
+        # narrower ConvertibleToFloat protocol.
+        return float(value)  # pyright: ignore[reportArgumentType]
     except (TypeError, ValueError):
         return default
 
@@ -47,7 +50,7 @@ def _safe_int(value: object, default: int = 0) -> int:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return default
     try:
-        return int(value)
+        return int(value)  # pyright: ignore[reportArgumentType]
     except (TypeError, ValueError):
         return default
 
@@ -119,7 +122,7 @@ def _quote_from_yfinance(ticker: str) -> dict | None:
 
 
 def _history_from_yfinance(ticker: str, days: int, period: str) -> dict | None:
-    period_map = {7: "5d", 30: "1mo", 90: "3mo", 252: "1y", 504: "2y"}
+    period_map = {7: "5d", 30: "1mo", 90: "3mo", 252: "1y", 504: "2y", 1260: "5y", 1825: "5y"}
     yf_period = period_map.get(days, period)
     df = DataFetcher.get_historical_data(ticker, period=yf_period, interval="1d")
     if df is None or df.empty:
@@ -149,7 +152,7 @@ def _options_from_yfinance(ticker: str) -> dict | None:
     if calls_df.empty:
         return None
     if puts_df.empty:
-        puts_df = pd.DataFrame(columns=["strike", "lastPrice", "impliedVolatility"])
+        puts_df = pd.DataFrame(columns=["strike", "lastPrice", "impliedVolatility"])  # pyright: ignore[reportArgumentType]
 
     merged = calls_df.merge(puts_df, on="strike", how="left", suffixes=("_call", "_put"))
     rows = []

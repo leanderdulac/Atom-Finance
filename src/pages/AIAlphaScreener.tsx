@@ -8,7 +8,7 @@ import {
   AutoFixHigh, TrendingUp, TrendingDown, Info, 
   Refresh, Analytics, Shield, Search
 } from '@mui/icons-material';
-import axios from 'axios';
+import { api } from '../services/api';
 
 interface ScreenerResult {
   ticker: string;
@@ -48,10 +48,10 @@ const AIAlphaScreener: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.get('/api/screener/top-picks');
-      setResults(response.data);
+      const response = await api.screenerTopPicks();
+      setResults(response);
     } catch (err) {
-      setError('Falha ao processar screening multi-IA. Verifique as chaves de API.');
+      setError(err instanceof Error ? err.message : 'Falha ao processar screening multi-IA. Verifique as chaves de API.');
       console.error(err);
     } finally {
       setLoading(false);

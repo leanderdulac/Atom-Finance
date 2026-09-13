@@ -1,34 +1,33 @@
 """
 ATOM Autopilot — Automated Client Journey Engine
 =================================================
-Transforms a simple client input (capital + horizon) into a validated
+Transforms a simple client input (capital + horizon) into an exploratory
 "Gabarito" (playbook) of options operations across 3 risk profiles.
 
 Pipeline:
   1. Client inputs capital + horizon
   2. AI Screener ranks the 18 Ibovespa assets
-  3. Backtester validates each operation (Black-Scholes + Kolmogorov)
+  3. Theoretical scenarios estimate payoffs; no historical validation
   4. Only operations that pass probability thresholds reach the client
 
 Endpoint: POST /api/autopilot/generate
 """
 
 import asyncio
-import math
 import logging
-from datetime import date, datetime
-from typing import Literal
+import math
+from datetime import datetime
 
-import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.api.ai_report import _full_analysis
-from app.models.ibovespa import IBOVESPA_ASSETS
 from app.core.ai_factory import AIFactory
+from app.core.security import get_current_user
+from app.models.ibovespa import IBOVESPA_ASSETS
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 _AUTOPILOT_CACHE: dict = {}
@@ -44,7 +43,7 @@ class AutopilotRequest(BaseModel):
 
 
 class OperationCard(BaseModel):
-    """A single validated options operation ready for the client."""
+    """An exploratory theoretical scenario; never validated for trading."""
     profile: str                  # "Conservador" | "Moderado" | "Agressivo"
     profile_emoji: str
     profile_color: str
@@ -63,12 +62,12 @@ class OperationCard(BaseModel):
     scenario_base: dict
     scenario_bull: dict
     max_loss: float               # = total_cost (premium paid)
-    probability_of_profit: float  # 0-100%
+    theoretical_itm_probability_pct: float  # 0-100%
     # AI consensus
     bull_score: float
     ai_consensus: str             # "5/6 BULLISH"
     narrative_summary: str        # Short AI-generated explanation
-    validated: bool               # passed backtest threshold
+    validated: bool               # always False: no out-of-sample validation
 
 
 class AutopilotResponse(BaseModel):
@@ -120,7 +119,7 @@ def _backtest_operation(
     r: float = 0.105,
 ) -> dict:
     """
-    Run a mathematical backtest for a single options operation.
+    Compute hypothetical payoffs for a single options operation; this is not a backtest.
     Returns payoff scenarios (bear/base/bull), probability of profit,
     and whether the operation passes the validation threshold.
     """
@@ -139,7 +138,7 @@ def _backtest_operation(
         pnl_pct = round((pnl / total_cost) * 100, 1) if total_cost > 0 else 0
         scenarios[label] = {"pct": pnl_pct, "brl": round(pnl, 2)}
 
-    # Probability of profit (Kolmogorov/Fokker-Planck)
+    # Risk-neutral probability of expiring in the money; ignores premium breakeven.
     pop = round(_kolmogorov_prob(spot, strike, T_years, r, sigma, opt_type) * 100, 1)
 
     return {
@@ -148,7 +147,7 @@ def _backtest_operation(
         "total_cost": total_cost,
         "scenarios": scenarios,
         "max_loss": total_cost,
-        "probability_of_profit": pop,
+        "theoretical_itm_probability_pct": pop,
     }
 
 
@@ -210,7 +209,7 @@ async def _generate_gabarito_narrative(operations: list[dict], capital: float, h
     try:
         ops_summary = "\n".join([
             f"- {op['profile']}: {op['direction']} {op['ticker']} @ R${op['strike']:.2f}, "
-            f"Prob. Lucro {op['probability_of_profit']:.0f}%, Payoff Est. +{op.get('potential_return_pct', 5):.1f}%"
+            f"Prob. teórica ITM (não probabilidade de lucro) {op['theoretical_itm_probability_pct']:.0f}%, Payoff Est. +{op.get('potential_return_pct', 5):.1f}%"
             for op in operations
         ])
 
@@ -224,7 +223,7 @@ Escreva um resumo executivo direto ao ponto (4-5 frases) em português:
 2. Explique o 'Payoff' esperado (ex: quanto o investidor ganha se o mercado oscilar conforme o esperado).
 3. Inclua um aviso de risco sobre a expiração das opções (Theta decay).
 
-FOCO: Clareza sobre lucro potencial e risco de capital."""
+FOCO: Cenários hipotéticos e risco de capital. Não afirmar validação, alta probabilidade de lucro ou recomendar execução. ITM teórico não é probabilidade de lucro."""
 
         system = "Você é um gestor de carteira quantitativo. Fale de forma técnica mas compreensível."
         
@@ -235,7 +234,7 @@ FOCO: Clareza sobre lucro potencial e risco de capital."""
         )
     except Exception as e:
         logger.error(f"Failed to generate gabarito narrative: {e}")
-        return "Gabarito gerado com base em modelos matemáticos de alta probabilidade. As estratégias selecionadas visam capturar a volatilidade implícita do mercado B3 no horizonte de 30 dias."
+        return "Cenários teóricos, sem validação histórica. A probabilidade ITM é uma estimativa sob medida neutra ao risco e não representa chance de lucro."
 
 
 # ── Main Endpoint ─────────────────────────────────────────────────────────────
@@ -246,8 +245,8 @@ async def generate_autopilot(req: AutopilotRequest):
     The Autopilot Engine.
     1. Screens all 18 Ibovespa assets via multi-AI analysis
     2. Picks the best asset for each risk profile
-    3. Backtests each operation mathematically
-    4. Returns only validated operations as a clean "Gabarito"
+    3. Computes hypothetical scenario payoffs
+    4. Returns exploratory scenarios with validated=False
     """
     global _AUTOPILOT_CACHE, _CACHE_TS
 
@@ -269,8 +268,8 @@ async def generate_autopilot(req: AutopilotRequest):
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         analyses = {}
-        for ticker, res in zip(tickers, results):
-            if not isinstance(res, Exception):
+        for ticker, res in zip(tickers, results, strict=False):
+            if not isinstance(res, BaseException):
                 analyses[ticker] = res
             else:
                 logger.warning(f"Autopilot: {ticker} failed: {res}")
@@ -345,7 +344,7 @@ async def generate_autopilot(req: AutopilotRequest):
         ai_label, _ = _count_bullish_ais(analysis)
 
         # Validation gate
-        validated = bt["probability_of_profit"] >= profile["prob_threshold"]
+        validated = False  # Scenario analysis is not an out-of-sample validation.
 
         op = {
             "profile": profile["name"],
@@ -365,7 +364,7 @@ async def generate_autopilot(req: AutopilotRequest):
             "scenario_base": bt["scenarios"]["base"],
             "scenario_bull": bt["scenarios"]["bull"],
             "max_loss": bt["max_loss"],
-            "probability_of_profit": bt["probability_of_profit"],
+            "theoretical_itm_probability_pct": bt["theoretical_itm_probability_pct"],
             "bull_score": bull_score,
             "ai_consensus": ai_label,
             "narrative_summary": "",

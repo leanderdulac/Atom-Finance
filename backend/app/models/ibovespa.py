@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import io
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import partial
 from typing import Literal
 
 import numpy as np
@@ -116,16 +115,18 @@ async def refresh_ibovespa_params(force: bool = False) -> bool:
             return False
 
         updated_count = 0
-        from app.models.kronos_agent import KronosAgent
         import asyncio
+
+        from app.models.kronos_agent import KronosAgent
 
         for asset in IBOVESPA_ASSETS:
             ticker = asset["ticker"]
             yf_ticker = f"{ticker}.SA"
             
             # 1. Update S0 (Price)
-            if yf_ticker in quotes and quotes[yf_ticker]:
-                price = quotes[yf_ticker].get("price")
+            quote = quotes.get(yf_ticker)
+            if quote:
+                price = quote.get("price")
                 if price and price > 0:
                     asset["S0"] = price
             
@@ -375,6 +376,7 @@ def generate_excel_report(
 
     # ── Sheet 1: Portfolio ─────────────────────────────────────────────────────
     ws1 = wb.active
+    assert ws1 is not None  # a freshly created Workbook() always has an active sheet
     ws1.title = "Portfólio RL"
     ws1.column_dimensions["A"].width = 10
     ws1.column_dimensions["B"].width = 16
@@ -393,7 +395,7 @@ def generate_excel_report(
     _header_row(ws1, 4, ["Ticker", "Setor", "Peso RL (%)", "Alocação (R$)",
                           "μ a.a. (%)", "σ a.a. (%)", "Ret. Esp. (%)", "Sharpe implícito"])
     assets_map = {a["ticker"]: a for a in sim["assets"]}
-    for r_idx, (ticker, weight) in enumerate(zip(rl_result.tickers, rl_result.weights), start=5):
+    for r_idx, (ticker, weight) in enumerate(zip(rl_result.tickers, rl_result.weights, strict=False), start=5):
         asset = assets_map.get(ticker, {})
         alloc = initial_capital * float(weight)
         mu    = asset.get("mu", 0) * 100

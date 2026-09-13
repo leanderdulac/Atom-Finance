@@ -1,15 +1,17 @@
-from fastapi import APIRouter, HTTPException, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import Optional
+
+from app.core.security import get_current_user
 from app.services.binance_service import BinanceService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 class KellyCryptoRequest(BaseModel):
     symbol: str = Field(..., description="Binance symbol, e.g. BTCUSDT")
     win_prob: float = Field(..., gt=0, lt=1)
     payout_ratio: float = Field(..., gt=0)
-    bankroll_override: Optional[float] = Field(None, description="Manual bankroll. If None, tries to fetch from Binance USDT balance.")
+    bankroll_override: float | None = Field(None, description="Manual bankroll. If None, tries to fetch from Binance USDT balance.")
     fraction: float = Field(0.25, gt=0, le=1)
 
 class LeverageRequest(BaseModel):
@@ -39,10 +41,7 @@ async def get_depth(symbol: str, limit: int = Query(100, ge=1, le=5000)):
 
 @router.get("/account")
 async def get_account():
-    info = await BinanceService.get_account_info()
-    if "error" in info:
-        raise HTTPException(status_code=400, detail=info["error"])
-    return info
+    raise HTTPException(410, "ATOM Research não acessa contas nem altera posições na corretora.")
 
 @router.get("/futures/price/{symbol}")
 async def get_futures_price(symbol: str):
@@ -53,20 +52,16 @@ async def get_futures_price(symbol: str):
 
 @router.get("/futures/account")
 async def get_futures_account():
-    info = await BinanceService.get_futures_account()
-    if "error" in info:
-        raise HTTPException(status_code=400, detail=info["error"])
-    return info
+    raise HTTPException(410, "ATOM Research não acessa contas nem altera posições na corretora.")
 
 @router.post("/futures/leverage")
 async def set_leverage(req: LeverageRequest):
-    result = await BinanceService.change_leverage(req.symbol, req.leverage)
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-    return result
+    raise HTTPException(410, "ATOM Research não acessa contas nem altera posições na corretora.")
 
 @router.post("/kelly-sizing")
 async def get_kelly_sizing(req: KellyCryptoRequest):
+    if req.bankroll_override is None or req.bankroll_override <= 0:
+        raise HTTPException(422, "Informe um capital positivo para a simulação; a conta da corretora não será consultada.")
     result = await BinanceService.calculate_kelly_sizing(
         req.symbol, req.win_prob, req.payout_ratio, req.bankroll_override, req.fraction
     )

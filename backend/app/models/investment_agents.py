@@ -3,6 +3,7 @@ Investment Philosophy Agents — inspired by multi-agent hedge fund pattern.
 Each agent takes a quant_data dict and returns AgentSignal.
 """
 from __future__ import annotations
+
 import dataclasses
 from typing import Literal
 
@@ -49,10 +50,10 @@ def buffett_agent(quant_data: dict) -> AgentSignal:
         reasoning = f"Alpha positivo ({alpha:.1f}%), beta controlado ({beta:.2f}) e VaR moderado apontam empresa de qualidade. Margem de segurança presente."
     elif score <= 35:
         signal = "COMPRAR PUT"
-        reasoning = f"Alpha negativo, risco elevado e/ou momentum desfavorável contradizem os princípios de valor. Cautela recomendada."
+        reasoning = "Alpha negativo, risco elevado e/ou momentum desfavorável contradizem os princípios de valor. Cautela recomendada."
     else:
         signal = "NEUTRO"
-        reasoning = f"Empresa não atende plenamente os critérios de qualidade e valor. Aguardar melhor ponto de entrada."
+        reasoning = "Empresa não atende plenamente os critérios de qualidade e valor. Aguardar melhor ponto de entrada."
 
     conf = abs(score - 50) * 2
     return AgentSignal("buffett", "Warren Buffett", signal, min(conf, 95), reasoning, weight=1.5)
@@ -65,7 +66,9 @@ def burry_agent(quant_data: dict) -> AgentSignal:
     """
     swan = quant_data.get("black_swan_score", 50)
     momentum = quant_data.get("momentum_raw", 0)
-    change = quant_data.get("change_pct", 0)
+    # change_pct (single-day move) is deliberately not used: Burry's thesis is
+    # built on stress/sentiment (black_swan_score) and multi-day mean-reversion
+    # (momentum_raw, ml_return_pct), and a one-day print would just add noise.
     ml = quant_data.get("ml_return_pct", 0)
     var = quant_data.get("var_pct", 2)
 
@@ -87,7 +90,7 @@ def burry_agent(quant_data: dict) -> AgentSignal:
         reasoning = f"Mercado complacente com risco (Black Swan baixo {swan:.0f}/100) e momentum ilusoriamente positivo. Assimetria de risco favorável ao downside."
     else:
         signal = "STRADDLE"
-        reasoning = f"Volatilidade elevada e incerteza direcional. Straddle captura movimento independentemente da direção."
+        reasoning = "Volatilidade elevada e incerteza direcional. Straddle captura movimento independentemente da direção."
 
     conf = abs(stress_score - 50) * 1.5
     return AgentSignal("burry", "Michael Burry", signal, min(conf, 90), reasoning, weight=1.2)
@@ -197,15 +200,18 @@ def risk_manager_agent(quant_data: dict) -> AgentSignal:
     iv = quant_data.get("iv_pct", 30)
     garch = quant_data.get("garch_vol_pct", 25)
 
-    risk_score = (var / 5 * 30) + (swan / 100 * 40) + (garch / 80 * 30)
+    # IV (forward-looking, market-priced risk) and GARCH vol (backward-looking,
+    # realized risk) are complementary — both belong in a risk-manager score,
+    # so the volatility weight is split between them instead of using GARCH alone.
+    risk_score = (var / 5 * 25) + (swan / 100 * 35) + (garch / 80 * 20) + (iv / 80 * 20)
 
     if risk_score > 70:
         signal = "COMPRAR PUT"
-        reasoning = f"Risco sistêmico elevado: VaR {var:.2f}%, Black Swan {swan:.0f}/100, Volatilidade GARCH {garch:.0f}%. Hedge recomendado."
+        reasoning = f"Risco sistêmico elevado: VaR {var:.2f}%, Black Swan {swan:.0f}/100, Volatilidade GARCH {garch:.0f}%, IV {iv:.0f}%. Hedge recomendado."
         conf = min(risk_score, 90)
     elif risk_score < 25:
         signal = "COMPRAR CALL"
-        reasoning = f"Ambiente de risco favorável: VaR {var:.2f}%, Black Swan {swan:.0f}/100, volatilidade controlada."
+        reasoning = f"Ambiente de risco favorável: VaR {var:.2f}%, Black Swan {swan:.0f}/100, volatilidade controlada (GARCH {garch:.0f}%, IV {iv:.0f}%)."
         conf = min((50 - risk_score) * 1.5, 80)
     else:
         signal = "NEUTRO"

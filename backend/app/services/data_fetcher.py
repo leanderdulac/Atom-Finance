@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -13,7 +12,7 @@ from app.core.cache import Cache
 
 logger = logging.getLogger(__name__)
 
-CACHE_TTL = int(60)  # seconds
+CACHE_TTL = 60  # seconds
 
 # Lazy-loaded yfinance
 _yfinance = None
@@ -36,7 +35,7 @@ class DataFetcher:
     # ── Quote ─────────────────────────────────────────────────────────────────
 
     @classmethod
-    def get_quote(cls, symbol: str, use_cache: bool = True) -> Optional[Dict]:
+    def get_quote(cls, symbol: str, use_cache: bool = True) -> dict | None:
         symbol = symbol.upper()
         cache_key = f"quote:{symbol}"
 
@@ -85,7 +84,7 @@ class DataFetcher:
         symbol: str,
         period: str = "1y",
         interval: str = "1d",
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         yf = _get_yfinance()
         if not yf:
             return None
@@ -98,7 +97,7 @@ class DataFetcher:
     # ── Options Chain ─────────────────────────────────────────────────────────
 
     @classmethod
-    def get_options_chain(cls, symbol: str, expiry_date: Optional[str] = None) -> Optional[Dict]:
+    def get_options_chain(cls, symbol: str, expiry_date: str | None = None) -> dict | None:
         yf = _get_yfinance()
         if not yf:
             return None
@@ -123,7 +122,7 @@ class DataFetcher:
     # ── Volatility ────────────────────────────────────────────────────────────
 
     @classmethod
-    def get_volatility_data(cls, symbol: str) -> Optional[Dict]:
+    def get_volatility_data(cls, symbol: str) -> dict | None:
         try:
             chain = cls.get_options_chain(symbol)
             if not chain or not chain["calls"]:
@@ -132,8 +131,8 @@ class DataFetcher:
             puts = pd.DataFrame(chain["puts"])
             if calls.empty or puts.empty:
                 return None
-            atm_calls = calls[calls["inTheMoney"] == False].head(5)
-            atm_puts = puts[puts["inTheMoney"] == False].head(5)
+            atm_calls = calls[~calls["inTheMoney"]].head(5)
+            atm_puts = puts[~puts["inTheMoney"]].head(5)
             avg_iv_calls = atm_calls["impliedVolatility"].mean() if not atm_calls.empty else 0.0
             avg_iv_puts = atm_puts["impliedVolatility"].mean() if not atm_puts.empty else 0.0
             return {
@@ -151,7 +150,7 @@ class DataFetcher:
     # ── Multiple Quotes (concurrent) ──────────────────────────────────────────
 
     @classmethod
-    async def get_multiple_quotes_async(cls, symbols: List[str]) -> Dict[str, Optional[Dict]]:
+    async def get_multiple_quotes_async(cls, symbols: list[str]) -> dict[str, dict | None]:
         """Fetch multiple quotes concurrently using a thread pool."""
         loop = asyncio.get_event_loop()
         tasks = [
@@ -160,19 +159,22 @@ class DataFetcher:
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return {
-            symbol: (result if not isinstance(result, Exception) else None)
-            for symbol, result in zip(symbols, results)
+            # BaseException, not Exception: gather(return_exceptions=True) can
+            # surface asyncio.CancelledError, which is a BaseException and
+            # would otherwise leak through as if it were a valid quote dict.
+            symbol: (result if not isinstance(result, BaseException) else None)
+            for symbol, result in zip(symbols, results, strict=False)
         }
 
     @classmethod
-    def get_multiple_quotes(cls, symbols: List[str]) -> Dict[str, Optional[Dict]]:
+    def get_multiple_quotes(cls, symbols: list[str]) -> dict[str, dict | None]:
         """Sync wrapper — use get_multiple_quotes_async in async contexts."""
         return {symbol: cls.get_quote(symbol) for symbol in symbols}
 
     # ── Returns ───────────────────────────────────────────────────────────────
 
     @classmethod
-    def calculate_returns(cls, symbol: str, period: str = "1y") -> Optional[Dict]:
+    def calculate_returns(cls, symbol: str, period: str = "1y") -> dict | None:
         try:
             df = cls.get_historical_data(symbol, period=period)
             if df is None or df.empty:

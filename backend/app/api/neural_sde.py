@@ -5,11 +5,14 @@ from functools import partial
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
-
-from app.models.neural_sde import NeuralSDE
 
 router = APIRouter()
+
+
+def _engine():
+    """Import torch/torchsde only when a Neural SDE endpoint is called."""
+    from app.models.neural_sde import NeuralSDE
+    return NeuralSDE
 
 
 class NeuralSDERequest(BaseModel):
@@ -21,7 +24,7 @@ class NeuralSDERequest(BaseModel):
     state_size: int = Field(1, ge=1, le=4, description="State dimensionality")
     hidden_size: int = Field(32, ge=8, le=128, description="Hidden units in μ/σ networks")
     method: str = Field("euler", pattern="^(euler|milstein)$", description="SDE solver method")
-    seed: Optional[int] = Field(42, description="Random seed (null for random)")
+    seed: int | None = Field(42, description="Random seed (null for random)")
 
 
 async def _run_in_thread(func, *args, **kwargs):
@@ -32,6 +35,7 @@ async def _run_in_thread(func, *args, **kwargs):
 @router.get("/status")
 async def sde_status():
     """Check whether the Neural SDE model (torchsde) is available."""
+    NeuralSDE = _engine()
     return {
         "available": NeuralSDE.is_available(),
         "model": "neural_sde",
@@ -44,11 +48,13 @@ async def simulate_sde(req: NeuralSDERequest):
     """
     Simulate trajectories of a Neural SDE.
 
-    The drift μ(t,y) and diffusion σ(t,y) are parameterised by small
-    randomly-initialised neural networks. Each call uses a fresh random
-    initialisation (or the provided seed) — results represent one possible
-    learned dynamics.
+    The drift μ(t,y) and diffusion σ(t,y) are parameterised by small neural
+    networks that are never trained: each call draws a fresh random
+    initialisation (or the one implied by the seed) and integrates it. The
+    trajectories are a valid numerical solution of that random SDE and carry
+    no information about any asset.
     """
+    NeuralSDE = _engine()
     if not NeuralSDE.is_available():
         raise HTTPException(
             status_code=503,
@@ -72,6 +78,7 @@ async def simulate_sde(req: NeuralSDERequest):
 @router.get("/demo")
 async def demo_sde():
     """Run a quick demo simulation with default parameters."""
+    NeuralSDE = _engine()
     if not NeuralSDE.is_available():
         raise HTTPException(status_code=503, detail="torchsde not installed.")
 

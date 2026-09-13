@@ -2,16 +2,12 @@
 Options Expert AI Agent — Logic for scanning B3 and identifying setups.
 """
 from __future__ import annotations
+
 import dataclasses
 import logging
-import math
-from datetime import datetime, timedelta
-from typing import Literal, List, Dict, Optional
+from typing import Literal
 
-import numpy as np
-from app.models.pricing import BlackScholes
 from app.services.data_fetcher import DataFetcher
-from app.services.brapi_service import BrapiService
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +17,17 @@ class OptionTrade:
     action: Literal["BUY CALL", "SELL CALL", "BUY PUT", "SELL PUT", "BULL CALL SPREAD", "BEAR PUT SPREAD", "COVERED CALL"]
     underlying_price: float
     strike: float
-    strike_2: Optional[float] = None
+    strike_2: float | None = None
     expiry_days: int = 30
     iv: float = 0.30
     delta: float = 0.50
     theta: float = -0.01
     cost_brl: float = 0.0
-    max_profit: Optional[float] = None
-    max_loss: Optional[float] = None
+    max_profit: float | None = None
+    max_loss: float | None = None
     prob_success: float = 50.0
     reasoning: str = ""
-    scenario_analysis: Dict[str, float] = dataclasses.field(default_factory=dict)
+    scenario_analysis: dict[str, float] = dataclasses.field(default_factory=dict)
 
 class OptionsExpert:
     
@@ -42,7 +38,7 @@ class OptionsExpert:
     ]
 
     @classmethod
-    async def scan_market(cls, limit: int = 15) -> List[OptionTrade]:
+    async def scan_market(cls, limit: int = 15) -> list[OptionTrade]:
         """Scans B3 assets and returns the best 3-5 opportunities."""
         tickers = cls.TOP_B3_TICKERS[:limit]
         yf_tickers = [f"{t}.SA" for t in tickers]
@@ -68,6 +64,7 @@ class OptionsExpert:
             # 3. Kronos AI Prediction
             try:
                 import asyncio
+
                 from app.models.kronos_agent import KronosAgent
                 kronos_pred = await asyncio.to_thread(KronosAgent.predict, yf_t, 30)
                 kronos_trend = kronos_pred["trend"] if kronos_pred else "NEUTRAL"
@@ -77,8 +74,10 @@ class OptionsExpert:
                 kronos_trend = "NEUTRAL"
                 kronos_return = 0.0
 
-            change = q.get("change_pct", 0)
-            
+            # q["change_pct"] (today's move) is intentionally not used for routing:
+            # the trade direction is driven by Kronos's 30-day forecast, and a
+            # single day's print is noise relative to that horizon.
+
             if kronos_trend == "BULLISH" and iv < 0.45:
                 trade = cls._recommend_bullish(ticker, spot, iv)
                 trade.reasoning = f"Modelo Kronos prevê alta de {kronos_return:.1f}% em 30 dias. Volatilidade baixa ({iv*100:.1f}%) favorece a compra de estrutura."

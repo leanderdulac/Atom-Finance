@@ -4,9 +4,29 @@ Risk Analysis Models
 - Conditional VaR (CVaR / Expected Shortfall)
 - Stress Testing & Scenario Analysis
 """
+
 import numpy as np
-from scipy.stats import norm, t as t_dist
-from typing import Optional
+from scipy.stats import norm
+from scipy.stats import t as t_dist
+
+
+def _horizon_returns(returns: np.ndarray, holding_period: int) -> np.ndarray:
+    """Overlapping compounded holding-period returns (not √h scaling of 1-day PnL)."""
+    if holding_period <= 1:
+        return returns
+    if np.any(returns <= -1):
+        raise ValueError("Returns ≤ -100% cannot be compounded over a holding period")
+    if len(returns) < holding_period:
+        raise ValueError("Need at least `holding_period` observations for overlapping h-day returns")
+    acc = np.convolve(np.log1p(returns), np.ones(holding_period), mode="valid")
+    return np.expm1(acc)
+
+
+def _tail_cvar(hp_returns: np.ndarray, var_pct: float) -> float:
+    tail = hp_returns[hp_returns <= -var_pct]
+    if tail.size == 0:
+        return var_pct
+    return float(-np.mean(tail))
 
 
 class ValueAtRisk:
@@ -17,11 +37,11 @@ class ValueAtRisk:
                    portfolio_value: float = 1_000_000, holding_period: int = 1) -> dict:
         returns = np.asarray(returns, dtype=np.float64)
         alpha = 1 - confidence
-        hp_returns = returns * np.sqrt(holding_period) if holding_period > 1 else returns
+        hp_returns = _horizon_returns(returns, holding_period)
 
         var_pct = float(-np.percentile(hp_returns, alpha * 100))
         var_abs = var_pct * portfolio_value
-        cvar_pct = float(-np.mean(hp_returns[hp_returns <= -var_pct]))
+        cvar_pct = _tail_cvar(hp_returns, var_pct)
         cvar_abs = cvar_pct * portfolio_value
 
         return {
@@ -33,7 +53,8 @@ class ValueAtRisk:
             "cvar_percentage": round(cvar_pct * 100, 4),
             "cvar_absolute": round(cvar_abs, 2),
             "portfolio_value": portfolio_value,
-            "n_observations": len(returns),
+            "n_observations": int(len(hp_returns)),
+            "horizon_method": "overlapping_compounded" if holding_period > 1 else "1d",
         }
 
     @staticmethod
@@ -42,20 +63,27 @@ class ValueAtRisk:
                    distribution: str = "normal") -> dict:
         returns = np.asarray(returns, dtype=np.float64)
         mu = float(np.mean(returns))
-        sigma = float(np.std(returns))
+        sigma = float(np.std(returns, ddof=1)) if len(returns) > 1 else float(np.std(returns))
         alpha = 1 - confidence
+        h = float(holding_period)
+        mu_h = mu * h
+        sigma_h = sigma * np.sqrt(h)
 
+        extra: dict = {}
         if distribution == "normal":
-            z = norm.ppf(alpha)
-            var_pct = -(mu + z * sigma) * np.sqrt(holding_period)
-            # CVaR for normal distribution
-            cvar_pct = -(mu - sigma * norm.pdf(z) / alpha) * np.sqrt(holding_period)
+            z = float(norm.ppf(alpha))
+            var_pct = -(mu_h + z * sigma_h)
+            cvar_pct = -(mu_h - sigma_h * float(norm.pdf(z)) / alpha)
         elif distribution == "t":
-            # Fit Student-t
-            df_est = max(3, len(returns) // 50)
-            z = t_dist.ppf(alpha, df_est)
-            var_pct = -(mu + z * sigma) * np.sqrt(holding_period)
-            cvar_pct = var_pct * 1.1  # Approximate
+            df_est = float(max(3, len(returns) // 50))
+            z = float(t_dist.ppf(alpha, df_est))
+            var_pct = -(mu_h + z * sigma_h)
+            if df_est <= 1:
+                cvar_pct = float("inf")
+            else:
+                tail_factor = float(t_dist.pdf(z, df_est)) / alpha * (df_est + z ** 2) / (df_est - 1)
+                cvar_pct = -mu_h + sigma_h * tail_factor
+            extra["df"] = df_est
         else:
             raise ValueError(f"Unknown distribution: {distribution}")
 
@@ -70,12 +98,14 @@ class ValueAtRisk:
             "mean_return": round(mu * 100, 4),
             "volatility": round(sigma * 100, 4),
             "portfolio_value": portfolio_value,
+            "horizon_method": "mu*h + sigma*sqrt(h)",
+            **extra,
         }
 
     @staticmethod
     def monte_carlo(returns: np.ndarray, confidence: float = 0.95,
                     portfolio_value: float = 1_000_000, holding_period: int = 1,
-                    n_simulations: int = 50_000, seed: Optional[int] = 42) -> dict:
+                    n_simulations: int = 50_000, seed: int | None = 42) -> dict:
         if seed is not None:
             np.random.seed(seed)
 
@@ -90,7 +120,8 @@ class ValueAtRisk:
         sim_pnl = sim_values - portfolio_value
 
         var_abs = float(-np.percentile(sim_pnl, alpha * 100))
-        cvar_abs = float(-np.mean(sim_pnl[sim_pnl <= -var_abs]))
+        tail = sim_pnl[sim_pnl <= -var_abs]
+        cvar_abs = float(-np.mean(tail)) if tail.size else var_abs
 
         return {
             "method": "monte_carlo",
@@ -120,6 +151,7 @@ class StressTest:
         "2020_covid_crash": {"equity": -0.34, "bonds": 0.08, "gold": 0.10, "vix_change": 400},
         "2000_dotcom_bust": {"equity": -0.49, "bonds": 0.15, "gold": -0.05, "vix_change": 150},
         "1987_black_monday": {"equity": -0.22, "bonds": 0.02, "gold": 0.03, "vix_change": 200},
+        "2010_flash_crash": {"equity": -0.09, "bonds": 0.01, "gold": 0.02, "vix_change": 250},
         "rate_hike_200bps": {"equity": -0.15, "bonds": -0.12, "gold": -0.05, "vix_change": 50},
         "hyperinflation": {"equity": -0.20, "bonds": -0.25, "gold": 0.40, "vix_change": 100},
         "geopolitical_crisis": {"equity": -0.12, "bonds": 0.05, "gold": 0.15, "vix_change": 80},

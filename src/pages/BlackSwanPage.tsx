@@ -12,22 +12,22 @@ import ProviderChips from '../components/ProviderChips';
 const blackSwanFoundations = [
   {
     title: 'Extreme value theory',
-    text: 'Black swan monitoring starts in the tails: kurtosis, extreme-event counts and tail-index proxies test whether rare losses are more common than Gaussian models imply.',
+    text: 'Tail diagnostics start in the tails: kurtosis, extreme-event counts and a Hill tail-index estimate test whether rare losses are more common than Gaussian models imply.',
   },
   {
-    title: 'Regime diagnostics',
-    text: 'Volatility clustering and regime breaks matter because instability often arrives as a transition, not a single point estimate. The engine tracks shifts before they become obvious.',
+    title: 'Volatility shifts',
+    text: 'Rolling annualised volatility is compared window to window and flagged when it moves more than 15%. This is a threshold on realised volatility, not a fitted regime model.',
   },
   {
-    title: 'AI and narrative signals',
-    text: 'News sentiment adds a second layer to market statistics. The convergence of NLP, tail modeling and scenario thinking is what makes systemic monitoring operational.',
+    title: 'What this is not',
+    text: 'There is no news feed, no NLP and no HMM behind this page. The score is computed from the return series you load and nothing else. For the fitted regime classifier, use the Regime page.',
   },
 ];
 
 const blackSwanConvergence = [
   'EVT improves the treatment of rare, high-impact losses beyond normal-distribution assumptions.',
-  'Monte Carlo scenarios can be made more realistic when the tail behavior is informed by extreme-event diagnostics.',
-  'The same stack is adaptable to climate risk, catastrophe insurance and broader systemic tipping-point analysis.',
+  'A Hill estimate on 5% of observations is noisy and assumes the tail is already Pareto-like; read it as an indication, not a measurement.',
+  'A high score describes the sample you loaded. It is not a forecast and does not authorise any position.',
 ];
 
 function generateReturns(): number[] {
@@ -56,6 +56,7 @@ export default function BlackSwanPage() {
   const [provider, setProvider] = useState('openbb');
   const [liveReturns, setLiveReturns] = useState<number[] | null>(null);
   const [dataSource, setDataSource] = useState('');
+  const [usedSynthetic, setUsedSynthetic] = useState(false);
 
   const loadMarketReturns = async () => {
     setLoading(true); setError('');
@@ -73,8 +74,9 @@ export default function BlackSwanPage() {
   const runFullAnalysis = async () => {
     setLoading(true); setError('');
     try {
-      const returns = liveReturns || generateReturns();
-      const res = await api.blackSwanFull({ returns });
+      const synthetic = !liveReturns;
+      const res = await api.blackSwanFull({ returns: liveReturns || generateReturns() });
+      setUsedSynthetic(synthetic);
       setResult(res);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
@@ -91,9 +93,9 @@ export default function BlackSwanPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 0.5 }}>Black Swan Detection</Typography>
+      <Typography variant="h4" sx={{ mb: 0.5 }}>Tail Risk Diagnostics</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Tail risk analysis, regime change detection & NLP news sentiment
+        Distribution shape, sigma exceedances and volatility shifts on a realised return series
       </Typography>
 
       <Grid container spacing={2.5} sx={{ mb: 3 }}>
@@ -135,13 +137,21 @@ export default function BlackSwanPage() {
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
+      {result && usedSynthetic && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Série sintética: nenhum dado de mercado foi carregado, então a análise abaixo roda sobre
+          retornos gerados com três choques plantados. Os números não descrevem ativo nenhum —
+          use <strong>Load Market Returns</strong> para analisar uma série real.
+        </Alert>
+      )}
+
       {result && (
         <>
           {/* Combined Score */}
           <Card sx={{ mb: 2 }}>
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h5">Black Swan Risk Score</Typography>
+                <Typography variant="h5">Tail Risk Score</Typography>
                 <Chip
                   label={`${result.alert_level}`}
                   color={alertColor(result.alert_level) as any}
@@ -170,25 +180,17 @@ export default function BlackSwanPage() {
 
               {result.scores && (
                 <Grid container spacing={2} sx={{ mt: 2 }}>
-                  <Grid size={{ xs: 4 }}>
+                  <Grid size={{ xs: 6 }}>
                     <Box sx={{ textAlign: 'center', p: 1, border: 1, borderColor: 'divider', borderRadius: 2 }}>
-                      <Typography variant="caption" color="text.secondary">Market Score</Typography>
+                      <Typography variant="caption" color="text.secondary">Tail Score (60%)</Typography>
                       <Typography variant="h6" sx={{ fontFamily: 'monospace' }}>
                         {result.scores.market_score?.toFixed(1)}
                       </Typography>
                     </Box>
                   </Grid>
-                  <Grid size={{ xs: 4 }}>
+                  <Grid size={{ xs: 6 }}>
                     <Box sx={{ textAlign: 'center', p: 1, border: 1, borderColor: 'divider', borderRadius: 2 }}>
-                      <Typography variant="caption" color="text.secondary">News Score</Typography>
-                      <Typography variant="h6" sx={{ fontFamily: 'monospace' }}>
-                        {result.scores.news_score?.toFixed(1)}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                  <Grid size={{ xs: 4 }}>
-                    <Box sx={{ textAlign: 'center', p: 1, border: 1, borderColor: 'divider', borderRadius: 2 }}>
-                      <Typography variant="caption" color="text.secondary">Regime Score</Typography>
+                      <Typography variant="caption" color="text.secondary">Vol-Shift Score (40%)</Typography>
                       <Typography variant="h6" sx={{ fontFamily: 'monospace' }}>
                         {result.scores.regime_score?.toFixed(1)}
                       </Typography>
@@ -250,42 +252,12 @@ export default function BlackSwanPage() {
             </Grid>
           )}
 
-          {/* News Sentiment */}
-          {result.components?.news_sentiment && (
-            <Card sx={{ mt: 2 }}>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>News Sentiment Analysis</Typography>
-                <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                  <Chip label={`Positive: ${result.components.news_sentiment.sentiment_distribution.positive}`} color="success" />
-                  <Chip label={`Neutral: ${result.components.news_sentiment.sentiment_distribution.neutral}`} color="default" />
-                  <Chip label={`Negative: ${result.components.news_sentiment.sentiment_distribution.negative}`} color="error" />
-                </Box>
-
-                {result.components.news_sentiment.articles?.slice(0, 5).map((article: any, i: number) => (
-                  <Box key={i} sx={{ p: 1.5, mb: 1, border: 1, borderColor: 'divider', borderRadius: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{article.title}</Typography>
-                      <Chip
-                        size="small"
-                        label={`${article.sentiment?.toFixed(2)}`}
-                        color={article.sentiment_label === 'negative' ? 'error' : article.sentiment_label === 'positive' ? 'success' : 'default'}
-                      />
-                    </Box>
-                    {article.tail_risk_flag && (
-                      <Chip size="small" label="TAIL RISK" color="error" variant="outlined" sx={{ mt: 0.5 }} />
-                    )}
-                  </Box>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
         </>
       )}
 
       <QuantContextSection
-        conceptsTitle="Black swan theory context"
-        notesTitle="Why this module matters"
+        conceptsTitle="Tail risk context"
+        notesTitle="How to read this"
         concepts={blackSwanFoundations}
         notes={blackSwanConvergence}
       />

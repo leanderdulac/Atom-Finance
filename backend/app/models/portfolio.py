@@ -6,15 +6,15 @@ Portfolio Optimization
 - Minimum Variance
 - Maximum Sharpe Ratio
 """
+
 import numpy as np
 from scipy.optimize import minimize
-from typing import Optional
 
 
 class PortfolioOptimizer:
     """Portfolio optimization suite."""
 
-    def __init__(self, returns: np.ndarray, asset_names: Optional[list[str]] = None):
+    def __init__(self, returns: np.ndarray, asset_names: list[str] | None = None):
         self.returns = np.asarray(returns, dtype=np.float64)
         self.n_assets = self.returns.shape[1] if self.returns.ndim > 1 else 1
         self.asset_names = asset_names or [f"Asset_{i+1}" for i in range(self.n_assets)]
@@ -95,7 +95,7 @@ class PortfolioOptimizer:
         sharpe = (ret - risk_free_rate) / vol
 
         return {
-            "weights": {name: round(w, 4) for name, w in zip(self.asset_names, result.x)},
+            "weights": {name: round(w, 4) for name, w in zip(self.asset_names, result.x, strict=False)},
             "expected_return": round(ret * 100, 4),
             "volatility": round(vol * 100, 4),
             "sharpe_ratio": round(sharpe, 4),
@@ -114,7 +114,7 @@ class PortfolioOptimizer:
         ret, vol = self._portfolio_performance(result.x)
 
         return {
-            "weights": {name: round(w, 4) for name, w in zip(self.asset_names, result.x)},
+            "weights": {name: round(w, 4) for name, w in zip(self.asset_names, result.x, strict=False)},
             "expected_return": round(ret * 100, 4),
             "volatility": round(vol * 100, 4),
         }
@@ -141,8 +141,8 @@ class PortfolioOptimizer:
         rc = result.x * marginal
 
         return {
-            "weights": {name: round(w, 4) for name, w in zip(self.asset_names, result.x)},
-            "risk_contributions": {name: round(float(r), 4) for name, r in zip(self.asset_names, rc)},
+            "weights": {name: round(w, 4) for name, w in zip(self.asset_names, result.x, strict=False)},
+            "risk_contributions": {name: round(float(r), 4) for name, r in zip(self.asset_names, rc, strict=False)},
             "expected_return": round(ret * 100, 4),
             "volatility": round(vol * 100, 4),
         }
@@ -184,7 +184,7 @@ class PortfolioOptimizer:
         bl_weights = bl_weights / np.sum(bl_weights)  # Normalize
 
         return {
-            "weights": {name: round(float(w), 4) for name, w in zip(self.asset_names, bl_weights)},
-            "bl_expected_returns": {name: round(float(r) * 100, 4) for name, r in zip(self.asset_names, bl_returns)},
-            "equilibrium_returns": {name: round(float(r) * 100, 4) for name, r in zip(self.asset_names, pi)},
+            "weights": {name: round(float(w), 4) for name, w in zip(self.asset_names, bl_weights, strict=False)},
+            "bl_expected_returns": {name: round(float(r) * 100, 4) for name, r in zip(self.asset_names, bl_returns, strict=False)},
+            "equilibrium_returns": {name: round(float(r) * 100, 4) for name, r in zip(self.asset_names, pi, strict=False)},
         }

@@ -20,9 +20,8 @@ export default function DisclaimerBanner() {
   const [bannerVisible, setBannerVisible] = useState(false);
 
   useEffect(() => {
-    const accepted = sessionStorage.getItem(SESSION_KEY);
+    const accepted = localStorage.getItem(SESSION_KEY);
     if (!accepted) {
-      // Small delay for better UX
       const t = setTimeout(() => setOpen(true), 800);
       return () => clearTimeout(t);
     } else {
@@ -31,7 +30,7 @@ export default function DisclaimerBanner() {
   }, []);
 
   const handleAccept = () => {
-    sessionStorage.setItem(SESSION_KEY, 'true');
+    localStorage.setItem(SESSION_KEY, 'true');
     setOpen(false);
     setBannerVisible(true);
   };
@@ -77,9 +76,9 @@ export default function DisclaimerBanner() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(251,191,36,0.05)', borderRadius: 2, border: '1px solid rgba(251,191,36,0.2)' }}>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-                O <strong>ATOM</strong> é uma plataforma de análise quantitativa para fins educacionais e informativos.
-                Os relatórios, sinais, modelos de risco e recomendações gerados <strong>não constituem recomendações de investimento</strong>,
-                assessoria financeira, ou oferta de valores mobiliários.
+                O <strong>ATOM</strong> é um piloto de pesquisa quantitativa. Sinais, preços e “recomendações”
+                são cenários teóricos: <strong>não autorizam execução</strong>, não são assessoria e não passam pelo
+                protocolo de evidência do Laboratório Quant.
               </Typography>
             </Box>
 

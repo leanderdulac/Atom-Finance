@@ -8,7 +8,6 @@ entender como portfólios colapsam em momentos de crise sistêmica.
 
 import asyncio
 from functools import partial
-from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
@@ -116,7 +115,7 @@ async def fit_copula(req: CopulaFitRequest):
                 "best_copula": req.copula_type,
             }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     # Empirical tail dependence (always computed)
     emp_td = {}
@@ -177,7 +176,7 @@ async def simulate_copula(req: CopulaSimulateRequest):
             samples = await loop.run_in_executor(None, partial(cop.simulate, req.n_samples))
 
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     corr_sample = float(np.corrcoef(samples.T)[0, 1]) if samples.shape[1] == 2 else None
     td_emp = _tail_dependence_empirical(samples, q=0.05) if samples.shape[1] == 2 else {}
@@ -255,7 +254,7 @@ async def copula_demo():
     # Build comparison table
     comparison = {}
     for name, res in results.items():
-        if name == "best_copula":
+        if name == "best_copula" or not isinstance(res, dict):
             continue
         if "error" not in res:
             comparison[name] = {

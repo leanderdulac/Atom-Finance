@@ -5,15 +5,18 @@ import json
 import logging
 import os
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import redis
 
 logger = logging.getLogger(__name__)
 
-_redis_client = None
+_redis_client: redis.Redis | None = None
 _redis_unavailable = False  # avoid hammering a down Redis on every request
 
 
-def _get_redis():
+def _get_redis() -> redis.Redis | None:
     global _redis_client, _redis_unavailable
     if _redis_unavailable:
         return None
@@ -40,7 +43,7 @@ class _MemStore:
     _store: dict[str, tuple[str, float]] = {}
 
     @classmethod
-    def get(cls, key: str) -> Optional[str]:
+    def get(cls, key: str) -> str | None:
         entry = cls._store.get(key)
         if entry is None:
             return None
@@ -70,12 +73,15 @@ class Cache:
     """
 
     @staticmethod
-    def get(key: str) -> Optional[Any]:
+    def get(key: str) -> Any | None:
         r = _get_redis()
         if r:
             try:
                 raw = r.get(key)
-                return json.loads(raw) if raw is not None else None
+                # redis-py types Redis.get() as ResponseT (str | Awaitable) to
+                # cover both its sync and async client classes; this is the
+                # sync client, so raw is always the plain value here.
+                return json.loads(raw) if raw is not None else None  # pyright: ignore[reportArgumentType]
             except Exception as exc:
                 logger.debug("Redis GET error for %s: %s", key, exc)
 

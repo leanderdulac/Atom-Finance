@@ -138,10 +138,13 @@ function downsample<T>(arr: T[], max = 200): T[] {
 }
 
 function downloadExcel(initial: number, profile: ProfileKey, nPaths: number, T: number) {
-  const BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8000/api';
-  fetch(`${BASE}/ibovespa/export-excel`, {
+  const token = localStorage.getItem('atom_jwt');
+  fetch('/api/ibovespa/export-excel', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ profile, n_paths: nPaths, T, initial_capital: initial }),
   })
     .then((r) => r.blob())

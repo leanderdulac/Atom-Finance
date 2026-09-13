@@ -7,11 +7,12 @@ Options Pricing Models
 - Greeks Calculation
 - Implied Volatility
 """
-import numpy as np
-from scipy.stats import norm
-from scipy.optimize import brentq
-from typing import Literal, Optional
 from dataclasses import dataclass
+from typing import Literal
+
+import numpy as np
+from scipy.optimize import brentq
+from scipy.stats import norm
 
 
 @dataclass
@@ -104,13 +105,15 @@ class BlackScholes:
     def implied_volatility(cls, market_price: float, S: float, K: float, T: float,
                            r: float, option_type: Literal["call", "put"] = "call",
                            q: float = 0.0) -> float:
-        """Newton-Raphson with Brent fallback for implied volatility."""
+        """Brent root-find of BS price minus market price on σ ∈ (1e-6, 10)."""
         try:
             def objective(sigma):
                 return cls.price(S, K, T, r, sigma, option_type, q) - market_price
 
+            # full_output isn't passed, so brentq returns a plain float here —
+            # scipy-stubs' overload resolution doesn't narrow that cleanly.
             iv = brentq(objective, 1e-6, 10.0, xtol=1e-8)
-            return round(iv, 6)
+            return round(iv, 6)  # pyright: ignore[reportCallIssue,reportArgumentType]
         except (ValueError, RuntimeError):
             return float("nan")
 
@@ -124,7 +127,7 @@ class MonteCarlo:
     def price(S: float, K: float, T: float, r: float, sigma: float,
               option_type: Literal["call", "put"] = "call",
               n_simulations: int = 100_000, n_steps: int = 252,
-              q: float = 0.0, seed: Optional[int] = 42) -> dict:
+              q: float = 0.0, seed: int | None = 42) -> dict:
 
         if seed is not None:
             np.random.seed(seed)
@@ -299,7 +302,7 @@ class VolatilitySurface:
 
     @staticmethod
     def generate(S: float, r: float, strikes: list[float], maturities: list[float],
-                 market_prices: Optional[list[list[float]]] = None,
+                 market_prices: list[list[float]] | None = None,
                  option_type: Literal["call", "put"] = "call",
                  q: float = 0.0) -> dict:
         """

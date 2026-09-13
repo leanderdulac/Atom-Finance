@@ -1,0 +1,9 @@
+[Unit]
+Description=ATOM API disk and backup checks
+After=docker.service
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/atom/operations.env
+ExecStart=/usr/bin/python3 /opt/atom/scripts/check-operations.py
+TimeoutStartSec=30
+NoNewPrivileges=true

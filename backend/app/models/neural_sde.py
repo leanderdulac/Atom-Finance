@@ -4,11 +4,12 @@ Neural Stochastic Differential Equations (Neural SDE)
 Parameterises both drift μ(t,y) and diffusion σ(t,y) with neural networks
 and solves the Itô SDE via torchsde.
 
-Typical applications in quantitative finance / climate risk:
-  • Option pricing under learned stochastic volatility
-  • Interest-rate / credit spread dynamics
-  • Climate tipping-point probability estimation
-  • Regime-aware risk scenario generation
+Scope: this is a demonstration of the numerical method, not a fitted model.
+The networks are randomly initialised and never trained — there is no fitting
+routine here and no market data enters. Output is a correct integration of a
+random SDE, and says nothing about any asset. The applications the literature
+puts on Neural SDEs (learned stochastic volatility, rate dynamics, regime
+scenario generation) would all require a training loop that does not exist.
 
 Architecture
 ------------
@@ -20,7 +21,6 @@ Architecture
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import numpy as np
 import torch
@@ -85,7 +85,7 @@ class NeuralSDE:
         state_size: int = 1,
         hidden_size: int = 32,
         method: str = "euler",
-        seed: Optional[int] = 42,
+        seed: int | None = 42,
     ) -> dict:
         """
         Simulate N trajectories of a Neural SDE on CPU.
@@ -129,10 +129,13 @@ class NeuralSDE:
 
         with torch.no_grad():
             # trajectories shape: (n_steps, batch, state_size)
-            trajectories = torchsde.sdeint(sde, y0_tensor, ts, method=method)
+            # torchsde is a hard dependency (see requirements.txt); the
+            # _TORCHSDE_AVAILABLE guard above is defensive, but the type
+            # checker can't correlate that flag with this name's binding.
+            trajectories = torchsde.sdeint(sde, y0_tensor, ts, method=method)  # pyright: ignore[reportPossiblyUnboundVariable]
 
         # Extract first state dimension → (n_steps, n_paths)
-        traj_np: np.ndarray = trajectories[:, :, 0].cpu().numpy()
+        traj_np: np.ndarray = trajectories[:, :, 0].cpu().numpy()  # pyright: ignore[reportCallIssue,reportArgumentType]
 
         time_list = ts.cpu().numpy().tolist()
 

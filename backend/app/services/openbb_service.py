@@ -5,9 +5,9 @@ It uses lazy imports so the app still works when OpenBB is not installed.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
 import logging
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime, timedelta
+from typing import Any
 
 import pandas as pd
 
@@ -56,7 +56,7 @@ class OpenBBService:
         return _get_openbb() is not None
 
     @staticmethod
-    def provider_map() -> Dict[str, str]:
+    def provider_map() -> dict[str, str]:
         return {
             "quote": "yfinance",
             "historical": "yfinance",
@@ -86,7 +86,7 @@ class OpenBBService:
         if isinstance(results, pd.DataFrame):
             return results
         if isinstance(results, list):
-            normalized: List[Dict[str, Any]] = []
+            normalized: list[dict[str, Any]] = []
             for item in results:
                 if hasattr(item, "model_dump"):
                     normalized.append(item.model_dump())
@@ -108,7 +108,7 @@ class OpenBBService:
         return pd.DataFrame()
 
     @classmethod
-    def get_quote(cls, symbol: str, provider: str = "yfinance") -> Optional[Dict[str, Any]]:
+    def get_quote(cls, symbol: str, provider: str = "yfinance") -> dict[str, Any] | None:
         obb = _get_openbb()
         if obb is None:
             return None
@@ -159,9 +159,9 @@ class OpenBBService:
         symbol: str,
         provider: str = "yfinance",
         interval: str = "1d",
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-    ) -> Optional[pd.DataFrame]:
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame | None:
         obb = _get_openbb()
         if obb is None:
             return None
@@ -194,7 +194,7 @@ class OpenBBService:
             return None
 
     @classmethod
-    def get_profile(cls, symbol: str, provider: str = "yfinance") -> Optional[Dict[str, Any]]:
+    def get_profile(cls, symbol: str, provider: str = "yfinance") -> dict[str, Any] | None:
         obb = _get_openbb()
         if obb is None:
             return None
@@ -224,7 +224,7 @@ class OpenBBService:
             return None
 
     @classmethod
-    def search_equity(cls, query: str, provider: str = "sec") -> List[Dict[str, Any]]:
+    def search_equity(cls, query: str, provider: str = "sec") -> list[dict[str, Any]]:
         obb = _get_openbb()
         if obb is None:
             return []
@@ -248,7 +248,7 @@ class OpenBBService:
         return []
 
     @classmethod
-    def get_options_chain(cls, symbol: str, provider: str = "cboe") -> Optional[Dict[str, Any]]:
+    def get_options_chain(cls, symbol: str, provider: str = "cboe") -> dict[str, Any] | None:
         obb = _get_openbb()
         if obb is None:
             return None
@@ -263,14 +263,18 @@ class OpenBBService:
             if "expiration" in normalized.columns:
                 normalized["expiration"] = pd.to_datetime(normalized["expiration"]).dt.strftime("%Y-%m-%d")
 
-            chain: List[Dict[str, Any]] = []
+            chain: list[dict[str, Any]] = []
             grouped = normalized.groupby(["expiration", "strike"], dropna=False)
-            for (expiration, strike), group in grouped:
-                row: Dict[str, Any] = {
+            # pandas-stubs types a groupby key as plain Hashable regardless of
+            # how many columns were grouped on; grouping by 2 columns always
+            # yields a 2-tuple key at runtime. `.get(key, default)` with a
+            # non-None default also never returns None here despite the stub.
+            for (expiration, strike), group in grouped:  # pyright: ignore[reportGeneralTypeIssues]
+                row: dict[str, Any] = {
                     "expiration": expiration,
                     "strike": float(strike) if strike is not None else 0.0,
-                    "volume": int(group.get("volume", pd.Series([0])).fillna(0).sum()),
-                    "open_interest": int(group.get("open_interest", pd.Series([0])).fillna(0).sum()),
+                    "volume": int(group.get("volume", pd.Series([0])).fillna(0).sum()),  # pyright: ignore[reportOptionalMemberAccess]
+                    "open_interest": int(group.get("open_interest", pd.Series([0])).fillna(0).sum()),  # pyright: ignore[reportOptionalMemberAccess]
                 }
                 for _, option in group.iterrows():
                     option_type = str(option.get("option_type", "")).lower()
@@ -309,7 +313,7 @@ class OpenBBService:
             return None
 
     @classmethod
-    def get_provider_status(cls) -> Dict[str, Any]:
+    def get_provider_status(cls) -> dict[str, Any]:
         return {
             "openbb_available": cls.is_available(),
             "default_openbb_providers": cls.provider_map(),

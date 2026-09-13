@@ -51,6 +51,7 @@ export default function BacktestingPage() {
   const [strategy, setStrategy] = useState('sma_crossover');
   const [capital, setCapital] = useState(100000);
   const [commission, setCommission] = useState(0.001);
+  const [slippage, setSlippage] = useState(0.0005);
   const [ticker, setTicker] = useState('SPY');
   const [provider, setProvider] = useState('openbb');
   const [historyDays, setHistoryDays] = useState(252);
@@ -59,11 +60,12 @@ export default function BacktestingPage() {
   const prices = generatePrices();
 
   const loadMarketPrices = async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setPriceData(null); setResult(null);
     try {
       const history: any = await api.history(ticker, historyDays, provider);
       const livePrices = (history?.close || []).map((v: number) => Number(v));
-      if (livePrices.length < 30) throw new Error('Not enough historical data returned');
+      if (livePrices.length < 100) throw new Error('Not enough historical data returned');
+      if ((history.provider || history.source || '').includes('synthetic')) throw new Error('Fonte indisponível: dados sintéticos exigem selecionar a demonstração explicitamente.');
       setPriceData({ prices: livePrices, source: history.provider || history.source || provider });
     } catch (e: any) {
       setError(e.message);
@@ -71,10 +73,13 @@ export default function BacktestingPage() {
   };
 
   const runBacktest = async () => {
+    if (!priceData) return;
     setLoading(true); setError('');
     try {
       const res = await api.backtest({
-        prices: priceData?.prices || prices,
+        prices: priceData!.prices,
+        data_source: priceData!.source,
+        slippage,
         strategy,
         initial_capital: capital,
         commission,
@@ -91,6 +96,7 @@ export default function BacktestingPage() {
         Test trading strategies with historical simulation
       </Typography>
 
+      <Alert severity="info" sx={{ mb: 2 }}>Simulação exploratória, sem validação fora da amostra. Sinais são executados no fechamento seguinte, com comissão e slippage. Use o Laboratório Quant para avaliar evidência temporal.</Alert>
       <Grid container spacing={2.5}>
         <Grid size={{ xs: 12, md: 4 }}>
           <Card>
@@ -100,10 +106,10 @@ export default function BacktestingPage() {
                 <MarketTickerAutocomplete
                   label="Ticker"
                   value={ticker}
-                  onChange={(next) => setTicker(next || ticker)}
+                  onChange={(next) => { setTicker(next || ticker); setPriceData(null); setResult(null); }}
                   helperText="Search an asset and backtest on live historical closes"
                 />
-                <ProviderChips value={provider} onChange={setProvider} />
+                <ProviderChips value={provider} onChange={value => { setProvider(value); setPriceData(null); setResult(null); }} />
                 <TextField label="Lookback Days" type="number" value={historyDays}
                   onChange={(e) => setHistoryDays(+e.target.value)} fullWidth />
                 <ToggleButtonGroup
@@ -119,6 +125,8 @@ export default function BacktestingPage() {
 
                 <TextField label="Initial Capital ($)" type="number" value={capital}
                   onChange={(e) => setCapital(+e.target.value)} fullWidth />
+                <Button disabled={loading} onClick={() => { setPriceData({ prices, source: 'synthetic_demo' }); setResult(null); }}>Usar demonstração sintética</Button>
+                <TextField label="Slippage por lado" type="number" value={slippage} onChange={e => setSlippage(+e.target.value)} inputProps={{ min: 0, max: 0.01, step: 0.0001 }} />
                 <TextField label="Commission Rate" type="number" value={commission}
                   onChange={(e) => setCommission(+e.target.value)}
                   inputProps={{ step: 0.0005, min: 0 }} fullWidth />
@@ -128,7 +136,7 @@ export default function BacktestingPage() {
                 </Button>
                 {priceData?.source && <Chip size="small" color="info" label={`Data: ${priceData.source}`} />}
 
-                <Button variant="contained" onClick={runBacktest} disabled={loading} fullWidth>
+                <Button variant="contained" onClick={runBacktest} disabled={loading || !priceData} fullWidth>
                   {loading ? <CircularProgress size={20} /> : 'Run Backtest'}
                 </Button>
               </Box>
@@ -141,6 +149,12 @@ export default function BacktestingPage() {
 
           {result?.performance && (
             <>
+              {result.validation?.note && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  {result.validation.note}
+                  {result.validation.eligible_for_live_trading === false ? ' Sem autorização de execução.' : ''}
+                </Alert>
+              )}
               <Card sx={{ mb: 2 }}>
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>

@@ -1,6 +1,5 @@
 """Tests for Neural SDE model."""
 import pytest
-import numpy as np
 
 from app.models.neural_sde import NeuralSDE
 
