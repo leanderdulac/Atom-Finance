@@ -48,10 +48,11 @@ async def simulate_sde(req: NeuralSDERequest):
     """
     Simulate trajectories of a Neural SDE.
 
-    The drift μ(t,y) and diffusion σ(t,y) are parameterised by small
-    randomly-initialised neural networks. Each call uses a fresh random
-    initialisation (or the provided seed) — results represent one possible
-    learned dynamics.
+    The drift μ(t,y) and diffusion σ(t,y) are parameterised by small neural
+    networks that are never trained: each call draws a fresh random
+    initialisation (or the one implied by the seed) and integrates it. The
+    trajectories are a valid numerical solution of that random SDE and carry
+    no information about any asset.
     """
     NeuralSDE = _engine()
     if not NeuralSDE.is_available():

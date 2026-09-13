@@ -14,7 +14,7 @@ const sdeFoundations = [
   },
   {
     title: 'Neural parameterisation',
-    text: 'Instead of assuming functional forms for μ and σ, we use neural networks. This allows the model to learn complex, non-linear dynamics directly from data — an approach known as a Neural SDE.',
+    text: 'Instead of assuming functional forms for μ and σ, a Neural SDE uses neural networks, which in principle lets the dynamics be learned from data rather than assumed.',
   },
   {
     title: 'Euler-Maruyama discretisation',
@@ -23,9 +23,10 @@ const sdeFoundations = [
 ];
 
 const sdeNotes = [
-  'Neural SDEs generalise classic stochastic volatility models (Heston, SABR) by removing parametric assumptions on drift and diffusion.',
-  'Applications include option pricing under learned dynamics, interest-rate modelling, climate tipping-point probability estimation and regime-aware scenario generation.',
-  'The Sigmoid activation on σ_net keeps diffusion bounded in (0,1), acting as a built-in positivity constraint without explicit parameter bounds.',
+  'Nothing on this page is trained. The networks are randomly initialised, no market data is read and there is no fitting routine behind the button.',
+  'What the numbers do show is a correct integration of the randomly drawn SDE — the solver, the discretisation and the path statistics are real.',
+  'The Sigmoid activation on σ_net keeps diffusion bounded in (0,1), which is why every trajectory drifts within a narrow band regardless of the parameters you choose.',
+  'To make this a model of anything you would need a training loop, a loss against observed paths and a validation protocol. None of those exist here.',
 ];
 
 // Lightweight sparkline using SVG
@@ -97,9 +98,15 @@ export default function NeuralSDEPage() {
   return (
     <Box>
       <Typography variant="h4" sx={{ mb: 0.5 }}>Neural SDE</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Neural Stochastic Differential Equations — learned drift μ(t,y) and diffusion σ(t,y) via neural networks
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Numerical demonstration — drift μ(t,y) and diffusion σ(t,y) parameterised by untrained neural networks
       </Typography>
+
+      <Alert severity="info" sx={{ mb: 3 }}>
+        As redes são inicializadas aleatoriamente e <strong>nunca treinadas</strong>: nenhum dado de mercado
+        entra aqui e nada é ajustado. As trajetórias são a solução numérica correta de uma SDE sorteada —
+        servem para demonstrar o método, não para descrever ativo nenhum.
+      </Alert>
 
       <Grid container spacing={2.5}>
         {/* Controls */}
@@ -216,7 +223,7 @@ export default function NeuralSDEPage() {
                   <CardContent>
                     <Typography variant="h6" gutterBottom>Simulated Trajectories</Typography>
                     <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Each line is an independent realisation of the Neural SDE
+                      Each line is an independent realisation of the randomly initialised SDE
                     </Typography>
                     <Box sx={{ bgcolor: 'background.default', borderRadius: 2, p: 1 }}>
                       {result.trajectories.slice(0, 20).map((path: number[], i: number) => (
@@ -302,7 +309,7 @@ export default function NeuralSDEPage() {
       </Grid>
 
       <QuantContextSection
-        conceptsTitle="Neural SDEs in quantitative finance"
+        conceptsTitle="What a Neural SDE is"
         concepts={sdeFoundations}
         notes={sdeNotes}
       />

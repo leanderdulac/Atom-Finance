@@ -4,11 +4,12 @@ Neural Stochastic Differential Equations (Neural SDE)
 Parameterises both drift μ(t,y) and diffusion σ(t,y) with neural networks
 and solves the Itô SDE via torchsde.
 
-Typical applications in quantitative finance / climate risk:
-  • Option pricing under learned stochastic volatility
-  • Interest-rate / credit spread dynamics
-  • Climate tipping-point probability estimation
-  • Regime-aware risk scenario generation
+Scope: this is a demonstration of the numerical method, not a fitted model.
+The networks are randomly initialised and never trained — there is no fitting
+routine here and no market data enters. Output is a correct integration of a
+random SDE, and says nothing about any asset. The applications the literature
+puts on Neural SDEs (learned stochastic volatility, rate dynamics, regime
+scenario generation) would all require a training loop that does not exist.
 
 Architecture
 ------------
