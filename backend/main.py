@@ -28,7 +28,6 @@ from app.api import (  # noqa: E402
     capm_router,
     copulas_router,
     evt_router,
-    ghost_liquidity_router,
     hedge_router,
     ibovespa_router,
     market_data_router,
@@ -95,7 +94,7 @@ app = FastAPI(
     description=(
         "Advanced quantitative finance tools: options pricing, risk analysis, "
         "portfolio optimisation, purged walk-forward research, Neural SDE, "
-        "ghost liquidity & black swan detection, and from-scratch desk papers "
+        "tail-risk diagnostics, and from-scratch desk papers "
         "(Heston CF, Engle–Granger, Avellaneda–Stoikov, Fama–French 5, scanners)."
     ),
     version="1.0.0",
@@ -144,7 +143,6 @@ protected.include_router(risk_router,            prefix="/api/risk",          ta
 protected.include_router(hedge_router,           prefix="/api/hedge",         tags=["Dynamic Hedge"])
 protected.include_router(portfolio_router,       prefix="/api/portfolio",     tags=["Portfolio Optimisation"])
 protected.include_router(ml_router,              prefix="/api/ml",            tags=["Machine Learning"])
-protected.include_router(ghost_liquidity_router, prefix="/api/ghost-liquidity", tags=["Ghost Liquidity"])
 protected.include_router(neural_sde_router,      prefix="/api/neural-sde",    tags=["Neural SDE"])
 protected.include_router(black_swan_router,      prefix="/api/black-swan",    tags=["Black Swan Detection"])
 protected.include_router(market_data_router,     prefix="/api/market-data",   tags=["Market Data"])

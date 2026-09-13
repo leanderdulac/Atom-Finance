@@ -9,7 +9,6 @@ from app.api.black_swan import router as black_swan_router
 from app.api.capm import router as capm_router
 from app.api.copulas import router as copulas_router
 from app.api.evt import router as evt_router
-from app.api.ghost_liquidity import router as ghost_liquidity_router
 from app.api.hedge import router as hedge_router
 from app.api.ibovespa import router as ibovespa_router
 from app.api.market_data import router as market_data_router
@@ -27,7 +26,6 @@ __all__ = [
     "risk_router",
     "portfolio_router",
     "ml_router",
-    "ghost_liquidity_router",
     "black_swan_router",
     "market_data_router",
     "auth_router",

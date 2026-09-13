@@ -6,7 +6,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import {
-  ShowChart, Assessment, AccountBalance, Psychology, Water, Warning,
+  ShowChart, Assessment, AccountBalance, Psychology, Warning,
   Timeline, DarkMode, LightMode, Menu as MenuIcon, Waves, Terminal, AutoGraph,
   FindInPage, Functions, TrendingUp, MonetizationOn, CallMerge, RocketLaunch, AutoFixHigh,
   CurrencyExchange, Logout,
@@ -24,7 +24,6 @@ const PricingPage = lazy(() => import('./pages/PricingPage'));
 const RiskPage = lazy(() => import('./pages/RiskPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const MLPage = lazy(() => import('./pages/MLPage'));
-const GhostLiquidityPage = lazy(() => import('./pages/GhostLiquidityPage'));
 const BlackSwanPage = lazy(() => import('./pages/BlackSwanPage'));
 const BacktestingPage = lazy(() => import('./pages/BacktestingPage'));
 const StrategiesPage = lazy(() => import('./pages/StrategiesPage'));
@@ -81,8 +80,7 @@ const advancedItems = [
   { label: 'Perfil Investidor', path: '/perfil-investidor', icon: <AccountBalance /> },
   { label: 'Ibovespa 18 + RL', path: '/ibovespa', icon: <AutoGraph /> },
   { label: 'Neural SDE', path: '/neural-sde', icon: <Waves /> },
-  { label: 'Ghost Liquidity', path: '/ghost-liquidity', icon: <Water /> },
-  { label: 'Black Swan', path: '/black-swan', icon: <Warning /> },
+  { label: 'Tail Risk', path: '/black-swan', icon: <Warning /> },
   { label: 'Backtesting', path: '/backtesting', icon: <Timeline /> },
 ];
 
@@ -237,7 +235,6 @@ function AppLayout() {
           <Route path="/risk" element={<ProtectedRoute><RiskPage /></ProtectedRoute>} />
           <Route path="/portfolio" element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
           <Route path="/ml" element={<ProtectedRoute><MLPage /></ProtectedRoute>} />
-          <Route path="/ghost-liquidity" element={<ProtectedRoute><GhostLiquidityPage /></ProtectedRoute>} />
           <Route path="/black-swan" element={<ProtectedRoute><BlackSwanPage /></ProtectedRoute>} />
           <Route path="/simulacao-b3" element={<ProtectedRoute><SimulacaoB3Page /></ProtectedRoute>} />
           <Route path="/perfil-investidor" element={<ProtectedRoute><PerfilInvestidorPage /></ProtectedRoute>} />

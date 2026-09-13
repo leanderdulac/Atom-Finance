@@ -103,15 +103,9 @@ export const api = {
   riskParity: (data: any) => request('/portfolio/risk-parity', { method: 'POST', body: JSON.stringify(data) }),
   blackLitterman: (data: any) => request('/portfolio/black-litterman', { method: 'POST', body: JSON.stringify(data) }),
 
-  // Ghost Liquidity
-  ghostLiquidity: (data?: any) => request('/ghost-liquidity/analyze', { method: 'POST', body: JSON.stringify(data || {}) }),
-  ghostMonitor: (n?: number) => request(`/ghost-liquidity/monitor?n_snapshots=${n || 100}`),
-  ghostDemo: () => request('/ghost-liquidity/demo'),
-
-  // Black Swan
+  // Tail risk
   tailRisk: (data: any) => request('/black-swan/tail-risk', { method: 'POST', body: JSON.stringify(data) }),
   regimeChange: (data: any) => request('/black-swan/regime-change', { method: 'POST', body: JSON.stringify(data) }),
-  newsSentiment: (data?: any) => request('/black-swan/news-sentiment', { method: 'POST', body: JSON.stringify(data || {}) }),
   blackSwanFull: (data: any) => request('/black-swan/full-analysis', { method: 'POST', body: JSON.stringify(data) }),
   blackSwanDemo: () => request('/black-swan/demo'),
 
