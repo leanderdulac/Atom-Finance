@@ -105,7 +105,7 @@ class BlackScholes:
     def implied_volatility(cls, market_price: float, S: float, K: float, T: float,
                            r: float, option_type: Literal["call", "put"] = "call",
                            q: float = 0.0) -> float:
-        """Newton-Raphson with Brent fallback for implied volatility."""
+        """Brent root-find of BS price minus market price on σ ∈ (1e-6, 10)."""
         try:
             def objective(sigma):
                 return cls.price(S, K, T, r, sigma, option_type, q) - market_price

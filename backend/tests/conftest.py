@@ -35,6 +35,10 @@ async def _clean_db():
     yet another fresh event loop — doesn't inherit a pool bound to a loop
     that no longer exists.
     """
+    if os.getenv("ATOM_SKIP_DB") == "1":
+        yield
+        return
+
     import asyncpg
 
     from app.db.postgres import _database_url, close_pool

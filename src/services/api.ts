@@ -159,7 +159,7 @@ export const api = {
     const controller = new AbortController();
     fetch('/api/reports/ai-analysis/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ ticker }),
       signal: controller.signal,
     }).then(async (res) => {
@@ -220,4 +220,20 @@ export const api = {
 
   // Fetch financials from ticker (yfinance)
   getTickerFinancials: (ticker: string) => request<{ current: any, previous: any }>(`/reports/ticker-financials/${ticker}`),
+
+  deskHestonPrice: (data: object) => request<any>('/desk/heston/price', { method: 'POST', body: JSON.stringify(data) }),
+  deskHestonCalibrate: (data: object) => request<any>('/desk/heston/calibrate', { method: 'POST', body: JSON.stringify(data) }),
+  deskEngleGranger: (data: object) => request<any>('/desk/pairs/engle-granger', { method: 'POST', body: JSON.stringify(data) }),
+  deskJohansen: (data: object) => request<any>('/desk/pairs/johansen', { method: 'POST', body: JSON.stringify(data) }),
+  deskPairsBacktest: (data: object) => request<any>('/desk/pairs/backtest', { method: 'POST', body: JSON.stringify(data) }),
+  deskMarketMaking: (data: object) => request<any>('/desk/market-making/quotes', { method: 'POST', body: JSON.stringify(data) }),
+  deskFamaFrench: (data: object) => request<any>('/desk/fama-french/decompose', { method: 'POST', body: JSON.stringify(data) }),
+  deskMeanReversion: (data: object) => request<any>('/desk/mean-reversion/scan', { method: 'POST', body: JSON.stringify(data) }),
+  deskPerpArb: (data: object) => request<any>('/desk/perp-arb/scan', { method: 'POST', body: JSON.stringify(data) }),
+  deskPerpLive: (symbol = 'BTCUSDT') => request<any>(`/desk/perp-arb/live?symbol=${encodeURIComponent(symbol)}`),
+  deskInsiderClusters: (data: object) => request<any>('/desk/insider-clusters/detect', { method: 'POST', body: JSON.stringify(data) }),
+  deskEdgar: (data: object) => request<any>('/desk/insider-clusters/edgar', { method: 'POST', body: JSON.stringify(data) }),
+  deskRegime: (data: object) => request<any>('/desk/regime/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskRegimeLive: (flatten = false) =>
+    request<any>(`/desk/regime/live?flatten=${flatten ? 'true' : 'false'}`, { method: 'POST', body: '{}' }),
 };

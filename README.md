@@ -27,9 +27,22 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 - **Options Strategies** — Straddle, Iron Condor, Butterfly, Custom combos
 
 ### Volatility Modeling
-- **GARCH(1,1)** — Maximum Likelihood Estimation with forecasting
-- **Heston Stochastic Volatility** — Monte Carlo simulation & option pricing
-- **EWMA** — Exponentially Weighted Moving Average
+- **GARCH(1,1)** — MLE with α,β ∈ [0,1) and α+β<1 (no silent β≥0.5 floor)
+- **Heston 1993** — characteristic-function European pricing (Albrecher branch) plus Euler MC with a calendar time grid
+- **EWMA** — RiskMetrics recursion that includes the latest return
+
+### Quant desk papers (`/desk`)
+- **Heston 1993** — CF Europeans, Euler MC, smile calibration (price RMSE; five params on one expiry are unidentified)
+- **Engle–Granger pairs** — residual ADF, expanding z-score, fill at t+1, costs on both legs
+- **Johansen 1991** — trace test and cointegration rank on a price panel
+- **Avellaneda–Stoikov** — reservation price and inventory-skewed quotes
+- **Fama–French 5** — OLS loadings; caller supplies factor returns
+- **Mean-reversion scanner** — OU half-life, Hurst, ADF
+- **Perp basis** — after-fee calculator plus unsigned Binance USDM / Hyperliquid top-of-book (no orders)
+- **Insider clusters** — CMP-style bursts; optional Form 4 P/S via EDGAR (`ATOM_SEC_USER_AGENT` required)
+- **Regime classifier** (`/regime`) — live Yahoo+FRED books, 4h job, softmax P(regime), holdout, paper flatten at last mark (no broker)
+
+Every desk endpoint returns a `what_broke` list. See [docs/WHAT-BROKE.md](docs/WHAT-BROKE.md). Signal catalog: [docs/strategy/signals.md](docs/strategy/signals.md).
 
 ### Risk Analysis
 - **Value at Risk (VaR)** — Historical, Parametric, Monte Carlo methods
@@ -200,7 +213,7 @@ Every router is mounted under `/api` in [backend/main.py](backend/main.py); most
 | `/api/derivatives` | Derivatives desk planner |
 | `/api/sources` | Market data source quality/monitoring |
 | `/api/research` | QuantMind paper history & extraction |
-| `/api/paper-trades` | Manual paper-trading journal |
+| `/api/desk` | Heston CF/calibrate, Engle–Granger, Johansen, Avellaneda–Stoikov, FF5, live perp books, EDGAR Form 4, regime classifier |
 
 ---
 
@@ -216,6 +229,7 @@ Key environment variables:
 - `SECRET_KEY` — JWT signing key (required in production, 32+ bytes)
 - `ATOM_DATABASE_URL` — Postgres connection string (`postgresql+asyncpg://user:pass@host:5432/db`); run `alembic upgrade head` from `backend/` after pointing it at a fresh database
 - `REDIS_URL` — Redis connection string (optional; falls back to an in-memory cache when unset or unreachable)
+- `ATOM_SEC_USER_AGENT` — SEC fair-access header for Form 4 pulls; must include a contact email (e.g. `ATOM Research desk@yourdomain.com`)
 
 See [.env.example](.env.example) for the full list, including AI provider keys and market data providers.
 

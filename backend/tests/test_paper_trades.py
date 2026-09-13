@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.derivatives import save
-from app.api.paper_trades import router
+from app.api.paper_trades import flatten_open_trades, router
 from app.core.limiter import limiter
 from app.core.security import get_current_user
 from app.db.postgres import get_pool
@@ -136,3 +136,16 @@ def test_long_option_and_multiplier_accounting(client):
     assert send(client,trade,entry).json()['events'][0]['result']['entry_debit_brl']==100
     out=event('close');out['quotes']=out['quotes'][:1];out['quotes'][0].update(bid=6,ask=6.1)
     assert send(client,trade,out).json()['events'][-1]['result']['net_pnl_brl']==19.8
+
+
+def test_regime_kill_flattens_open_paper(client):
+    trade = tracked(client)
+    opened = send(client, trade, event()).json()
+    assert opened['status'] == 'open'
+    out = asyncio.run(flatten_open_trades('alice', reason='test_crisis'))
+    assert out['broker_orders_sent'] == 0
+    assert out['eligible_for_live_trading'] is False
+    assert trade['id'] in out['closed']
+    rec = client.get(f"/paper/{trade['id']}").json()
+    assert rec['status'] == 'closed'
+    assert rec['events'][-1]['result']['flatten'] == 'regime_kill'

@@ -25,6 +25,7 @@ from app.db.database import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+_DUMMY_PASSWORD_HASH = hash_password("atom-timing-dummy-not-a-real-user")
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ async def register(request: Request, req: RegisterRequest):
         raise HTTPException(status_code=403, detail="Registration is disabled; contact the operator.")
     already_taken = await user_exists(req.username)
     if already_taken:
-        raise HTTPException(status_code=400, detail="Username already exists.")
+        raise HTTPException(status_code=400, detail="Unable to register with these credentials.")
 
     pw_hash = await asyncio.to_thread(hash_password, req.password)
     uid = await create_user(req.username, req.email, pw_hash)
@@ -64,7 +65,7 @@ async def register(request: Request, req: RegisterRequest):
     if uid is None:
         raise HTTPException(
             status_code=400,
-            detail="Username or e-mail already registered.",
+            detail="Unable to register with these credentials.",
         )
 
     logger.info("New user registered: %s (id=%d)", req.username, uid)
@@ -75,11 +76,9 @@ async def register(request: Request, req: RegisterRequest):
 @limiter.limit("10/minute")
 async def login(request: Request, req: LoginRequest):
     user = await get_user_by_username(req.username)
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials.")
-
-    pwd_ok = await asyncio.to_thread(verify_password, req.password, user["password_hash"])
-    if not pwd_ok:
+    stored = user["password_hash"] if user else _DUMMY_PASSWORD_HASH
+    pwd_ok = await asyncio.to_thread(verify_password, req.password, stored)
+    if not user or not pwd_ok:
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 
     token = create_access_token(user["username"])

@@ -202,10 +202,9 @@ class BacktestEngine:
         # Sharpe Ratio
         sharpe = float(np.mean(pv_returns) / max(np.std(pv_returns), 1e-8) * np.sqrt(252))
 
-        # Sortino Ratio
-        downside_returns = pv_returns[pv_returns < 0]
-        downside_std = float(np.std(downside_returns)) if len(downside_returns) > 0 else 0.001
-        sortino = float(np.mean(pv_returns) / max(downside_std, 1e-8) * np.sqrt(252))
+        # Sortino: downside deviation = sqrt(E[min(r,0)²]), not std of negative days only.
+        downside_dev = float(np.sqrt(np.mean(np.minimum(pv_returns, 0.0) ** 2)))
+        sortino = float(np.mean(pv_returns) / max(downside_dev, 1e-8) * np.sqrt(252))
 
         # Maximum Drawdown
         running_max = np.maximum.accumulate(portfolio_values)

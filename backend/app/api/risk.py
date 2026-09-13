@@ -4,9 +4,10 @@ import asyncio
 from functools import partial
 
 import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from app.core.limiter import limiter
 from app.models.risk import StressTest, ValueAtRisk
 from app.models.volatility import EWMAVolatility, GARCHModel, HestonModel
 
@@ -19,6 +20,7 @@ class VaRRequest(BaseModel):
     portfolio_value: float = Field(1_000_000, gt=0)
     holding_period: int = Field(1, ge=1, le=30)
     method: str = Field("historical", pattern="^(historical|parametric|monte_carlo)$")
+    distribution: str = Field("normal", pattern="^(normal|t)$")
 
 
 class StressTestRequest(BaseModel):
@@ -41,7 +43,7 @@ class HestonRequest(BaseModel):
     xi: float = Field(0.3, gt=0)
     rho: float = Field(-0.7, ge=-1, le=1)
     T: float = Field(1.0, gt=0)
-    n_paths: int = Field(10000, ge=100, le=100000)
+    n_paths: int = Field(10000, ge=100, le=50_000)
 
 
 async def _run_in_thread(func, *args, **kwargs):
@@ -55,7 +57,9 @@ async def calculate_var(req: VaRRequest):
     if req.method == "historical":
         return ValueAtRisk.historical(returns, req.confidence, req.portfolio_value, req.holding_period)
     elif req.method == "parametric":
-        return ValueAtRisk.parametric(returns, req.confidence, req.portfolio_value, req.holding_period)
+        return ValueAtRisk.parametric(
+            returns, req.confidence, req.portfolio_value, req.holding_period, req.distribution,
+        )
     # Monte Carlo is CPU-intensive — run in thread pool
     return await _run_in_thread(
         ValueAtRisk.monte_carlo, returns, req.confidence, req.portfolio_value, req.holding_period
@@ -66,7 +70,9 @@ async def calculate_var(req: VaRRequest):
 async def calculate_var_all(req: VaRRequest):
     returns = np.array(req.returns)
     historical = ValueAtRisk.historical(returns, req.confidence, req.portfolio_value, req.holding_period)
-    parametric = ValueAtRisk.parametric(returns, req.confidence, req.portfolio_value, req.holding_period)
+    parametric = ValueAtRisk.parametric(
+        returns, req.confidence, req.portfolio_value, req.holding_period, req.distribution,
+    )
     # Run MC concurrently in thread pool
     monte_carlo = await _run_in_thread(
         ValueAtRisk.monte_carlo, returns, req.confidence, req.portfolio_value, req.holding_period
@@ -95,7 +101,8 @@ async def fit_garch(req: GARCHRequest):
 
 
 @router.post("/heston")
-async def simulate_heston(req: HestonRequest):
+@limiter.limit("20/minute")
+async def simulate_heston(request: Request, req: HestonRequest):
     return await _run_in_thread(
         HestonModel.simulate,
         req.S0, req.v0, req.mu, req.kappa, req.theta, req.xi, req.rho, req.T, req.n_paths,

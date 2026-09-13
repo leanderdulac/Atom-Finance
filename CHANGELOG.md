@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 10: live regime books, 4h job, paper flatten, holdout
+
+### Added
+- Live public books (`POST /api/desk/regime/live`): Yahoo SPY/QQQ/IWM/EFA/TLT, ^VIX, ^VIX3M, ^IRX/^TNX, FRED HY OAS. Tests inject fetchers; no network in CI.
+- 4-hour asyncio job when `ATOM_REGIME_JOB=1` (off in `ATOM_ENV=test`). Optional `ATOM_REGIME_KILL_OWNER` flattens that user's open paper trades on crisis.
+- Paper kill switch: `flatten_open_trades` closes simulated positions at last mark. Broker execute stays HTTP 410.
+- `P(regime)` softmax from percentile z-scores; walk-forward holdout (predict on `data[:t]`, label next 10 days). Hurst lookback 126 with 5-window smoothing.
+
+## [Unreleased] — round 9: regime classifier (research kill switch)
+
+### Added
+- Six-signal regime snapshot (`POST /api/desk/regime/evaluate`): Hurst, VIX term structure, RV−IV, cross-asset correlation, credit spreads, rates curve slope. Each is flagged on a 90-day percentile gate; the label is trending / mean-reverting / high_vol / crisis.
+- Strategy mapping + half-Kelly resize recommendations, written as `docs/strategy/*.md` context files.
+- Research kill switch: crisis arms `research_risk_off` and flattens tagged strategies. `POST /api/desk/regime/execute` is HTTP 410 — no broker.
+- UI at `/regime` with calm / trending / crisis synthetic books.
+
 ## [Unreleased] — round 8: security review (Fase 3, part 1)
 
 Read-through of auth, RBAC, and injection surface rather than a fix-everything

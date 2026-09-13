@@ -36,11 +36,30 @@ describe('App routing', () => {
     expect(window.location.pathname).toBe('/login');
   });
 
-  it('renders a public page (lazy-loaded) without authentication', async () => {
+  it('redirects an unauthenticated visit to a tool route back to /login', async () => {
     window.history.pushState({}, '', '/pricing');
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /options pricing/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()
     );
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('redirects an unauthenticated visit to /desk back to /login', async () => {
+    window.history.pushState({}, '', '/desk');
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()
+    );
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('redirects an unauthenticated visit to /regime back to /login', async () => {
+    window.history.pushState({}, '', '/regime');
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()
+    );
+    expect(window.location.pathname).toBe('/login');
   });
 });

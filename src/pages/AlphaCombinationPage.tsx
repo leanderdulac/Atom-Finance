@@ -89,7 +89,7 @@ function runAlphaEngine(nSignals: number, days: number, lookback: number, seed: 
 
   // Step 8: Expected forward returns using last `lookback` rows
   const E_raw = Array.from({ length: nSignals }, (_, j) =>
-    mean(R.slice(-lookback).map(r => r[j]))
+    mean(R.slice(0, -1).slice(-lookback).map(r => r[j]))
   );
   const E_norm = E_raw.map((e, j) => e / Math.max(sigmas[j], 1e-10));
 
@@ -159,7 +159,7 @@ function runAlphaEngine(nSignals: number, days: number, lookback: number, seed: 
     { step: 2, name: 'Demean (X = R − μ)', description: 'Remove serial bias from each signal column', value: `μ̄ = ${mean(colMeans).toFixed(6)}` },
     { step: 3, name: 'Volatility (σ)', description: 'Sample std per signal to normalize scale', value: `σ̄ = ${mean(sigmas).toFixed(4)}` },
     { step: 4, name: 'Normalize (Y = X/σ)', description: 'Unit-variance returns for cross-signal comparison', value: `σ(Y) ≈ 1.00` },
-    { step: 5, name: 'OOS Holdout', description: 'Drop last row to prevent look-ahead bias', value: `Train: ${days - 1} rows` },
+    { step: 5, name: 'OOS Holdout', description: 'Drop last row; expected returns use only the train window', value: `Train: ${days - 1} rows` },
     { step: 6, name: 'Cross-Section Demean (Λ)', description: 'Remove market-wide beta from each time period', value: `λ̄ = ${mean(lambda.map(r => mean(r))).toFixed(6)}` },
     { step: 7, name: 'Data Hygiene', description: 'Slicing already enforces this; no corrupt rows', value: '✓ Clean' },
     { step: 8, name: 'Expected Returns (E)', description: `${lookback}-day moving average forward expectation`, value: `Ē = ${mean(E_norm).toFixed(6)}` },

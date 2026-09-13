@@ -2,9 +2,10 @@ import asyncio
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.ai_report import _full_analysis
+from app.core.limiter import limiter
 from app.core.security import get_current_user
 from app.models.ibovespa import IBOVESPA_ASSETS
 
@@ -19,12 +20,14 @@ _LAST_SCREEN_TIME: datetime | None = None
 _SCREEN_LOCK = asyncio.Lock()
 
 @router.get("/top-picks")
-async def get_top_picks():
+@limiter.limit("2/hour")
+async def get_top_picks(request: Request, max_tickers: int = 6):
     """
-    Analyzes the 18 main Ibovespa assets using the Multi-AI 'Dream Team'.
-    Ranks them by Bull Score and returns the top 5 high-conviction opportunities.
+    Screens Ibovespa names with the multi-model report pipeline.
+    Default 6 tickers (~36 LLM calls). Cached 1 hour. Hard-capped at 2 runs/hour/user.
     """
     global _LAST_SCREEN_TIME, _SCREENER_CACHE
+    max_tickers = max(1, min(max_tickers, 18))
 
     async with _SCREEN_LOCK:
         now = datetime.now()
@@ -38,7 +41,7 @@ async def get_top_picks():
         # We run the 18 analyses in parallel (asynchronously)
         # Caution: This will be very fast but will hit 6 different AI providers simultaneously 18 times.
         # Total of 108 AI calls in a single batch.
-        tickers = [asset["ticker"] for asset in IBOVESPA_ASSETS]
+        tickers = [asset["ticker"] for asset in IBOVESPA_ASSETS][:max_tickers]
 
         tasks = [_full_analysis(ticker) for ticker in tickers]
         results = await asyncio.gather(*tasks, return_exceptions=True)

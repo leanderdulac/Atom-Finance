@@ -2,6 +2,7 @@
 ATOM - Quantitative Finance Platform
 Main FastAPI Application
 """
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -69,8 +70,22 @@ async def lifespan(_app: FastAPI):
         logger.info("Cache backend: Redis")
     else:
         logger.warning("Cache backend: in-memory (Redis not available)")
+    job_task = None
     async with exclusive_runtime():
-        yield
+        from app.services.regime_job import job_enabled
+        from app.services.regime_job import loop as regime_loop
+        if job_enabled():
+            job_task = asyncio.create_task(regime_loop(), name="regime-job")
+            logger.info("Regime 4h job started")
+        try:
+            yield
+        finally:
+            if job_task is not None:
+                job_task.cancel()
+                try:
+                    await job_task
+                except asyncio.CancelledError:
+                    pass
     await close_pool()
     logger.info("ATOM shutting down…")
 
@@ -129,8 +144,8 @@ protected.include_router(risk_router,            prefix="/api/risk",          ta
 protected.include_router(hedge_router,           prefix="/api/hedge",         tags=["Dynamic Hedge"])
 protected.include_router(portfolio_router,       prefix="/api/portfolio",     tags=["Portfolio Optimisation"])
 protected.include_router(ml_router,              prefix="/api/ml",            tags=["Machine Learning"])
-protected.include_router(neural_sde_router,      prefix="/api/neural-sde",    tags=["Neural SDE"])
 protected.include_router(ghost_liquidity_router, prefix="/api/ghost-liquidity", tags=["Ghost Liquidity"])
+protected.include_router(neural_sde_router,      prefix="/api/neural-sde",    tags=["Neural SDE"])
 protected.include_router(black_swan_router,      prefix="/api/black-swan",    tags=["Black Swan Detection"])
 protected.include_router(market_data_router,     prefix="/api/market-data",   tags=["Market Data"])
 protected.include_router(ibovespa_router,        prefix="/api/ibovespa",      tags=["Ibovespa Dashboard"])

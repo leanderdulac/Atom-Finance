@@ -232,6 +232,104 @@ async def observe(request: Request, trade_id: UUID, req: Observation, owner: str
         return await read_record(conn, owner, str(trade_id))
 
 
+def _last_quotes(record: dict) -> list[dict] | None:
+    for event in reversed(record.get("events") or []):
+        quotes = (event.get("payload") or {}).get("quotes")
+        if quotes:
+            return quotes
+    return None
+
+
+async def flatten_open_trades(owner: str, *, reason: str) -> dict:
+    """Close every open paper trade at last mark. No broker, no 15-minute quote window."""
+    now = datetime.now(UTC)
+    pool = await get_pool()
+    closed: list[str] = []
+    skipped: list[dict] = []
+    async with pool.acquire() as conn, conn.transaction():
+        await lock_owner(conn, owner)
+        rows = await conn.fetch(
+            "SELECT id FROM paper_trades WHERE owner=$1 AND status='open'", owner,
+        )
+        for row in rows:
+            record = await read_record(conn, owner, row["id"])
+            quotes = _last_quotes(record)
+            if not quotes:
+                skipped.append({"id": row["id"], "detail": "no last mark to flatten against"})
+                continue
+            plan, context = record["plan"], record["context"]
+            books = {q["symbol"]: q for q in quotes}
+            if set(books) != {leg["symbol"] for leg in plan["legs"]}:
+                skipped.append({"id": row["id"], "detail": "last mark missing a leg"})
+                continue
+            fills = []
+            for leg in plan["legs"]:
+                book = books[leg["symbol"]]
+                opening_buy = leg["side"] == "buy"
+                buying = not opening_buy
+                price = book["ask"] if buying else book["bid"]
+                fills.append({
+                    "symbol": leg["symbol"],
+                    "price": price,
+                    "quantity": leg["quantity"],
+                    "side": "buy" if buying else "sell",
+                })
+            multiplier = D(plan["multiplier"])
+            fees = sum((D(f["quantity"]) * D(context["fee_per_contract_side"]) for f in fills), start=D(0))
+            cash = sum(
+                (
+                    D(f["price"]) * D(f["quantity"]) * multiplier * (1 if f["side"] == "sell" else -1)
+                    for f in fills
+                ),
+                start=D(0),
+            )
+            entry = next(e["result"] for e in record["events"] if e["kind"] == "open")
+            debit = sum(
+                (
+                    D(l["price"]) * D(l["quantity"]) * multiplier * (1 if l["side"] == "buy" else -1)
+                    for l in entry["fills"]
+                ),
+                start=D(0),
+            )
+            pnl = cash - debit - 2 * fees
+            result = {
+                "mode": "paper_only",
+                "eligible_for_live_trading": False,
+                "flatten": "regime_kill",
+                "reason": reason,
+                "fills": fills,
+                "fees_brl": money(fees),
+                "liquidation_credit_brl": money(cash),
+                "net_pnl_brl": money(pnl),
+                "pnl_kind": "realized_simulated",
+                "alerts": ["Flattened by regime kill switch at last mark"],
+            }
+            payload = {
+                "action": "close",
+                "source": "regime_kill_switch",
+                "note": reason[:2000],
+                "as_of": now.isoformat(),
+                "quotes": quotes,
+            }
+            request_id = str(uuid4())
+            fingerprint = hashlib.sha256(f"{row['id']}:{request_id}:{reason}".encode()).hexdigest()
+            await conn.execute(
+                "INSERT INTO paper_events (id, trade_id, request_id, payload_hash, created_at, kind, payload, result) "
+                "VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+                str(uuid4()), row["id"], request_id, fingerprint, now, "close", payload, result,
+            )
+            await conn.execute("UPDATE paper_trades SET status=$1 WHERE id=$2", "closed", row["id"])
+            closed.append(row["id"])
+    return {
+        "owner": owner,
+        "closed": closed,
+        "skipped": skipped,
+        "broker_orders_sent": 0,
+        "eligible_for_live_trading": False,
+        "reason": reason,
+    }
+
+
 @router.get('/{trade_id}/source-check/{snapshot_id}')
 async def source_check(trade_id: UUID, snapshot_id: UUID, owner: str = Depends(get_current_user)):
     from app.services.source_quality import assess

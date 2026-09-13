@@ -27,7 +27,7 @@ from app.models.capm import CAPMAnalyzer
 from app.models.evt import compute_evt_risk as _evt_risk
 from app.models.investment_agents import aggregate_signals, run_all_agents
 from app.models.kelly_derivatives import kelly_derivatives as compute_kelly
-from app.models.ml_models import LSTMPredictor
+from app.models.ml_models import ExponentialSmoothingForecast
 from app.models.pricing import BlackScholes
 from app.models.risk import ValueAtRisk as RiskCalculator
 from app.services.brapi_service import BrapiService, _is_br_ticker
@@ -352,7 +352,7 @@ async def _full_analysis(ticker: str) -> dict:
     bench_closes = [float(x) for x in (bench_history.get("close") or []) if x]
 
     # Run models concurrently
-    ml_task = _run(LSTMPredictor().predict, np.array(closes), 30)
+    ml_task = _run(ExponentialSmoothingForecast().predict, np.array(closes), 30)
     var_task = _run(RiskCalculator.historical, rets, 0.95)
     swan_task = _run(BlackSwanDetector.analyze_tail_risk, rets)
 
@@ -722,7 +722,7 @@ async def get_ticker_financials(ticker: str):
         }
     except Exception as e:
         logger.error(f"Error fetching ticker financials for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to fetch financials") from e
 
 @router.post("/ai-analysis")
 @limiter.limit("10/hour")
@@ -818,7 +818,7 @@ async def _full_analysis_streaming(ticker: str):
 
     yield sse("progress", {"step": 3, "total": 7, "message": "Rodando modelos quantitativos (ML, VaR, Black Swan)..."})
 
-    ml_task = _run(LSTMPredictor().predict, np.array(closes), 30)
+    ml_task = _run(ExponentialSmoothingForecast().predict, np.array(closes), 30)
     var_task = _run(RiskCalculator.historical, rets, 0.95)
     swan_task = _run(BlackSwanDetector.analyze_tail_risk, rets)
     ml_result, var_result, swan_result = await asyncio.gather(ml_task, var_task, swan_task, return_exceptions=True)

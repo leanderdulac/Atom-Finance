@@ -13,24 +13,48 @@ from jwt import InvalidTokenError as JWTError
 
 logger = logging.getLogger(__name__)
 
+_PLACEHOLDER_SECRETS = frozenset({
+    "your-secret-key-change-in-production",
+    "replace_with_generated_key",
+    "changeme",
+    "secret",
+    "secret_key",
+    "atom_secret",
+})
+
+
+def is_insecure_secret(key: str) -> bool:
+    stripped = key.strip()
+    if not stripped:
+        return True
+    lowered = stripped.lower()
+    if lowered in _PLACEHOLDER_SECRETS:
+        return True
+    if "replace_with" in lowered or lowered.startswith("your-secret"):
+        return True
+    return False
+
+
+def _generate_dev_secret() -> str:
+    import secrets
+    generated = secrets.token_hex(32)
+    logger.warning(
+        "SECRET_KEY is missing or is a known placeholder — generated a random key. "
+        "JWTs will be invalidated on every restart. Set a 32+ byte SECRET_KEY in .env."
+    )
+    return generated
+
+
 SECRET_KEY: str = os.getenv("SECRET_KEY", "")
 _ENV = os.getenv("ATOM_ENV", "development").lower()
 
-if not SECRET_KEY:
+if is_insecure_secret(SECRET_KEY):
     if _ENV == "production":
         raise RuntimeError(
-            "SECRET_KEY environment variable is not set. "
-            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\" "
-            "and add it to your .env file or secrets manager."
+            "SECRET_KEY is missing or is a documented placeholder. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
         )
-    else:
-        import secrets
-        SECRET_KEY = secrets.token_hex(32)
-        logger.warning(
-            "SECRET_KEY env var is not set — generated a random key. "
-            "JWTs will be invalidated on every restart. "
-            "Set SECRET_KEY in your .env file for persistence."
-        )
+    SECRET_KEY = _generate_dev_secret()
 
 if _ENV == "production" and len(SECRET_KEY.encode()) < 32:
     raise RuntimeError("Production SECRET_KEY must contain at least 32 bytes")

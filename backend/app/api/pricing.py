@@ -2,9 +2,10 @@
 import math
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from app.core.limiter import limiter
 from app.models.pricing import (
     BinomialTree,
     BlackScholes,
@@ -28,8 +29,8 @@ class PricingRequest(BaseModel):
 
 
 class MonteCarloRequest(PricingRequest):
-    n_simulations: int = Field(100000, ge=1000, le=1_000_000)
-    n_steps: int = Field(252, ge=10, le=1000)
+    n_simulations: int = Field(20_000, ge=1000, le=100_000)
+    n_steps: int = Field(252, ge=10, le=500)
 
 
 class BinomialRequest(PricingRequest):
@@ -39,8 +40,8 @@ class BinomialRequest(PricingRequest):
 
 class FiniteDiffRequest(PricingRequest):
     american: bool = False
-    n_S: int = Field(200, ge=50, le=1000)
-    n_t: int = Field(500, ge=50, le=2000)
+    n_S: int = Field(200, ge=50, le=400)
+    n_t: int = Field(500, ge=50, le=1000)
 
 
 class IVRequest(BaseModel):
@@ -94,7 +95,8 @@ async def price_black_scholes(req: PricingRequest):
 
 
 @router.post("/monte-carlo")
-async def price_monte_carlo(req: MonteCarloRequest):
+@limiter.limit("20/minute")
+async def price_monte_carlo(request: Request, req: MonteCarloRequest):
     result = MonteCarlo.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.n_simulations, req.n_steps, req.dividend_yield)
     return {"model": "monte_carlo", **result, "inputs": req.model_dump()}
 
@@ -106,7 +108,8 @@ async def price_binomial(req: BinomialRequest):
 
 
 @router.post("/finite-difference")
-async def price_finite_difference(req: FiniteDiffRequest):
+@limiter.limit("20/minute")
+async def price_finite_difference(request: Request, req: FiniteDiffRequest):
     result = FiniteDifference.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.american, N_S=req.n_S, N_t=req.n_t, q=req.dividend_yield)
     return {"model": "finite_difference", **result, "inputs": req.model_dump()}
 

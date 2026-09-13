@@ -47,6 +47,8 @@ const AIAlphaScreener = lazy(() => import('./pages/AIAlphaScreener'));
 const AutopilotPage = lazy(() => import('./pages/AutopilotPage'));
 const BinanceDashboard = lazy(() => import('./pages/BinanceDashboard'));
 const EarningsPredictionPage = lazy(() => import('./pages/EarningsPredictionPage'));
+const DeskLabPage = lazy(() => import('./pages/DeskLabPage'));
+const RegimePage = lazy(() => import('./pages/RegimePage'));
 
 function RouteFallback() {
   return (
@@ -85,6 +87,8 @@ const advancedItems = [
 ];
 
 const coreItems = [
+  { label: 'Mesa de papers', path: '/desk', icon: <Functions /> },
+  { label: 'Regimes', path: '/regime', icon: <Warning /> },
   { label: 'Fontes de mercado', path: '/sources', icon: <AccountBalance /> },
   { label: 'Mesa de derivativos', path: '/derivatives', icon: <ShowChart /> },
   { label: 'Operações simuladas', path: '/paper-trades', icon: <Timeline /> },
@@ -226,34 +230,36 @@ function AppLayout() {
         <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/dashboard" element={<ProtectedRoute><ExperimentsPage /></ProtectedRoute>} />
-          <Route path="/pricing" element={<PricingPage />} />
-          <Route path="/strategies" element={<StrategiesPage />} />
-          <Route path="/risk" element={<RiskPage />} />
-          <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/desk" element={<ProtectedRoute><DeskLabPage /></ProtectedRoute>} />
+          <Route path="/regime" element={<ProtectedRoute><RegimePage /></ProtectedRoute>} />
+          <Route path="/pricing" element={<ProtectedRoute><PricingPage /></ProtectedRoute>} />
+          <Route path="/strategies" element={<ProtectedRoute><StrategiesPage /></ProtectedRoute>} />
+          <Route path="/risk" element={<ProtectedRoute><RiskPage /></ProtectedRoute>} />
+          <Route path="/portfolio" element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
           <Route path="/ml" element={<ProtectedRoute><MLPage /></ProtectedRoute>} />
-          <Route path="/ghost-liquidity" element={<GhostLiquidityPage />} />
-          <Route path="/black-swan" element={<BlackSwanPage />} />
-          <Route path="/simulacao-b3" element={<SimulacaoB3Page />} />
-          <Route path="/perfil-investidor" element={<PerfilInvestidorPage />} />
-          <Route path="/ibovespa" element={<IbovespaDashboard />} />
-          <Route path="/neural-sde" element={<NeuralSDEPage />} />
-          <Route path="/backtesting" element={<BacktestingPage />} />
-          <Route path="/terminal" element={<TerminalPage />} />
+          <Route path="/ghost-liquidity" element={<ProtectedRoute><GhostLiquidityPage /></ProtectedRoute>} />
+          <Route path="/black-swan" element={<ProtectedRoute><BlackSwanPage /></ProtectedRoute>} />
+          <Route path="/simulacao-b3" element={<ProtectedRoute><SimulacaoB3Page /></ProtectedRoute>} />
+          <Route path="/perfil-investidor" element={<ProtectedRoute><PerfilInvestidorPage /></ProtectedRoute>} />
+          <Route path="/ibovespa" element={<ProtectedRoute><IbovespaDashboard /></ProtectedRoute>} />
+          <Route path="/neural-sde" element={<ProtectedRoute><NeuralSDEPage /></ProtectedRoute>} />
+          <Route path="/backtesting" element={<ProtectedRoute><BacktestingPage /></ProtectedRoute>} />
+          <Route path="/terminal" element={<ProtectedRoute><TerminalPage /></ProtectedRoute>} />
           <Route path="/ai-report"    element={<ProtectedRoute><AIReportPage /></ProtectedRoute>} />
           <Route path="/autopilot"    element={<ProtectedRoute><AutopilotPage /></ProtectedRoute>} />
           <Route path="/ai-screener"  element={<ProtectedRoute><AIAlphaScreener /></ProtectedRoute>} />
           <Route path="/research" element={<ProtectedRoute><ResearchPage /></ProtectedRoute>} />
-          <Route path="/paper-crawler" element={<PaperCrawlerPage />} />
-          <Route path="/csqa" element={<CSQAPage />} />
-          <Route path="/spy-momentum" element={<SPYIntradayPage />} />
-          <Route path="/client-options" element={<ClientOptionsHub />} />
+          <Route path="/paper-crawler" element={<ProtectedRoute><PaperCrawlerPage /></ProtectedRoute>} />
+          <Route path="/csqa" element={<ProtectedRoute><CSQAPage /></ProtectedRoute>} />
+          <Route path="/spy-momentum" element={<ProtectedRoute><SPYIntradayPage /></ProtectedRoute>} />
+          <Route path="/client-options" element={<ProtectedRoute><ClientOptionsHub /></ProtectedRoute>} />
           <Route path="/options-expert" element={<ProtectedRoute><DerivativesPage /></ProtectedRoute>} />
           <Route path="/sources" element={<ProtectedRoute><SourcesPage /></ProtectedRoute>} />
           <Route path="/paper-trades" element={<ProtectedRoute><PaperTradesPage /></ProtectedRoute>} />
           <Route path="/derivatives" element={<ProtectedRoute><DerivativesPage /></ProtectedRoute>} />
           <Route path="/earnings-predictor" element={<ProtectedRoute><EarningsPredictionPage /></ProtectedRoute>} />
-          <Route path="/alpha-engine" element={<AlphaCombinationPage />} />
-          <Route path="/binance" element={<BinanceDashboard />} />
+          <Route path="/alpha-engine" element={<ProtectedRoute><AlphaCombinationPage /></ProtectedRoute>} />
+          <Route path="/binance" element={<ProtectedRoute><BinanceDashboard /></ProtectedRoute>} />
         </Routes>
         </Suspense>
       </Box>
