@@ -1,7 +1,7 @@
-"""Black Swan Detection API endpoints."""
+"""Tail-risk diagnostics API endpoints."""
 
 import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.models.black_swan import BlackSwanDetector
@@ -13,13 +13,8 @@ class TailRiskRequest(BaseModel):
     returns: list[float] = Field(..., min_length=30)
 
 
-class NewsAnalysisRequest(BaseModel):
-    articles: list[dict] | None = None
-
-
 class CombinedAnalysisRequest(BaseModel):
     returns: list[float] = Field(..., min_length=30)
-    articles: list[dict] | None = None
 
 
 @router.post("/tail-risk")
@@ -33,13 +28,13 @@ async def detect_regime_change(req: TailRiskRequest):
 
 
 @router.post("/news-sentiment")
-async def analyze_news(req: NewsAnalysisRequest):
-    return BlackSwanDetector.analyze_news_sentiment(req.articles)
+async def analyze_news():
+    raise HTTPException(410, "Sentimento de notícias por contagem de palavras sobre manchetes fixas foi retirado. Não havia feed real por trás.")
 
 
 @router.post("/full-analysis")
 async def full_analysis(req: CombinedAnalysisRequest):
-    return BlackSwanDetector.combined_analysis(np.array(req.returns), req.articles)
+    return BlackSwanDetector.combined_analysis(np.array(req.returns))
 
 
 @router.get("/demo")

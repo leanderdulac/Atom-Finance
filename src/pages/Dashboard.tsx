@@ -43,7 +43,7 @@ export default function Dashboard() {
           api.quote('AAPL', 'auto').catch(() => null),
           api.marketProviders().catch(() => null),
           api.ghostDemo().catch(() => ({ ghost_ratio: 0.42, liquidity_score: 58.0, risk_level: 'MEDIUM' })),
-          api.blackSwanDemo().catch(() => ({ combined_score: 34.2, alert_level: 'MODERATE' })),
+          api.blackSwanDemo().catch(() => null),
         ]);
 
         // Price real BS with live AAPL spot if available
@@ -97,8 +97,8 @@ export default function Dashboard() {
             color="#f59e0b" trend="down" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Black Swan Score" value={data.swan?.combined_score?.toFixed(1) || '—'}
-            subtitle={`Alert: ${data.swan?.alert_level || '—'}`} icon={<Warning />}
+          <StatCard title="Tail Risk Score (demo series)" value={data.swan?.combined_score?.toFixed(1) ?? 'indisponível'}
+            subtitle={data.swan ? `Alert: ${data.swan.alert_level}` : 'sem resposta do backend'} icon={<Warning />}
             color={data.swan?.combined_score > 50 ? '#ef4444' : '#10b981'} />
         </Grid>
       </Grid>
