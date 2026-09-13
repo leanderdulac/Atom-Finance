@@ -59,8 +59,22 @@ function RouteFallback() {
 
 const DRAWER_WIDTH = 260;
 
-const advancedItems = [
+// Split by what a page promises, not by how well it is implemented: anything
+// that offers a prediction, a pick or an edge belongs under "Exploratórias",
+// because docs/RESEARCH-POLICY.md makes /api/ml/evaluate the only route allowed
+// to speak about evidence. Borderline pages default to exploratory.
+const toolItems = [
+  { label: 'Options Pricing', path: '/pricing', icon: <ShowChart /> },
+  { label: 'Strategies', path: '/strategies', icon: <Timeline /> },
+  { label: 'Risk Analysis', path: '/risk', icon: <Assessment /> },
+  { label: 'Portfolio', path: '/portfolio', icon: <AccountBalance /> },
+  { label: 'Tail Risk', path: '/black-swan', icon: <Warning /> },
+  { label: 'Backtesting', path: '/backtesting', icon: <Timeline /> },
+  { label: 'Quant Terminal', path: '/terminal', icon: <Terminal /> },
   { label: 'Binance Crypto', path: '/binance', icon: <CurrencyExchange /> },
+];
+
+const exploratoryItems = [
   { label: 'Cenários teóricos de opções', path: '/autopilot', icon: <RocketLaunch /> },
   { label: 'B3 AI Alpha Screener', path: '/ai-screener', icon: <AutoFixHigh /> },
   { label: 'Especialista em Opções', path: '/options-expert', icon: <Psychology /> },
@@ -71,17 +85,10 @@ const advancedItems = [
   { label: 'CSQA Math Engine', path: '/csqa', icon: <Functions /> },
   { label: 'Paper Crawler', path: '/paper-crawler', icon: <FindInPage /> },
   { label: 'Análise IA', path: '/ai-report', icon: <AutoGraph /> },
-  { label: 'Quant Terminal', path: '/terminal', icon: <Terminal /> },
-  { label: 'Options Pricing', path: '/pricing', icon: <ShowChart /> },
-  { label: 'Strategies', path: '/strategies', icon: <Timeline /> },
-  { label: 'Risk Analysis', path: '/risk', icon: <Assessment /> },
-  { label: 'Portfolio', path: '/portfolio', icon: <AccountBalance /> },
   { label: 'Simulação B3', path: '/simulacao-b3', icon: <ShowChart /> },
   { label: 'Perfil Investidor', path: '/perfil-investidor', icon: <AccountBalance /> },
   { label: 'Ibovespa 18 + RL', path: '/ibovespa', icon: <AutoGraph /> },
   { label: 'Neural SDE', path: '/neural-sde', icon: <Waves /> },
-  { label: 'Tail Risk', path: '/black-swan', icon: <Warning /> },
-  { label: 'Backtesting', path: '/backtesting', icon: <Timeline /> },
 ];
 
 const coreItems = [
@@ -96,7 +103,6 @@ const coreItems = [
 ];
 function AppLayout() {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const navItems = showAdvanced ? [...coreItems, ...advancedItems] : coreItems;
   const { mode, toggle } = useThemeMode();
   const compact = useMediaQuery('(max-width:900px)');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -171,8 +177,8 @@ function AppLayout() {
       >
         <Toolbar />
         <Box sx={{ overflow: 'auto', py: 1 }}>
-          <List>
-            {navItems.map((item) => (
+          {(() => {
+            const renderItem = (item: { label: string; path: string; icon: React.ReactNode }) => (
               <ListItemButton
                 key={item.path}
                 selected={location.pathname === item.path}
@@ -195,10 +201,33 @@ function AppLayout() {
                   slotProps={{ primary: { fontSize: '0.875rem', fontWeight: 500 } }}
                 />
               </ListItemButton>
-            ))}
-          </List>
+            );
+            const groupLabel = (text: string, hint: string) => (
+              <Box sx={{ px: 3, pt: 2, pb: 0.5 }}>
+                <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.08em' }}>
+                  {text}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.4 }}>
+                  {hint}
+                </Typography>
+              </Box>
+            );
+            return (
+              <List>
+                {coreItems.map(renderItem)}
+                {showAdvanced && (
+                  <>
+                    {groupLabel('Ferramentas', 'Cálculo sobre entradas que você fornece.')}
+                    {toolItems.map(renderItem)}
+                    {groupLabel('Exploratórias', 'Prometem previsão ou seleção. Sem validação fora da amostra — use o Laboratório Quant para evidência.')}
+                    {exploratoryItems.map(renderItem)}
+                  </>
+                )}
+              </List>
+            );
+          })()}
           <ListItemButton onClick={() => setShowAdvanced(!showAdvanced)} aria-expanded={showAdvanced}>
-            <ListItemText primary={showAdvanced ? 'Ocultar ferramentas exploratórias' : 'Ferramentas exploratórias'} />
+            <ListItemText primary={showAdvanced ? 'Ocultar ferramentas e exploratórias' : 'Ferramentas e exploratórias'} />
           </ListItemButton>
           <Divider sx={{ my: 1 }} />
           <Box sx={{ px: 2, py: 1 }}>
