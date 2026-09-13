@@ -17,11 +17,16 @@ should read this before the feature list. Nothing below is live-trading eligible
 | Sortino | Std of negative days, not `√E[min(r,0)²]` | Optimistic Sortino |
 | Historical CVaR | `mean([])` on empty tail | Silent NaN |
 
+## Removed rather than fixed
+
+- **Ghost liquidity** — deleted. The output was the input: `ghost = consolidated × hft_cancel_rate × 0.4 + consolidated × 0.15 + duplicates × cross_venue_duplication`, and the two rates were the page's own form fields. The UI always posted an empty book, so every run scored a seeded random book with invented venues. There was no path for real L2 data.
+- **Black swan news sentiment** — deleted. Keyword counts over eight hardcoded headlines with invented dates attributed to Reuters, Bloomberg, FT and CoinDesk, weighted 35% into the headline score. `POST /api/black-swan/news-sentiment` now 410s.
+- **`RandomForestPredictor` / `TradingDQN` / `ARIMAForecast`** — deleted, unreferenced. The RF never fit a tree and returned `np.random.dirichlet` as feature importances; the DQN's "Q-values" were a momentum/vol expression reporting a costless backtest's Sharpe.
+
 ## What still is not a desk model
 
-- **Ghost liquidity** — fractions of a synthetic book, not L2 measurement.
-- **Black swan "HMM/NLP"** — rolling-vol threshold + keyword counts. Use `/regime` for the actual percentile classifier.
-- **Neural SDE** — untrained networks; σ forced into (0,1).
+- **Tail risk score** — real EVT diagnostics (skew, kurtosis, σ-exceedances, Hill index) plus a 15% rolling-vol threshold. The threshold is not a regime model; use `/regime` for the percentile classifier.
+- **Neural SDE** — correct integration of untrained networks; σ forced into (0,1). A numerical demo, not a fitted model, and the page says so.
 - **`ml_models` forecasts** — exponential smoothing labelled as a baseline, not LSTM.
 - **AI report "recommendation"** — research narrative, never an order.
 - **Alpha engine OOS** — synthetic returns; the holdout row is now excluded from E[r].
