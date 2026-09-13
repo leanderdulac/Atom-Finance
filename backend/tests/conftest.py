@@ -1,6 +1,7 @@
 """Pytest configuration for ATOM backend tests."""
 import os
 
+import pytest
 import pytest_asyncio
 
 # Must be set before any app imports so security.py takes the dev/test path
@@ -11,6 +12,21 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-production")
 os.environ.setdefault("REDIS_URL", "redis://localhost:19999/0")
 # Local dev/CI Postgres — see CONTRIBUTING.md for how to run one locally.
 os.environ.setdefault("ATOM_DATABASE_URL", "postgresql+asyncpg://atom:atom_dev@localhost:5432/atom_test")
+
+def _redacted_database_url() -> str:
+    """Connection target without the password — this string reaches CI logs."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    from app.db.postgres import _database_url
+
+    parts = urlsplit(_database_url())
+    if parts.password is None:
+        return parts.geturl()
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return urlunsplit(parts._replace(netloc=f"{parts.username}:***@{host}"))
+
 
 _TABLES = (
     "reports", "users", "experiments", "experiment_reviews",
@@ -43,7 +59,19 @@ async def _clean_db():
 
     from app.db.postgres import _database_url, close_pool
 
-    conn = await asyncpg.connect(_database_url())
+    try:
+        conn = await asyncpg.connect(_database_url())
+    except (OSError, asyncpg.PostgresError) as exc:
+        # Without this, an absent Postgres surfaces as one connection traceback
+        # per test — hundreds of them — none of which says what to start.
+        pytest.exit(
+            f"Cannot reach the test database at {_redacted_database_url()}\n"
+            f"  {type(exc).__name__}: {exc}\n\n"
+            "Start a local Postgres and create atom_test (see CONTRIBUTING.md), "
+            "override ATOM_DATABASE_URL, or set ATOM_SKIP_DB=1 to run only the "
+            "tests that do not touch the database.",
+            returncode=pytest.ExitCode.USAGE_ERROR,
+        )
     try:
         await conn.execute(f"TRUNCATE {', '.join(_TABLES)} RESTART IDENTITY CASCADE")
     finally:
