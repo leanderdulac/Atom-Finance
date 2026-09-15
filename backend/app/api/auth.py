@@ -143,10 +143,16 @@ async def refresh(request: Request, response: Response):
 @router.post("/logout")
 @limiter.limit("30/minute")
 async def logout(request: Request, response: Response):
-    """Revokes the refresh token and clears the cookie."""
+    """Revokes the refresh token and clears the cookie.
+
+    The refresh cookie is the session credential: without one there is nothing
+    to log out of (401), so the route still rejects unauthenticated callers
+    while letting a user with an expired short access token log out cleanly.
+    """
     token = request.cookies.get(REFRESH_COOKIE)
-    if token:
-        await revoke_refresh_token(hash_token(token))
+    if not token:
+        raise HTTPException(status_code=401, detail="No active session.")
+    await revoke_refresh_token(hash_token(token))
     clear_refresh_cookie(response)
     return {"message": "Logged out."}
 
