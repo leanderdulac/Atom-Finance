@@ -30,7 +30,9 @@ class OptionQuote(StrictModel):
         return self
 
 class Thesis(StrictModel):
-    ticker: str = Field(min_length=3, max_length=20)
+    # Ticker is interpolated into the OPLAB/CEDRO URL path — a character
+    # whitelist prevents path/query injection on the licensed hosts.
+    ticker: str = Field(min_length=3, max_length=20, pattern=r"^[A-Za-z0-9.\-^=]{3,20}$")
     spot: Positive
     direction: Literal['bullish', 'bearish']
     rationale: str = Field(min_length=30, max_length=2000)
