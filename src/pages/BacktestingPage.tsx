@@ -4,6 +4,7 @@ import {
   ToggleButtonGroup, ToggleButton, CircularProgress, Alert,
   Table, TableBody, TableCell, TableRow, Chip,
 } from '@mui/material';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import MarketTickerAutocomplete from '../components/MarketTickerAutocomplete';
 import ProviderChips from '../components/ProviderChips';
@@ -96,7 +97,12 @@ export default function BacktestingPage() {
         Test trading strategies with historical simulation
       </Typography>
 
-      <Alert severity="info" sx={{ mb: 2 }}>Simulação exploratória, sem validação fora da amostra. Sinais são executados no fechamento seguinte, com comissão e slippage. Use o Laboratório Quant para avaliar evidência temporal.</Alert>
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Simulação exploratória, sem validação fora da amostra. Sinais são executados no fechamento seguinte, com comissão e slippage.
+        Backtest é pesquisa, não prova: minerar indicadores no mesmo histórico infla o print.
+        O relógio honesto é o <Link to="/forward-test">teste sequencial</Link> — sinal gerado só com o que já existia, avaliado pelo próximo preço.
+        Hipótese escrita e walk-forward purgado: <Link to="/ml">Laboratório Quant</Link>.
+      </Alert>
       <Grid container spacing={2.5}>
         <Grid size={{ xs: 12, md: 4 }}>
           <Card>

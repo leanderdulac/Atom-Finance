@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert, Box, Button, Card, CardContent, Checkbox, Chip, FormControlLabel,
   MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
@@ -75,7 +75,12 @@ export default function MLPage() {
   return <Stack spacing={3} sx={{ maxWidth: 1200, mx: 'auto' }}>
     <Box><Typography variant="h4" component="h1">Laboratório Quant</Typography>
       <Typography color="text.secondary">Hipótese econômica → features causais → validação temporal → resultado líquido.</Typography></Box>
-    <Alert severity="info">Cada avaliação é salva no seu diário com os dados e premissas. Complexidade precisa justificar seu custo. Resultados são de pesquisa e nunca autorizam negociação automática. O teste usa grupos mensais, purga de rótulos e um mês de intervalo antes de cada janela.</Alert>
+    <Alert severity="info">
+      Cada avaliação é salva no seu diário com os dados e premissas. Complexidade precisa justificar seu custo.
+      O rótulo é o retorno t+1→t+2, nunca o preço — <Link to="/target-choice">escala e raiz unitária matam o print como alvo</Link>.
+      Currículo da mesa: <Link to="/quant-doctrine">doutrina ATOM-QUANT-1.0</Link>.
+      Resultados são de pesquisa e nunca autorizam negociação automática. O teste usa grupos mensais, purga de rótulos e um mês de intervalo antes de cada janela.
+    </Alert>
     {error && <Alert severity="error">{error}</Alert>}
     <Card component="form" onSubmit={evaluate}><CardContent><Stack spacing={2}>
       <Typography variant="h6">1. Dados e hipótese</Typography>

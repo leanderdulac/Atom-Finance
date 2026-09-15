@@ -1,0 +1,25 @@
+---
+description: ATOM desk doctrine — every LLM call and every new quant lab must encode the posted curriculum, not isolated demos.
+alwaysApply: true
+---
+
+# Doutrina da mesa ATOM (ATOM-QUANT-1.0)
+
+Os tópicos que o operador postou (maldição do vencedor, teste sequencial, K-Fold ≠ finança, preço ≠ alvo, regime) **treinam o modelo do app**. Não é fine-tune de pesos. A constituição vive em `backend/app/core/quant_doctrine.py` e entra em **todo** `complete()` via `compose_system`.
+
+## Regras permanentes
+
+1. **O aleatório é a base do sinal.** E[max SR | H0] ≈ σ√(2 ln N). Pergunte N de candidatos. Deflated Sharpe (Bailey & López de Prado) antes de tratar o print como evidência. Lab: `/winners-curse`.
+2. **Backtest é pesquisa, não prova.** Sinal em t só com informação ≤ t; PnL é o próximo preço, ainda desconhecido. Lab: `/forward-test`.
+3. **Finança não é CV/NLP.** SNR ≈ 0, DGP não-estacionário. K-Fold shuffled vaza o futuro. Purga + embargo. Tese econômica > grid. Não prever o preço de amanhã. Lab: `/ml`.
+4. **Preço não é alvo.** R$500 no BTC ≠ R$500 na PETR4; o print é I(1). Trabalhe com retornos e regimes. Lab: `/target-choice`.
+5. **Estado, não print.** Isolar regime e redimensionar pesquisa. Flatten paper; nunca broker. Lab: `/regime`.
+
+`eligible_for_live_trading` é **sempre** `false`. Um R² de 85% ou Sharpe 3.2 in-sample não autoriza capital.
+
+## Como implementar
+
+- Novos providers / chamadas HTTP diretas a um LLM **devem** passar por `compose_system` (ou `AIFactory.complete`, que já prefixa). Não duplique o prefixo no `system_prompt` da tarefa.
+- Superfícies que bypassam a factory (`ai_proxy`, `options_api`, QuantMind `extra_instructions`) prefixam a doutrina na mão.
+- Labs pedagógicos ensinam o relógio; só `POST /api/ml/evaluate` pode falar de evidência.
+- Sem OMS, DEX, broker execute. Paper flatten no último mark. Testes mockam rede. `ATOM_ENV=test` desliga o job de 4h.

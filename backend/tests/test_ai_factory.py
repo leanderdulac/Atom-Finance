@@ -28,13 +28,13 @@ def test_gemini_provider_complete_returns_response_text():
     result = asyncio.run(provider.complete("Hello", system_prompt="Be nice"))
 
     assert result == "Gemini says hi"
-    mock_client.aio.models.generate_content.assert_awaited_once_with(
-        model=provider.model,
-        contents="Be nice\n\nHello",
-    )
+    contents = mock_client.aio.models.generate_content.await_args.kwargs["contents"]
+    assert contents.endswith("Hello")
+    assert "Be nice" in contents
+    assert "mesa de pesquisa ATOM" in contents
 
 
-def test_gemini_provider_complete_without_system_prompt_uses_raw_prompt():
+def test_gemini_provider_complete_without_system_prompt_still_loads_doctrine():
     mock_response = MagicMock(text="ok")
     mock_client = MagicMock()
     mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
@@ -42,10 +42,9 @@ def test_gemini_provider_complete_without_system_prompt_uses_raw_prompt():
 
     asyncio.run(provider.complete("Just the prompt"))
 
-    mock_client.aio.models.generate_content.assert_awaited_once_with(
-        model=provider.model,
-        contents="Just the prompt",
-    )
+    contents = mock_client.aio.models.generate_content.await_args.kwargs["contents"]
+    assert contents.endswith("Just the prompt")
+    assert "eligible_for_live_trading" in contents
 
 
 def test_gemini_provider_wraps_errors_as_llm_exception():

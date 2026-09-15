@@ -230,4 +230,13 @@ export const api = {
   deskRegime: (data: object) => request<any>('/desk/regime/evaluate', { method: 'POST', body: JSON.stringify(data) }),
   deskRegimeLive: (flatten = false) =>
     request<any>(`/desk/regime/live?flatten=${flatten ? 'true' : 'false'}`, { method: 'POST', body: '{}' }),
+  deskWinnersCurseSimulate: (data: object) =>
+    request<any>('/desk/winners-curse/simulate', { method: 'POST', body: JSON.stringify(data) }),
+  deskWinnersCurseDeflate: (data: object) =>
+    request<any>('/desk/winners-curse/deflate', { method: 'POST', body: JSON.stringify(data) }),
+  deskForwardTest: (data: object) =>
+    request<any>('/desk/forward-test/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskTargetChoice: (data: object) =>
+    request<any>('/desk/target-choice/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskDoctrine: () => request<any>('/desk/doctrine'),
 };

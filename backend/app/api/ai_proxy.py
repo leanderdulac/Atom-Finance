@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.limiter import limiter
+from app.core.quant_doctrine import compose_system
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -60,9 +61,9 @@ async def perplexity_refine(request: Request, req: RefineRequest):
         "messages": [
             {
                 "role": "system",
-                "content": (
-                    "Você é um Quantitative Researcher Senior especializado em Python para "
-                    "finanças quantitativas (B3 e mercados globais). "
+                "content": compose_system(
+                    "Quantitative researcher sênior em Python. "
+                    "Retornos, não preços; sem K-Fold shuffled; não apresente backtest como prova. "
                     "Forneça APENAS o código Python puro, sem nenhuma marcação markdown."
                 ),
             },

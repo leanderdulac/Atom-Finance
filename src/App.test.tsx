@@ -54,8 +54,35 @@ describe('App routing', () => {
     expect(window.location.pathname).toBe('/login');
   });
 
-  it('redirects an unauthenticated visit to /regime back to /login', async () => {
-    window.history.pushState({}, '', '/regime');
+  it('redirects an unauthenticated visit to /winners-curse back to /login', async () => {
+    window.history.pushState({}, '', '/winners-curse');
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()
+    );
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('redirects an unauthenticated visit to /forward-test back to /login', async () => {
+    window.history.pushState({}, '', '/forward-test');
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()
+    );
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('redirects an unauthenticated visit to /target-choice back to /login', async () => {
+    window.history.pushState({}, '', '/target-choice');
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()
+    );
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('redirects an unauthenticated visit to /quant-doctrine back to /login', async () => {
+    window.history.pushState({}, '', '/quant-doctrine');
     render(<App />);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()

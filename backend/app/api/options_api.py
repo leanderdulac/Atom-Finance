@@ -7,6 +7,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.quant_doctrine import compose_system
 from app.core.security import get_current_user
 from app.models.options_agent import (  # noqa: F401 — OptionsExpert kept as a patch target for tests/test_derivatives_planner.py::test_legacy_scanner_retired_without_model_call
     OptionsExpert,
@@ -41,10 +42,10 @@ async def _get_expert_narrative(trades: list[OptionTrade], risk_profile: str) ->
             for t in trades
         ]
         
-        prompt = f"""Você é um estrategista sênior de opções da B3 (Brasil). 
-Com base nestas 5 melhores operações do dia, escreva um resumo executivo para o cliente.
-Fale de forma simples, mas com autoridade. Explique por que estamos recomendando estas estruturas agora.
-Destaque a operação com melhor relação risco/retorno para o perfil {risk_profile}.
+        prompt = f"""Você é um estrategista sênior de opções da B3 (Brasil).
+Com base nestas estruturas, escreva um resumo de pesquisa — não uma ordem.
+Fale de forma simples, mas com autoridade. Não recomende execução real.
+Destaque a estrutura com melhor relação risco/retorno teórica para o perfil {risk_profile}.
 
 OPERACÕES:
 {chr(10).join(trade_data)}
@@ -54,6 +55,10 @@ Relatório em Português (Brasil). Máximo 300 palavras."""
         msg = client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=600,
+            system=compose_system(
+                "Estrategista de opções B3. Não recomende execução; "
+                "ITM teórico não é probabilidade de lucro."
+            ),
             messages=[{"role": "user", "content": prompt}],
         )
         block = msg.content[0]

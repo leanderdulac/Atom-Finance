@@ -12,7 +12,10 @@ import anthropic
 import openai
 from google import genai
 
+from app.core.quant_doctrine import compose_system
+
 logger = logging.getLogger(__name__)
+
 
 class LLMException(Exception):
     """Base exception for LLM provider errors."""
@@ -41,7 +44,7 @@ class ClaudeProvider(LLMProvider):
             message = await self.client.messages.create(
                 model=self.model,
                 max_tokens=kwargs.get("max_tokens", 1024),
-                system=system_prompt if system_prompt else "Você é um analista financeiro sênior.",
+                system=compose_system(system_prompt),
                 messages=[{"role": "user", "content": prompt}]
             )
             block = message.content[0]
@@ -70,7 +73,7 @@ class GPTProvider(LLMProvider):
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": system_prompt if system_prompt else "Você é um estrategista quantitativo."},
+                    {"role": "system", "content": compose_system(system_prompt)},
                     {"role": "user", "content": prompt}
                 ],
                 **kwargs
@@ -97,7 +100,7 @@ class GeminiProvider(LLMProvider):
     async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         try:
             # Gemini handles system instructions as a prefix here for parity with the previous provider behavior
-            full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+            full_prompt = f"{compose_system(system_prompt)}\n\n{prompt}"
             response = await self.client.aio.models.generate_content(
                 model=self.model,
                 contents=full_prompt,
@@ -120,7 +123,7 @@ class GrokProvider(LLMProvider):
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": system_prompt if system_prompt else "Você é o Grok, um assistente com inteligência em tempo real."},
+                    {"role": "system", "content": compose_system(system_prompt)},
                     {"role": "user", "content": prompt}
                 ],
                 **kwargs
@@ -141,7 +144,7 @@ class PerplexityProvider(LLMProvider):
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": system_prompt if system_prompt else "Você é um pesquisador web especializado em finanças."},
+                    {"role": "system", "content": compose_system(system_prompt)},
                     {"role": "user", "content": prompt}
                 ],
                 **kwargs
@@ -215,7 +218,10 @@ class AIFactory:
     @classmethod
     async def analyze_fundamental(cls, ticker: str, data: str) -> str:
         """Claude specialization for deep fundamental analysis. Fallbacks if needed."""
-        system = "Você é um analista fundamentalista focado em 10-K e relatórios anuais. Extraia os pontos críticos de risco e oportunidade."
+        system = (
+            "Analista fundamentalista: extraia risco e oportunidade dos demonstrativos. "
+            "Não trate múltiplos contábeis como sinal negociável sem tese e holdout."
+        )
         prompt = f"Analise profundamente os dados fundamentais de {ticker}:\n{data}"
         
         try:
@@ -228,7 +234,11 @@ class AIFactory:
     @classmethod
     async def analyze_quant(cls, strategy_name: str, parameters: dict) -> str:
         """GPT specialization for quantitative logic and backtesting. Fallbacks if needed."""
-        system = "Você é um mestre em Python quantitativo e backtesting. Gere código e lógica robustos."
+        system = (
+            "Mesa quant ATOM: não gere um backtest como prova de edge. "
+            "Sinal atrasado um pregão, retornos (não preços), sem K-Fold shuffled, "
+            "pergunte N de candidatos, recuse capital real."
+        )
         prompt = f"Desenvolva a lógica de backtesting para a estratégia {strategy_name} com os parâmetros: {parameters}"
         
         try:
@@ -241,7 +251,10 @@ class AIFactory:
     @classmethod
     async def monitor_news(cls, ticker: str, news_text: str) -> str:
         """Gemini specialization for real-time news and sentiment analysis. Fallbacks if needed."""
-        system = "Você é um monitor de notícias em tempo real. Identifique gatilhos imediatos de preço e sentimento de mercado."
+        system = (
+            "Monitor de notícias: gatilhos e sentimento. Notícia não é alpha; "
+            "não recomende posição a partir de headline."
+        )
         prompt = f"Analise o impacto destas notícias para {ticker}:\n{news_text}"
         
         try:
@@ -257,7 +270,9 @@ class AIFactory:
         provider = cls().get_provider("grok")
         if not provider: return "Grok API não configurada."
         
-        system = "Você é o Grok do xAI. Analise o pulso social e rumores de mercado com sarcasmo e precisão cirúrgica."
+        system = (
+            "Pulso social: seja preciso sobre o que é rumor. Rumor não autoriza execução."
+        )
         prompt = f"Qual é o pulso atual para {ticker} nas redes e mercados?\n{data}"
         return await provider.complete(prompt, system_prompt=system)
 
@@ -267,7 +282,9 @@ class AIFactory:
         provider = cls().get_provider("perplexity")
         if not provider: return "Perplexity API não configurada."
         
-        system = "Você é um pesquisador de elite. Encontre os fatos e notícias mais recentes que impactam este ticker na internet."
+        system = (
+            "Pesquisa web: fatos recentes. Distinga claim de evidência temporal."
+        )
         prompt = f"Pesquise os eventos mais recentes (últimas horas) e notícias de impacto para {ticker} na web brasileira e global."
         return await provider.complete(prompt, system_prompt=system)
 

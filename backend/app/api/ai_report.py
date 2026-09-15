@@ -229,8 +229,8 @@ async def _llm_narrative(ticker: str, report: dict) -> str:
                 f"  Prêmio de risco EVT: +{evt.get('evt_premium_pct', 0):.1f}% sobre VaR Normal\n"
             )
 
-        prompt = f"""Você é um analista quantitativo sênior. Baseado nos dados abaixo, escreva um relatório PROFISSIONAL que será o diferencial da plataforma ATOM.
-Use linguagem clara mas técnica quando necessário.
+        prompt = f"""Você é um analista quantitativo sênior da mesa ATOM. Escreva um relatório de pesquisa — não um pitch de trade.
+Use linguagem clara mas técnica quando necessário. Não trate R², Sharpe ou backtest como prova de alpha.
 
 IMPORTANTE: Inclua uma seção chamada 'ANÁLISE DE RISCO E PAYOFF' detalhando:
 1. Ponto de Equilíbrio (Break-even) da operação sugerida.
@@ -254,9 +254,12 @@ Bull Score: {rec['bull_score']}/100
 RECOMENDAÇÃO: {rec['action']} (Confiança: {rec['confidence']})
 Strike: {rec['suggested_strike']} | Prazo: {rec['holding']['days']}
 
-O relatório deve ser persuasivo, baseado em dados e ter no máximo 500 palavras."""
+O relatório deve ser honesto, baseado em dados e ter no máximo 500 palavras. eligible_for_live_trading permanece false."""
 
-        system = "Você é um estrategista de derivativos da ATOM. Seu objetivo é dar clareza sobre risco e lucro potencial."
+        system = (
+            "Estrategista de derivativos da mesa ATOM. Clareza sobre risco; "
+            "não autorize execução; não apresente o backtest como evidência."
+        )
         
         # Use the new robust generator with fallback
         return await AIFactory().generate_robust_complete(
