@@ -2,8 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from './AuthContext';
-
-const TOKEN_KEY = 'atom_jwt';
+import { getAccessToken, setAccessToken } from '../services/api';
 
 function Probe() {
   const { user, token, isAuthenticated, loading, login, logout } = useAuth();
@@ -27,27 +26,48 @@ function renderProbe() {
   );
 }
 
+type Route = { ok?: boolean; status?: number; json: () => Promise<unknown> };
+
+function mockFetch(routes: Record<string, Route>) {
+  const fn = vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : String(input);
+    const route = routes[url] ?? { ok: false, status: 404, json: async () => ({ detail: 'no route' }) };
+    return {
+      ok: route.ok ?? false,
+      status: route.status ?? (route.ok ? 200 : 401),
+      json: route.json,
+    };
+  });
+  vi.stubGlobal('fetch', fn);
+  return fn;
+}
+
+const okJson = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+const noSession = () => ({ ok: false, status: 401, json: async () => ({ detail: 'no session' }) });
+
 describe('AuthContext', () => {
   beforeEach(() => {
     localStorage.clear();
-    vi.stubGlobal('fetch', vi.fn());
+    setAccessToken(null); // reset the shared in-memory access token between tests
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    setAccessToken(null);
   });
 
-  it('starts unauthenticated with no stored token', async () => {
+  it('starts unauthenticated when there is no refresh session', async () => {
+    mockFetch({ '/api/auth/refresh': noSession() });
     renderProbe();
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
     expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
+    expect(localStorage.getItem('atom_jwt')).toBeNull();
   });
 
-  it('restores the session when a valid token is already stored', async () => {
-    localStorage.setItem(TOKEN_KEY, 'stored-token');
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ username: 'bob' }),
+  it('restores a session via the HttpOnly refresh cookie', async () => {
+    const fetchMock = mockFetch({
+      '/api/auth/refresh': okJson({ access_token: 'access-bob', expires_in: 1800 }),
+      '/api/auth/me': okJson({ username: 'bob' }),
     });
 
     renderProbe();
@@ -55,57 +75,54 @@ describe('AuthContext', () => {
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
     expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
     expect(screen.getByTestId('username')).toHaveTextContent('bob');
-    expect(fetch).toHaveBeenCalledWith('/api/auth/me', {
-      headers: { Authorization: 'Bearer stored-token' },
-    });
+    expect(getAccessToken()).toBe('access-bob');
+    // /me must be called with the freshly-rotated in-memory access token.
+    const meCall = fetchMock.mock.calls.find(([u]) => u === '/api/auth/me');
+    expect(meCall).toBeDefined();
   });
 
-  it('clears a stored token that the backend rejects', async () => {
-    localStorage.setItem(TOKEN_KEY, 'expired-token');
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ok: false });
-
+  it('stays logged out when the backend rejects the refresh', async () => {
+    mockFetch({ '/api/auth/refresh': noSession() });
     renderProbe();
-
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
     expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(getAccessToken()).toBeNull();
   });
 
-  it('login stores the token and marks the user authenticated', async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ access_token: 'new-token', username: 'alice' }),
+  it('login keeps the token in memory only (no localStorage)', async () => {
+    mockFetch({
+      '/api/auth/refresh': noSession(),
+      '/api/auth/login': okJson({ access_token: 'new-token', username: 'alice', role: 'analyst' }),
     });
 
     const user = userEvent.setup();
     renderProbe();
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
 
-    await act(async () => {
-      await user.click(screen.getByText('login'));
-    });
+    await act(async () => { await user.click(screen.getByText('login')); });
 
     expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
     expect(screen.getByTestId('username')).toHaveTextContent('alice');
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('new-token');
+    expect(screen.getByTestId('token')).toHaveTextContent('new-token');
+    expect(localStorage.getItem('atom_jwt')).toBeNull();
+    expect(getAccessToken()).toBe('new-token');
   });
 
-  it('logout clears the session and local storage', async () => {
-    localStorage.setItem(TOKEN_KEY, 'stored-token');
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ username: 'bob' }),
+  it('logout clears the in-memory token and session', async () => {
+    mockFetch({
+      '/api/auth/refresh': okJson({ access_token: 'access-bob' }),
+      '/api/auth/me': okJson({ username: 'bob' }),
+      '/api/auth/logout': okJson({ message: 'Logged out.' }),
     });
 
     const user = userEvent.setup();
     renderProbe();
     await waitFor(() => expect(screen.getByTestId('authenticated')).toHaveTextContent('true'));
 
-    await act(async () => {
-      await user.click(screen.getByText('logout'));
-    });
+    await act(async () => { await user.click(screen.getByText('logout')); });
 
     expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(screen.getByTestId('token')).toHaveTextContent('');
+    expect(getAccessToken()).toBeNull();
   });
 });

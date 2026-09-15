@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 15: sessão com refresh token HttpOnly
+
+Mover a sessão do JWT de localStorage (exfiltrável por XSS) para um **access token de vida curta em memória** + um **refresh token opaco em cookie HttpOnly (SameSite=Lax, Secure em prod)**, com **rotação** e **revogação**.
+
+### Added
+- `refresh_tokens` table (alembic `f8b98626115a`) — só o hash sha256 do token é persistido; `used_at`/`replaced_by_token_hash`/`revoked_at` habilitam rotação e revogação explícita.
+- `POST /api/auth/login` agora define o cookie HttpOnly e devolve um access token curto (`ACCESS_TOKEN_EXPIRE_MINUTES`, default 30).
+- `POST /api/auth/refresh` — rotaciona o cookie e devolve um access novo; reuso de token (sinal de roubo) **revoga toda a família** do usuário.
+- `POST /api/auth/logout` — revoga o refresh token e limpa o cookie.
+- Front-end: `AuthContext`/`api.ts` sem localStorage — access token em memória, **refresh automático no 401** (com promise única para evitar rajadas), restauração de sessão via `/auth/refresh` no load.
+
 ## [Unreleased] — round 14: doutrina da mesa (treino do modelo)
 
 Não é fine-tune de pesos. Os laboratórios (maldição do vencedor, teste sequencial, preço × retorno, regime, `/ml`) são o currículo; `compose_system` injeta a constituição em todo `complete()`.

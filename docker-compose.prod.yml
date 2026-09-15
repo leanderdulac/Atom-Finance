@@ -44,7 +44,8 @@ services:
       - BINANCE_BASE_URL=${BINANCE_BASE_URL:-https://api.binance.com}
       - BINANCE_FUTURES_URL=${BINANCE_FUTURES_URL:-https://fapi.binance.com}
       - BRIDGEWISE_TOKEN=${BRIDGEWISE_TOKEN:-}
-      - ACCESS_TOKEN_EXPIRE_HOURS=24
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_DAYS=45
       # Per-client rate limiting behind nginx: trust the X-Forwarded-For the
       # frontend proxy sets ($proxy_add_x_forwarded_for). Only enable while the ONLY
       # path to /api is through that nginx (it is, here).

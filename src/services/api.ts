@@ -1,17 +1,58 @@
 import type { PaperRecord, PaperSummary, SourceCheck, SourceSnapshotSummary } from '../types/paperTrading';
 const API_BASE = '/api';
-const TOKEN_KEY = 'atom_jwt';
 
-function getAuthHeader(): Record<string, string> {
-  const token = localStorage.getItem(TOKEN_KEY);
-  return token ? { Authorization: `Bearer ${token}` } : {};
+// The access token is short-lived and kept ONLY in memory. It is never written
+// to localStorage/sessionStorage, so a stored-XSS vector cannot steal a usable
+// credential. Sessions are restored/refreshed through the HttpOnly refresh cookie
+// (/auth/refresh), which JS cannot read.
+let accessToken: string | null = null;
+let refreshPromise: Promise<boolean> | null = null;
+
+export function getAccessToken(): string | null { return accessToken; }
+export function setAccessToken(token: string | null): void { accessToken = token; }
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // the HttpOnly refresh cookie is sent automatically (same-origin, SameSite=Lax)
+      });
+      if (!res.ok) { accessToken = null; return false; }
+      const data = await res.json();
+      accessToken = data.access_token ?? null;
+      return accessToken !== null;
+    } catch {
+      accessToken = null;
+      return false;
+    }
+  })().finally(() => { refreshPromise = null; });
+  return refreshPromise;
 }
 
+function getAuthHeader(): Record<string, string> {
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+}
+
+// Endpoints where a 401 is a genuine "bad credentials/session" answer, not an
+// expired access token, so we must NOT auto-refresh on them.
+const NO_REFRESH = new Set(['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout']);
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const doFetch = () => fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     ...options,
   });
+  let res = await doFetch();
+  if (res.status === 401 && !NO_REFRESH.has(path)) {
+    if (await refreshAccessToken()) {
+      res = await doFetch();
+    } else {
+      setAccessToken(null);
+    }
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(Array.isArray(err.detail) ? err.detail.map((item: { msg: string }) => item.msg).join('; ') : (err.detail || 'API Error'));
@@ -74,8 +115,17 @@ export const api = {
   researchHistory: () => request<ResearchSummary[]>('/research/papers'),
   researchPaper: (id: string) => request<ResearchPaper>(`/research/papers/${encodeURIComponent(id)}`),
   researchExtract: (kind: 'text' | 'arxiv', content: string) => request<ResearchPaper>('/research/papers', { method: 'POST', body: JSON.stringify({ kind, content }) }),
-  // Health
+  // Health & auth
   health: () => request<{ status: string }>('/health'),
+  login: (username: string, password: string) =>
+    request<{ access_token: string; username: string; role: string; refresh_cookie_set?: boolean }>(
+      '/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) },
+    ),
+  register: (username: string, email: string, password: string) =>
+    request<{ message: string }>('/auth/register', { method: 'POST', body: JSON.stringify({ username, email, password }) }),
+  refresh: () => refreshAccessToken(),
+  logout: () => request<{ message: string }>('/auth/logout', { method: 'POST', body: '{}' }),
+  me: () => request<{ username: string; email?: string; role?: string }>('/auth/me'),
 
   // Pricing
   blackScholes: (data: any) => request('/pricing/black-scholes', { method: 'POST', body: JSON.stringify(data) }),

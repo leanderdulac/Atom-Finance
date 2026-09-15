@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from datetime import UTC, datetime, timedelta
 
 import bcrypt as _bcrypt_lib
 import jwt
-from fastapi import HTTPException, Security
+from fastapi import HTTPException, Response, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError as JWTError
 
@@ -60,9 +61,17 @@ if _ENV == "production" and len(SECRET_KEY.encode()) < 32:
     raise RuntimeError("Production SECRET_KEY must contain at least 32 bytes")
 
 _ALGORITHM = "HS256"
-_ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
+# Short-lived access token (kept only in front-end memory, never localStorage).
+_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+# Long-lived opaque refresh token, carried in an HttpOnly cookie and rotated on use.
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "45"))
+REFRESH_COOKIE = "atom_refresh"
 
 _bearer = HTTPBearer(auto_error=False)
+
+
+def _is_production() -> bool:
+    return os.getenv("ATOM_ENV", "development").lower() == "production"
 
 
 def hash_password(password: str) -> str:
@@ -81,9 +90,37 @@ def create_access_token(username: str) -> str:
     payload = {
         "sub": username,
         "iat": now,
-        "exp": now + timedelta(hours=_ACCESS_TOKEN_EXPIRE_HOURS),
+        "exp": now + timedelta(minutes=_ACCESS_TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=_ALGORITHM)
+
+
+def create_refresh_token() -> str:
+    """Generates an opaque, unguessable refresh token (stored only as a hash)."""
+    return secrets.token_urlsafe(48)
+
+
+def set_refresh_cookie(response: Response, token: str) -> None:
+    """Marks the refresh token as an HttpOnly cookie so it is not JS-readable."""
+    response.set_cookie(
+        key=REFRESH_COOKIE,
+        value=token,
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        httponly=True,
+        samesite="lax",
+        secure=_is_production(),
+        path="/",
+    )
+
+
+def clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=_is_production(),
+    )
 
 
 def decode_token(token: str) -> str | None:
