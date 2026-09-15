@@ -96,6 +96,37 @@ def engle_granger(y: np.ndarray, x: np.ndarray, significance: float = 0.05) -> d
     }
 
 
+def _expanding_hedge(
+    y: np.ndarray, x: np.ndarray, min_est: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Causal (expanding) OLS hedge ratio: at bar t, (α_t, β_t) use only data[:t+1].
+
+    Returns (alpha, beta, residual) arrays over y, x. The residual at t is
+    y_t − (α_t + β_t x_t) with coefficients that never consume the t+1…T
+    observations, so a signal built on it does not look through the future.
+    """
+    n = len(y)
+    res = np.full(n, np.nan)
+    beta = np.zeros(n)
+    alpha = np.zeros(n)
+    sx = sxx = sxy = sy = 0.0
+    for t in range(n):
+        xt, yt = float(x[t]), float(y[t])
+        sx += xt
+        sxx += xt * xt
+        sxy += xt * yt
+        sy += yt
+        k = t + 1
+        if k < min_est:
+            continue
+        m = np.array([[k, sx], [sx, sxx]])
+        c = np.array([sy, sxy])
+        ab = np.linalg.pinv(m) @ c  # [α_t, β_t] — causal, normal-equations OLS
+        alpha[t], beta[t] = ab
+        res[t] = yt - (ab[0] + ab[1] * xt)
+    return alpha, beta, res
+
+
 def pairs_backtest(
     y: np.ndarray,
     x: np.ndarray,
@@ -109,6 +140,11 @@ def pairs_backtest(
     """
     Dollar-neutral pairs: long the cheap leg / short the rich leg when |z| > entry,
     flatten when |z| < exit. Signal at t, fill at t+1. Costs on both legs.
+
+    The hedge ratio and the spread it defines are **expanding**: (α_t, β_t) are
+    refit on data[:t+1], so nothing in the signal or PnL consumes t+1…T.
+    `engle_granger` is still run on the full sample as the (legitimate)
+    cointegration hypothesis test and reported as diagnostics.
     """
     y = np.asarray(y, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
@@ -119,11 +155,13 @@ def pairs_backtest(
         stats["johansen_trace"] = joh["trace"]
     except ValueError:
         stats["johansen_rank"] = None
-    alpha, beta = stats["alpha"], stats["beta"]
-    spread = y - (alpha + beta * x)
 
-    n = len(spread)
-    warmup = max(20, min(warmup, n // 3))
+    n = len(y)
+    min_est = 20
+    warmup = max(min_est, min(warmup, n // 3))
+    _, beta, spread = _expanding_hedge(y, x, min_est)
+    spread_window: list[float] = []  # causal residuals accumulated for the expanding z
+
     position = 0  # +1 long spread (long y, short β x)
     equity = initial_capital
     curve = [equity]
@@ -133,10 +171,15 @@ def pairs_backtest(
     closed = 0
 
     for t in range(warmup, n - 1):
-        window = spread[: t + 1]
-        mu = float(np.mean(window))
-        sd = float(np.std(window, ddof=1))
-        z = 0.0 if sd < 1e-12 else (spread[t] - mu) / sd
+        st = spread[t]
+        if np.isfinite(st):
+            spread_window.append(st)
+        w = np.asarray(spread_window)
+        if len(w) < 2:
+            continue
+        mu = float(np.mean(w))
+        sd = float(np.std(w, ddof=1)) if len(w) > 1 else 0.0
+        z = 0.0 if sd < 1e-12 else (st - mu) / sd
         target = position
         if position == 0:
             if z > entry_z:
@@ -149,6 +192,8 @@ def pairs_backtest(
         fill = t + 1
         dy = (y[fill] - y[fill - 1]) / y[fill - 1]
         dx = (x[fill] - x[fill - 1]) / x[fill - 1]
+        # hedge applied to this bar's return is β_t (causal; does not include dy).
+        beta_t = beta[t] if np.isfinite(beta[t]) else float(stats["beta"])
         if target != position:
             turnover = abs(target - position)
             cost = turnover * (commission + slippage) * 2.0  # two legs
@@ -160,7 +205,7 @@ def pairs_backtest(
             position = target
         if position != 0:
             # Dollar-neutral: +1 y vs β x, scaled to unit gross on y.
-            pnl = position * (dy - beta * dx)
+            pnl = position * (dy - beta_t * dx)
             equity *= 1.0 + pnl
         curve.append(equity)
 
@@ -190,7 +235,7 @@ def pairs_backtest(
         "eligible_for_live_trading": False,
         "equity_curve_sample": [round(v, 2) for v in curve[:: max(1, len(curve) // 80)]],
         "what_broke": stats["what_broke"] + [
-            "Expanding z-score still uses the in-sample OLS beta, so the spread definition leaks.",
+            "Expanding hedge ratio is a toy OLS; a live book needs rolling/Kalman beta with a rebalance rule.",
             "β shares of x vs 1 share of y ignores lot size, borrow, and dividend timing.",
             "No capacity, no halt on residual-variance jumps, no corporate-action calendar.",
         ],

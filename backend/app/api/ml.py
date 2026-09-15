@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.limiter import limiter
+from app.core.quant_doctrine import DOCTRINE_VERSION, TENETS
 from app.core.security import get_current_user
 from app.db import experiments
 from app.models.research_validation import FEATURES, POLICY_VERSION, evaluate_experiment
@@ -43,10 +44,23 @@ class ExperimentRequest(BaseModel):
 
 @router.get('/policy')
 async def policy():
-    return {'version': POLICY_VERSION, 'features': FEATURES, 'eligible_for_live_trading': False,
-            'rules': ['Hipótese econômica antes do modelo.', 'Treino cronológico com purga e intervalo entre grupos.',
-                      'Comparação OOS com baselines, custos, turnover e risco.',
-                      'Dados sintéticos explicitamente identificados.', 'Revisão independente antes de qualquer promoção.']}
+    return {
+        'version': POLICY_VERSION,
+        'doctrine_version': DOCTRINE_VERSION,
+        'features': FEATURES,
+        'eligible_for_live_trading': False,
+        'tenets': TENETS,
+        'rules': [
+            'Hipótese econômica antes do modelo.',
+            'Treino cronológico com purga e intervalo entre grupos.',
+            'Comparação OOS com baselines, custos, turnover e risco.',
+            'Dados sintéticos explicitamente identificados.',
+            'Revisão independente antes de qualquer promoção.',
+            'O aleatório é a base do sinal; desconte a maldição do vencedor.',
+            'Backtest pesquisa; evidência é sequencial.',
+            'Alvo é retorno ou regime, nunca o print.',
+        ],
+    }
 
 
 @router.post('/evaluate')

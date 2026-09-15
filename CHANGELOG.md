@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 14: doutrina da mesa (treino do modelo)
+
+Não é fine-tune de pesos. Os laboratórios (maldição do vencedor, teste sequencial, preço × retorno, regime, `/ml`) são o currículo; `compose_system` injeta a constituição em todo `complete()`.
+
+### Added
+- `backend/app/core/quant_doctrine.py` (`ATOM-QUANT-1.0`): system prompt permanente + tenets com labs. Todo provider em `ai_factory` prefixa a doutrina; `ai_proxy` e `options_api` (bypass da factory) também.
+- `GET /api/desk/doctrine` e `GET /api/ml/policy` passam a expor `doctrine_version` e os tenets.
+- QuantMind `extra_instructions`: alvo = retorno/regime, relógio sequencial, DSR, K-Fold shuffled inválido.
+- UI `/quant-doctrine`. `eligible_for_live_trading` permanece false.
+
+## [Unreleased] — round 13: price is a bad target
+
+### Added
+- PETR4 vs BTC on the *same* log-return path (`POST /api/desk/target-choice/evaluate`): R$500 is a different percent, prices fail a unit-root screen, walk-forward Ridge on P_{t+1} prints a fake R² while r_{t+1} and the next vol-regime do not. `eligible_for_live_trading` stays false.
+- UI `/target-choice`. Laboratório Quant already labels t+1→t+2 returns; the page makes the scale/stationarity reason visible.
+
+## [Unreleased] — round 12: sequential forward test
+
+### Added
+- Locked-spec sequential SMA vs mined TA vs expanding walk-forward (`POST /api/desk/forward-test/evaluate`). Signal at close t uses only prices[0:t]; PnL is the next return. Same-bar scoring is shown as a leak.
+- UI `/forward-test`: today's frozen-spec signal (to be scored by a price that does not exist yet), equity of the four clocks, DSR of the mined champion. `eligible_for_live_trading` stays false.
+
+## [Unreleased] — round 11: winner's curse / Deflated Sharpe
+
+### Added
+- Zero-edge lottery (`POST /api/desk/winners-curse/simulate`): N iid Gaussian strategies, true E[r]=0, pick the in-sample Sharpe champion, settle out-of-sample. Expected max ≈ σ_SR · √(2 ln N).
+- Deflated Sharpe Ratio (`POST /api/desk/winners-curse/deflate`): Bailey & López de Prado DSR = Φ((SR̂ − SR*)/σ̂). Ask how many candidates the print beat before risking capital.
+- UI `/winners-curse`: IS×OOS scatter, y=x, hollow naïve-replay circle, live trading stays false.
+
 ## [Unreleased] — round 10: live regime books, 4h job, paper flatten, holdout
 
 ### Added

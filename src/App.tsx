@@ -9,7 +9,7 @@ import {
   ShowChart, Assessment, AccountBalance, Psychology, Warning,
   Timeline, DarkMode, LightMode, Menu as MenuIcon, Waves, Terminal, AutoGraph,
   FindInPage, Functions, TrendingUp, MonetizationOn, CallMerge, RocketLaunch, AutoFixHigh,
-  CurrencyExchange, Logout,
+  CurrencyExchange, Logout, Science, Percent, MenuBook,
 } from '@mui/icons-material';
 import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -48,6 +48,10 @@ const BinanceDashboard = lazy(() => import('./pages/BinanceDashboard'));
 const EarningsPredictionPage = lazy(() => import('./pages/EarningsPredictionPage'));
 const DeskLabPage = lazy(() => import('./pages/DeskLabPage'));
 const RegimePage = lazy(() => import('./pages/RegimePage'));
+const WinnerCursePage = lazy(() => import('./pages/WinnerCursePage'));
+const ForwardTestPage = lazy(() => import('./pages/ForwardTestPage'));
+const TargetChoicePage = lazy(() => import('./pages/TargetChoicePage'));
+const QuantDoctrinePage = lazy(() => import('./pages/QuantDoctrinePage'));
 
 function RouteFallback() {
   return (
@@ -92,8 +96,12 @@ const exploratoryItems = [
 ];
 
 const coreItems = [
+  { label: 'Doutrina da mesa', path: '/quant-doctrine', icon: <MenuBook /> },
   { label: 'Mesa de papers', path: '/desk', icon: <Functions /> },
   { label: 'Regimes', path: '/regime', icon: <Warning /> },
+  { label: 'Maldição do vencedor', path: '/winners-curse', icon: <Timeline /> },
+  { label: 'Teste sequencial', path: '/forward-test', icon: <Science /> },
+  { label: 'Preço × retorno', path: '/target-choice', icon: <Percent /> },
   { label: 'Fontes de mercado', path: '/sources', icon: <AccountBalance /> },
   { label: 'Mesa de derivativos', path: '/derivatives', icon: <ShowChart /> },
   { label: 'Operações simuladas', path: '/paper-trades', icon: <Timeline /> },
@@ -259,6 +267,10 @@ function AppLayout() {
           <Route path="/dashboard" element={<ProtectedRoute><ExperimentsPage /></ProtectedRoute>} />
           <Route path="/desk" element={<ProtectedRoute><DeskLabPage /></ProtectedRoute>} />
           <Route path="/regime" element={<ProtectedRoute><RegimePage /></ProtectedRoute>} />
+          <Route path="/winners-curse" element={<ProtectedRoute><WinnerCursePage /></ProtectedRoute>} />
+          <Route path="/forward-test" element={<ProtectedRoute><ForwardTestPage /></ProtectedRoute>} />
+          <Route path="/target-choice" element={<ProtectedRoute><TargetChoicePage /></ProtectedRoute>} />
+          <Route path="/quant-doctrine" element={<ProtectedRoute><QuantDoctrinePage /></ProtectedRoute>} />
           <Route path="/pricing" element={<ProtectedRoute><PricingPage /></ProtectedRoute>} />
           <Route path="/strategies" element={<ProtectedRoute><StrategiesPage /></ProtectedRoute>} />
           <Route path="/risk" element={<ProtectedRoute><RiskPage /></ProtectedRoute>} />

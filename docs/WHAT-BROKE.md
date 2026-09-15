@@ -44,6 +44,10 @@ should read this before the feature list. Nothing below is live-trading eligible
 | Perp basis | After-fee calculator **+ live Binance USDM / Hyperliquid books** | Top-of-book is not firm; no orders |
 | Insider clusters (CMP 2012) | Windowed bursts **+ Form 4 P/S via EDGAR** | Needs `ATOM_SEC_USER_AGENT`; drops 10b5-1 / awards |
 | Regime classifier | Live Yahoo+FRED books, 4h job, softmax P(regime), holdout, **paper flatten at last mark** | Delayed prints; ^IRX is 13-week not 2y; softmax is not an HMM; **no broker** |
+| Winner's curse / DSR | N iid zero-edge trials, IS×OOS cloud, Bailey–López de Prado deflated Sharpe | Trials modelled as independent; √(2 ln N) is the leading EVT term; DSR is not a tradable edge |
+| Sequential forward test | Locked SMA scored at t+1, mined TA grid, walk-forward refit | Synthetic GBM clock; SMA is one family; walk-forward still searches; **no broker** |
+| Price vs return | Same log-return path at two levels; ADF; walk-forward Ridge on P, r, vol-regime | Toy DGP; regime is trailing vol vs expanding median, not the six-signal classifier |
+| Desk doctrine | `compose_system` on every LLM `complete()`; GET `/api/desk/doctrine`; UI `/quant-doctrine` | Prompt prefix, not weight fine-tuning; bypass surfaces must opt in (`ai_proxy`, `options_api`, QuantMind) |
 
 ## Protocol that was already honest
 

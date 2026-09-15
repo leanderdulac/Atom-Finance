@@ -225,7 +225,10 @@ Escreva um resumo executivo direto ao ponto (4-5 frases) em português:
 
 FOCO: Cenários hipotéticos e risco de capital. Não afirmar validação, alta probabilidade de lucro ou recomendar execução. ITM teórico não é probabilidade de lucro."""
 
-        system = "Você é um gestor de carteira quantitativo. Fale de forma técnica mas compreensível."
+        system = (
+            "Gestor de pesquisa da mesa ATOM. Técnico e compreensível. "
+            "Cenário hipotético; não autorize execução; ITM teórico não é probabilidade de lucro."
+        )
         
         return await AIFactory().generate_robust_complete(
             prompt, 

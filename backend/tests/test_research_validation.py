@@ -124,7 +124,10 @@ def test_api_rejects_bad_data_and_legacy_predictions():
     assert client.post('/api/ml/predict').status_code == 401
     app.dependency_overrides[get_current_user] = lambda: 'test'
     assert client.post('/api/ml/predict').status_code == 410
-    assert client.get('/api/ml/policy').json()['eligible_for_live_trading'] is False
+    policy = client.get('/api/ml/policy').json()
+    assert policy['eligible_for_live_trading'] is False
+    assert policy['doctrine_version'] == 'ATOM-QUANT-1.0'
+    assert len(policy['tenets']) >= 5
     response = client.post('/api/ml/evaluate', json=base)
     assert response.status_code == 200, response.text
     assert response.json()['eligible_for_live_trading'] is False

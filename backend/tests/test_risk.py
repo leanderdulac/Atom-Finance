@@ -39,6 +39,19 @@ class TestVaR:
         expected_abs = result["var_percentage"] / 100 * pv
         assert abs(result["var_absolute"] - expected_abs) < 1
 
+    def test_parametric_t_df_is_mle_estimated(self):
+        """df must reflect the data's tails: fat-tailed → small df, Gaussian → large df."""
+        rng = np.random.default_rng(3)
+        heavy = rng.standard_t(df=4, size=2000)
+        gauss = rng.normal(0.0005, 0.015, 2000)
+        from app.models.risk import ValueAtRisk
+
+        res_heavy = ValueAtRisk.parametric(heavy, confidence=0.95, distribution="t")
+        res_norm = ValueAtRisk.parametric(gauss, confidence=0.95, distribution="t")
+        assert res_heavy["df"] < 8.0          # heavy tails → low df
+        assert res_norm["df"] == pytest.approx(30.0)  # Gaussian → cap (≈ normal)
+        assert res_heavy["df_estimation"] == "mle_standardized"
+
 
 # ── StressTest ────────────────────────────────────────────────────────────────
 

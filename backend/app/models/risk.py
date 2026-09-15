@@ -29,6 +29,28 @@ def _tail_cvar(hp_returns: np.ndarray, var_pct: float) -> float:
     return float(-np.mean(tail))
 
 
+def _estimate_student_t_df(returns: np.ndarray) -> float:
+    """MLE degrees-of-freedom of a Student-t fitted to the returns.
+
+    The old parametric-t branch fabricated df as `len(returns)//50`, so the
+    tail thickness (and therefore VaR/CVaR) implied a distribution the data
+    never exhibited. Here df comes from a full t MLE (loc/scale free) on the
+    actual returns.
+    """
+    z = np.asarray(returns, dtype=np.float64)
+    z = z[np.isfinite(z)]
+    if z.size < 10 or float(np.std(z)) < 1e-12:
+        return 5.0
+    try:
+        df, _, _ = t_dist.fit(z)
+    except Exception:
+        df = float("nan")
+    if not np.isfinite(df) or df <= 1.0:
+        return 5.0
+    # Keep finite variance (df > 2) and a tractable tail; above ~30 the t ≈ normal.
+    return float(np.clip(df, 2.0, 30.0))
+
+
 class ValueAtRisk:
     """Value at Risk calculations with multiple methods."""
 
@@ -75,7 +97,8 @@ class ValueAtRisk:
             var_pct = -(mu_h + z * sigma_h)
             cvar_pct = -(mu_h - sigma_h * float(norm.pdf(z)) / alpha)
         elif distribution == "t":
-            df_est = float(max(3, len(returns) // 50))
+            # df is estimated (MLE) from the standardized returns, not fabricated.
+            df_est = _estimate_student_t_df(returns)
             z = float(t_dist.ppf(alpha, df_est))
             var_pct = -(mu_h + z * sigma_h)
             if df_est <= 1:
@@ -84,6 +107,7 @@ class ValueAtRisk:
                 tail_factor = float(t_dist.pdf(z, df_est)) / alpha * (df_est + z ** 2) / (df_est - 1)
                 cvar_pct = -mu_h + sigma_h * tail_factor
             extra["df"] = df_est
+            extra["df_estimation"] = "mle_standardized"
         else:
             raise ValueError(f"Unknown distribution: {distribution}")
 

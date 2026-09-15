@@ -13,15 +13,37 @@ import numpy as np
 from app.models.cointegration import _adf_tstat
 
 
-def _ar1_half_life(log_prices: np.ndarray) -> tuple[float, float]:
-    x = log_prices - np.mean(log_prices)
+def _ar1_half_life(log_prices: np.ndarray, end: int | None = None) -> tuple[float, float]:
+    """AR(1) half-life on the *expanding* window [0, end).
+
+    Demeaning uses only the mean of ``log_prices[:end]`` — never the full-sample
+    mean — so an estimate at a bar t never consumes the t+1…T observations the
+    docstring promises to exclude. ``end=None`` means the present bar (all data).
+    """
+    x = np.asarray(log_prices[:end], dtype=np.float64)
     if len(x) < 20:
         return float("nan"), float("nan")
-    y, lagged = x[1:], x[:-1]
+    xd = x - np.mean(x)  # within-window (recursive/expanding) de-mean
+    y, lagged = xd[1:], xd[:-1]
     phi = float(np.dot(lagged, y) / np.dot(lagged, lagged))
     if phi <= 0 or phi >= 1:
         return phi, float("inf")
     return phi, float(-np.log(2.0) / np.log(phi))
+
+
+def _expanding_z(log_prices: np.ndarray, end: int | None = None) -> float:
+    """Present-bar z-score with only the observations before ``end``.
+
+    ``end=None`` → the present bar, i.e. z = (log S_T − μ_T)/σ_T with μ_T, σ_T
+    estimated on data[:T]. Querying an interior ``end`` therefore uses nothing
+    beyond that bar — no t+1…T moments.
+    """
+    x = np.asarray(log_prices[:end], dtype=np.float64)
+    mu = float(np.mean(x))
+    sd = float(np.std(x, ddof=1)) if len(x) > 1 else 0.0
+    if sd < 1e-12:
+        return 0.0
+    return float((x[-1] - mu) / sd)
 
 
 def _hurst(log_prices: np.ndarray) -> float:
@@ -62,9 +84,8 @@ def score_series(prices: np.ndarray, ticker: str = "") -> dict:
     hurst = _hurst(log_p)
     adf = _adf_tstat(log_p, lags=1)
     rets = np.diff(prices) / prices[:-1]
-    mu = float(np.mean(log_p))
-    sd = float(np.std(log_p, ddof=1))
-    z = 0.0 if sd < 1e-12 else float((log_p[-1] - mu) / sd)
+    # Expanding estimates as of the present bar: only data[:T] enters μ, σ, φ.
+    z = _expanding_z(log_p)
     tradable_band = 2.0 <= half_life <= 60.0 and adf < -2.86
     return {
         "ticker": ticker,
@@ -79,12 +100,14 @@ def score_series(prices: np.ndarray, ticker: str = "") -> dict:
         "n": int(len(prices)),
         "math": (
             "log S_t ≈ μ + φ log S_{t-1} + ε, half-life = −ln 2 / ln φ. "
-            "H < 0.5 is mean-reverting noise; ADF rejects a unit root on the level."
+            "H < 0.5 is mean-reverting noise; ADF rejects a unit root on the level. "
+            "z-score, μ, σ, φ are expanding estimates at the present bar — they never "
+            "use t+1…T moments."
         ),
         "what_broke": [
-            "Full-sample μ, σ, φ leak the future if you trade the latest z without a rolling window.",
             "Equities with drift look 'slowly mean reverting' (φ≈1); half-life then explodes.",
-            "No costs, borrow, or halt logic — a scanner is not a backtest.",
+            "A single present-bar z is a point estimate, not a trade signal (no costs, borrow, or halt logic).",
+            "Cross-sectional ranking on the same sample is selection bias; freeze a holdout calendar.",
         ],
     }
 

@@ -7,7 +7,7 @@ O Laboratório Quant (`/ml`, `POST /api/ml/evaluate`) avalia hipóteses com vali
 ## O que o protocolo exige
 
 1. Hipótese econômica escrita **antes** do teste, com condição que a refutaria.
-2. Features disponíveis no fechamento da decisão; rótulo de `t+1` a `t+2` (atraso de execução de um pregão).
+2. Features disponíveis no fechamento da decisão; rótulo de `t+1` a `t+2` (atraso de execução de um pregão). O rótulo é um **retorno**, não um preço: o print não é estacionário e a escala em reais não viaja entre ativos (`/target-choice`).
 3. Walk-forward por mês civil, com purga de rótulos sobrepostos e um mês de intervalo antes de cada janela de teste.
 4. Normalização apenas no treino de cada janela.
 5. Comparação fora da amostra com previsão zero, momentum simples e buy & hold, nos mesmos períodos.
@@ -35,6 +35,8 @@ Promoção a qualquer uso real exige holdout independente, revisão humana e uma
 
 `POST /api/backtesting/run` permanece como simulação histórica com atraso de execução, comissão e slippage. Não é validação fora da amostra. Use o Laboratório Quant quando a pergunta for evidência temporal.
 
+O teste sequencial (`POST /api/desk/forward-test/evaluate`, `/forward-test`) deixa o princípio explícito: o sinal no fechamento `t` só pode usar preços até `t`, e o retorno que o avalia é o preço seguinte — ainda desconhecido na hora da decisão. Mineração de indicadores no mesmo histórico é a versão de análise técnica da maldição do vencedor. Uma spec travada, testável e executada todos os dias é o relógio; um backtest minerado não é. `eligible_for_live_trading` permanece `false`.
+
 ## Interpretação do comentário
 
 A regra prioriza qualidade da hipótese, dos dados e da validação sobre complexidade. Não assume que toda rede neural falha nem usa opinião sobre recrutamento como fato mensurável. O ATOM exige evidência para sustentar qualquer método. As antigas simulações apresentadas como LSTM/RF/DQN foram retiradas das rotas de previsão; chamadas legadas autenticadas recebem HTTP 410.
@@ -56,7 +58,9 @@ A regra prioriza qualidade da hipótese, dos dados e da validação sobre comple
 
 O relatório JSON inclui configuração, hipótese, fonte, versão da política, hash SHA-256 de dados/configuração, features, períodos de treino/teste, resultados líquidos, curva OOS e motivos do parecer. A exportação é manual; não existe registro imutável de todas as tentativas. Alterar a hipótese ou repetir testes após ver o resultado exige nova validação independente; o sistema não detecta experimentos externos ou corrige múltiplas tentativas.
 
-O QuantMind recebe instruções para extrair hipótese econômica, disponibilidade temporal das features, validação, baselines, custos, turnover, volatilidade e drawdown. Deve marcar itens ausentes como “não reportados” e preservar citações. Esta é orientação ao extrator, não comprovação automática da validade científica de um artigo.
+O QuantMind recebe instruções para extrair hipótese econômica, disponibilidade temporal das features, validação, baselines, custos, turnover, volatilidade e drawdown. Deve marcar itens ausentes como “não reportados” e preservar citações. Também pede alvo em retorno/regime (não preço), relógio sequencial, Deflated Sharpe / maldição do vencedor, e rejeição de K-Fold embaralhado. Esta é orientação ao extrator, não comprovação automática da validade científica de um artigo.
+
+A constituição da mesa (`ATOM-QUANT-1.0`, `GET /api/desk/doctrine`, UI `/quant-doctrine`) é injetada em todo `complete()` via `compose_system`. Não é fine-tune de pesos: é o mesmo currículo dos laboratórios carregado sempre que o modelo escreve.
 
 ## Verificação
 

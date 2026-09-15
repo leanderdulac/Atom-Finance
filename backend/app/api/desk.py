@@ -11,18 +11,28 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.core.limiter import limiter
+from app.core.quant_doctrine import payload as doctrine_payload
 from app.core.security import get_current_user
 from app.models.cointegration import engle_granger, johansen, pairs_backtest
 from app.models.fama_french import decompose as ff_decompose
+from app.models.forward_test import evaluate as forward_evaluate
 from app.models.insider_clusters import detect as detect_insiders
 from app.models.market_making import avellaneda_stoikov_quotes, simulate_inventory
 from app.models.mean_reversion import scan as mr_scan
 from app.models.perp_arb import scan as perp_scan
 from app.models.regime import demo_payload
 from app.models.regime import evaluate as regime_evaluate
+from app.models.target_choice import evaluate as target_choice_evaluate
 from app.models.volatility import HestonModel
+from app.models.winners_curse import deflated_sharpe
+from app.models.winners_curse import simulate as winners_curse_simulate
 
 router = APIRouter()
+
+
+@router.get("/doctrine")
+async def desk_doctrine():
+    return doctrine_payload()
 
 
 async def _run(func, *args, **kwargs):
@@ -452,3 +462,89 @@ async def regime_execute():
         "Broker execution is retired. Use POST /api/desk/regime/live?flatten=true "
         "to close simulated paper trades at last mark when the kill switch is armed.",
     )
+
+
+class WinnersCurseSimRequest(BaseModel):
+    n_strategies: int = Field(400, ge=10, le=2000)
+    t_is: int = Field(504, ge=60, le=2500)
+    t_oos: int = Field(252, ge=60, le=2500)
+    daily_vol: float = Field(0.01, gt=1e-4, le=0.1)
+    seed: int = Field(7, ge=0)
+
+
+class WinnersCurseDeflateRequest(BaseModel):
+    observed_sharpe: float = Field(..., ge=-20, le=20)
+    n_trials: int = Field(..., ge=2, le=100_000)
+    n_obs: int = Field(..., ge=30, le=10_000)
+    skew: float = Field(0.0, ge=-5, le=5)
+    excess_kurtosis: float = Field(0.0, ge=-2, le=20)
+
+
+@router.post("/winners-curse/simulate")
+@limiter.limit("20/minute")
+async def winners_curse_sim(request: Request, req: WinnersCurseSimRequest):
+    try:
+        return await _run(
+            winners_curse_simulate,
+            req.n_strategies, req.t_is, req.t_oos, req.daily_vol, req.seed,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/winners-curse/deflate")
+async def winners_curse_deflate(req: WinnersCurseDeflateRequest):
+    try:
+        out = deflated_sharpe(
+            req.observed_sharpe, req.n_trials, req.n_obs, req.skew, req.excess_kurtosis,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    out["eligible_for_live_trading"] = False
+    out["math"] = (
+        "DSR = Φ((SR̂ − SR*)/σ̂). SR* is the expected maximum Sharpe among n_trials "
+        "independent zero-edge tests. Ask how many candidates this Sharpe beat."
+    )
+    return out
+
+
+class ForwardTestRequest(BaseModel):
+    prices: list[float] | None = Field(None, min_length=250, max_length=3000)
+    locked_fast: int = Field(10, ge=2, le=100)
+    locked_slow: int = Field(40, ge=3, le=200)
+    commission: float = Field(0.001, ge=0, le=0.01)
+    slippage: float = Field(0.0005, ge=0, le=0.01)
+    seed: int = Field(11, ge=0)
+    n: int = Field(756, ge=250, le=3000)
+
+
+@router.post("/forward-test/evaluate")
+@limiter.limit("20/minute")
+async def forward_test_evaluate(request: Request, req: ForwardTestRequest):
+    try:
+        return await _run(
+            forward_evaluate,
+            req.prices,
+            req.locked_fast,
+            req.locked_slow,
+            req.commission,
+            req.slippage,
+            req.seed,
+            req.n,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class TargetChoiceRequest(BaseModel):
+    n: int = Field(504, ge=250, le=2000)
+    seed: int = Field(5, ge=0)
+
+
+@router.post("/target-choice/evaluate")
+@limiter.limit("20/minute")
+async def target_choice_eval(request: Request, req: TargetChoiceRequest):
+    try:
+        return await _run(target_choice_evaluate, req.n, req.seed)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

@@ -229,8 +229,8 @@ async def _llm_narrative(ticker: str, report: dict) -> str:
                 f"  Prêmio de risco EVT: +{evt.get('evt_premium_pct', 0):.1f}% sobre VaR Normal\n"
             )
 
-        prompt = f"""Você é um analista quantitativo sênior. Baseado nos dados abaixo, escreva um relatório PROFISSIONAL que será o diferencial da plataforma ATOM.
-Use linguagem clara mas técnica quando necessário.
+        prompt = f"""Você é um analista quantitativo sênior da mesa ATOM. Escreva um relatório de pesquisa — não um pitch de trade.
+Use linguagem clara mas técnica quando necessário. Não trate R², Sharpe ou backtest como prova de alpha.
 
 IMPORTANTE: Inclua uma seção chamada 'ANÁLISE DE RISCO E PAYOFF' detalhando:
 1. Ponto de Equilíbrio (Break-even) da operação sugerida.
@@ -254,9 +254,12 @@ Bull Score: {rec['bull_score']}/100
 RECOMENDAÇÃO: {rec['action']} (Confiança: {rec['confidence']})
 Strike: {rec['suggested_strike']} | Prazo: {rec['holding']['days']}
 
-O relatório deve ser persuasivo, baseado em dados e ter no máximo 500 palavras."""
+O relatório deve ser honesto, baseado em dados e ter no máximo 500 palavras. eligible_for_live_trading permanece false."""
 
-        system = "Você é um estrategista de derivativos da ATOM. Seu objetivo é dar clareza sobre risco e lucro potencial."
+        system = (
+            "Estrategista de derivativos da mesa ATOM. Clareza sobre risco; "
+            "não autorize execução; não apresente o backtest como evidência."
+        )
         
         # Use the new robust generator with fallback
         return await AIFactory().generate_robust_complete(
@@ -599,7 +602,16 @@ def _fetch_history_sync(ticker: str) -> dict:
 # ── Request / Route ────────────────────────────────────────────────────────
 
 class AnalysisRequest(BaseModel):
-    ticker: str = Field(..., min_length=1, max_length=10, description="Stock ticker (e.g. PETR4, AAPL, MSFT)")
+    # Character-whitelist mirrors live_quotes.py's Yahoo pattern so the raw ticker —
+    # interpolated verbatim into LLM prompts and downstream URLs — cannot carry
+    # newlines/braces/etc. for prompt injection.
+    ticker: str = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+        pattern=r"^[A-Za-z0-9.\-^=]{1,20}$",
+        description="Stock ticker (e.g. PETR4, AAPL, MSFT)",
+    )
 
 
 class FinancialPeriod(BaseModel):
@@ -738,17 +750,33 @@ async def ai_analysis(request: Request, req: AnalysisRequest, owner: str = Depen
 
 @router.post("/ai-analysis/stream")
 @limiter.limit("10/hour")
-async def ai_analysis_stream(request: Request, req: AnalysisRequest):
+async def ai_analysis_stream(request: Request, req: AnalysisRequest, owner: str = Depends(get_current_user)):
     """
     Streaming version of ai-analysis using Server-Sent Events.
     Emits progress events during analysis.
+
+    Persists the finished report to the DB exactly like the non-streaming
+    /ai-analysis endpoint, so the two engines do not drift in behaviour.
     """
     async def event_stream():
+        report = None
         try:
             async for chunk in _full_analysis_streaming(req.ticker.upper().strip()):
+                if chunk.startswith("event: result"):
+                    for part in chunk.split("\n\n"):
+                        if part.startswith("data: "):
+                            try:
+                                report = json.loads(part[6:])
+                            except Exception:
+                                report = None
                 yield chunk
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        if report is not None:
+            try:
+                await _db_save(req.ticker.upper(), report, owner=owner)
+            except Exception as exc:
+                logger.warning("Failed to persist streamed report for %s: %s", req.ticker, exc)
 
     return StreamingResponse(
         event_stream(),
