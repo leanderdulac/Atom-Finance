@@ -236,9 +236,12 @@ class ClaytonCopula:
             if theta <= 1e-6:
                 return 1e12
             try:
+                # True Clayton density:
+                #   c(u1,u2) = (1+θ)(u1·u2)^{-1-θ} (u1^{-θ}+u2^{-θ}-1)^{-2-1/θ}
+                # The exponent on the generator term must be -(2 + 1/θ), not -(1 + 1/θ).
                 log_c = (
                     np.log(1.0 + theta)
-                    + (-1.0 - 1.0 / theta) * np.log(u1 ** (-theta) + u2 ** (-theta) - 1.0)
+                    + (-2.0 - 1.0 / theta) * np.log(u1 ** (-theta) + u2 ** (-theta) - 1.0)
                     + (-theta - 1.0) * (np.log(u1) + np.log(u2))
                 )
                 return -float(np.sum(log_c))
@@ -299,16 +302,19 @@ class GumbelCopula:
                 return 1e12
             try:
                 lu1, lu2 = -np.log(u1), -np.log(u2)
+                # Let x=-ln u, y=-ln v, B=x^θ+y^θ, A=B^(1/θ). Then
+                #   c(u,v) = exp(-A) (xy)^{θ-1}/(uv) [ A^{2-2θ} + (θ-1) A^{1-2θ} ].
+                # The A-exponents are 2-2θ and 1-2θ (not 2-2/θ / 1-2/θ), and there
+                # is no separate `-(2-1/θ)·ln B` term. The old code was exact only at θ=2.
                 A = (lu1 ** theta + lu2 ** theta) ** (1.0 / theta)
                 log_c = (
                     -A
                     + (theta - 1.0) * (np.log(lu1) + np.log(lu2))
                     - np.log(u1) - np.log(u2)
                     + np.log(
-                        A ** (2.0 - 2.0 / theta)
-                        + (theta - 1.0) * A ** (1.0 - 2.0 / theta)
+                        A ** (2.0 - 2.0 * theta)
+                        + (theta - 1.0) * A ** (1.0 - 2.0 * theta)
                     )
-                    - (2.0 - 1.0 / theta) * np.log(lu1 ** theta + lu2 ** theta)
                 )
                 return -float(np.sum(log_c))
             except Exception:
@@ -401,14 +407,19 @@ class FrankCopula:
     def simulate(self, n: int) -> np.ndarray:
         if self.theta is None:
             raise RuntimeError("Model not fitted — call fit() first.")
-        u = np.random.uniform(0.0, 1.0, n)
-        t = np.random.uniform(0.0, 1.0, n)
+        # Inverse of the Frank conditional CDF F(v|u) = ∂C/∂u.
+        # With eu = e^{-θu}, k = e^{-θ}, den = eu(1-t) + t:
+        #   F(v|u) = t  ⟺  e^{-θv} = 1 + t(k-1)/den  ⟹  v = -(1/θ)·ln(1 + t(k-1)/den).
+        # This maps t∈(0,1) bijectively onto v∈(0,1). The previous code inverted
+        # the wrong partial (∂C/∂v), which drove v negative and left the second
+        # coordinate collapsed at the clip floor.
+        u = np.random.uniform(1e-7, 1.0 - 1e-7, n)
+        t = np.random.uniform(1e-7, 1.0 - 1e-7, n)
         theta = self.theta
-        e_t = np.exp(-theta)
-        # Conditional quantile (inverse of Frank conditional CDF)
-        denom = t * (np.exp(-theta * u) - 1.0) - np.exp(-theta * u)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            v = -np.log(1.0 + t * (e_t - 1.0) / denom) / theta
+        eu = np.exp(-theta * u)
+        k = np.exp(-theta)
+        den = eu * (1.0 - t) + t
+        v = -np.log(1.0 + t * (k - 1.0) / den) / theta
         return _clip(np.column_stack([u, v]))
 
 

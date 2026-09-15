@@ -46,6 +46,7 @@ class EVTRiskMetrics:
     exceedance_rate: float
     normal_var: float           # for comparison
     evt_premium_pct: float      # (evt_var / normal_var - 1) * 100
+    return_level_error: str | None = None   # honest NaN marker if return levels fail
 
 
 # ── GPD / POT ─────────────────────────────────────────────────────────────────
@@ -73,6 +74,8 @@ class GeneralizedParetoDistribution:
             )
 
         # ── MLE ──────────────────────────────────────────────────────
+        n_excess_l = len(exceedances)
+
         def neg_ll(params):
             xi, sigma = params
             if sigma <= 0:
@@ -82,20 +85,32 @@ class GeneralizedParetoDistribution:
             arg = 1.0 + xi * exceedances / sigma
             if np.any(arg <= 0):
                 return 1e12
+            # GPD NLL = n·log σ + (1 + 1/ξ)·Σ log(1 + ξ x/σ). The n factor on
+            # log σ was missing here — without it the MLE distorted σ (and ξ).
             return float(
-                np.sum(np.log(sigma)) + (1.0 + 1.0 / xi) * np.sum(np.log(arg))
+                n_excess_l * np.log(sigma) + (1.0 + 1.0 / xi) * np.sum(np.log(arg))
             )
 
-        # Method-of-moments starting values
+        # Method-of-moments starting values (ξ = ½(1 − μ²/σ²); σ = ½μ(1 + μ²/σ²))
         m1 = float(np.mean(exceedances))
         m2 = float(np.var(exceedances))
-        xi0 = 0.5 * (m1 ** 2 / m2 - 1.0)
+        xi0 = 0.5 * (1.0 - m1 ** 2 / m2)
         sigma0 = 0.5 * m1 * (m1 ** 2 / m2 + 1.0)
+
+        # The GPD likelihood is unbounded as ξ → −1⁺ (the upper endpoint collapses),
+        # so an unconstrained Nelder–Mead can run to absurd ξ and report a "better"
+        # but meaningless fit. Constrain ξ to the estimable heavy/bounded range and
+        # σ > 0 — standard GPD practice — then clip the MoM seed into the box.
+        XI_MIN, XI_MAX = -0.5, 10.0
+        SIGMA_MIN = 1e-10
+        xi0 = float(np.clip(xi0, XI_MIN, XI_MAX))
+        sigma0 = float(max(sigma0, SIGMA_MIN))
 
         res = minimize(
             neg_ll,
             [xi0, sigma0],
             method="Nelder-Mead",
+            bounds=((XI_MIN, XI_MAX), (SIGMA_MIN, None)),
             options={"xatol": 1e-9, "fatol": 1e-9, "maxiter": 20_000},
         )
         self.xi, self.sigma = float(res.x[0]), float(res.x[1])
@@ -246,12 +261,21 @@ def compute_evt_risk(
     var = gpd.var_evt(confidence, fit.n_total, fit.n_exceedances)
     cvar = gpd.cvar_evt(var)
 
+    # Return levels must never be silently fabricated (the old code swapped in
+    # var×1.5 / var×2.5 on failure, presenting invented numbers as 10y/100y
+    # return levels). On failure they are NaN and `return_level_error` explains why.
+    return_level_error: str | None = None
     try:
         rl_10y = gpd.return_level(10, trading_days_per_year, fit.n_total, fit.n_exceedances)
+    except Exception as exc:
+        rl_10y = float("nan")
+        return_level_error = f"10-year return level unavailable: {exc}"
+    try:
         rl_100y = gpd.return_level(100, trading_days_per_year, fit.n_total, fit.n_exceedances)
-    except Exception:
-        rl_10y = var * 1.5
-        rl_100y = var * 2.5
+    except Exception as exc:
+        rl_100y = float("nan")
+        msg = f"100-year return level unavailable: {exc}"
+        return_level_error = f"{return_level_error}; {msg}" if return_level_error else msg
 
     # Normal (Gaussian) VaR for comparison
     normal_var = float(-np.quantile(returns, 1.0 - confidence))
@@ -268,6 +292,7 @@ def compute_evt_risk(
         exceedance_rate=float(fit.n_exceedances / fit.n_total),
         normal_var=normal_var,
         evt_premium_pct=evt_premium_pct,
+        return_level_error=return_level_error,
     )
 
 

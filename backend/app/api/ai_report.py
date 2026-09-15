@@ -599,7 +599,16 @@ def _fetch_history_sync(ticker: str) -> dict:
 # ── Request / Route ────────────────────────────────────────────────────────
 
 class AnalysisRequest(BaseModel):
-    ticker: str = Field(..., min_length=1, max_length=10, description="Stock ticker (e.g. PETR4, AAPL, MSFT)")
+    # Character-whitelist mirrors live_quotes.py's Yahoo pattern so the raw ticker —
+    # interpolated verbatim into LLM prompts and downstream URLs — cannot carry
+    # newlines/braces/etc. for prompt injection.
+    ticker: str = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+        pattern=r"^[A-Za-z0-9.\-^=]{1,20}$",
+        description="Stock ticker (e.g. PETR4, AAPL, MSFT)",
+    )
 
 
 class FinancialPeriod(BaseModel):
@@ -738,17 +747,33 @@ async def ai_analysis(request: Request, req: AnalysisRequest, owner: str = Depen
 
 @router.post("/ai-analysis/stream")
 @limiter.limit("10/hour")
-async def ai_analysis_stream(request: Request, req: AnalysisRequest):
+async def ai_analysis_stream(request: Request, req: AnalysisRequest, owner: str = Depends(get_current_user)):
     """
     Streaming version of ai-analysis using Server-Sent Events.
     Emits progress events during analysis.
+
+    Persists the finished report to the DB exactly like the non-streaming
+    /ai-analysis endpoint, so the two engines do not drift in behaviour.
     """
     async def event_stream():
+        report = None
         try:
             async for chunk in _full_analysis_streaming(req.ticker.upper().strip()):
+                if chunk.startswith("event: result"):
+                    for part in chunk.split("\n\n"):
+                        if part.startswith("data: "):
+                            try:
+                                report = json.loads(part[6:])
+                            except Exception:
+                                report = None
                 yield chunk
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        if report is not None:
+            try:
+                await _db_save(req.ticker.upper(), report, owner=owner)
+            except Exception as exc:
+                logger.warning("Failed to persist streamed report for %s: %s", req.ticker, exc)
 
     return StreamingResponse(
         event_stream(),
