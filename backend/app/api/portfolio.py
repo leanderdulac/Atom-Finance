@@ -21,6 +21,10 @@ class PortfolioRequest(BaseModel):
 
 class BlackLittermanRequest(PortfolioRequest):
     views: dict[str, float] = Field(..., description="Absolute return views per asset")
+    # Optional market-cap weights keyed by asset name; when absent the model
+    # falls back to equal weights. Anchoring the equilibrium to real market caps
+    # is the correct BL prior (the old equal-weighted benchmark was arbitrary).
+    market_weights: dict[str, float] | None = None
 
 
 async def _run_in_thread(func, *args, **kwargs):
@@ -65,5 +69,6 @@ async def black_litterman(req: BlackLittermanRequest):
     returns = np.array(req.returns)
     optimizer = PortfolioOptimizer(returns, req.asset_names)
     return await _run_in_thread(
-        optimizer.black_litterman, req.views, risk_free_rate=req.risk_free_rate
+        optimizer.black_litterman, req.views,
+        risk_free_rate=req.risk_free_rate, market_weights=req.market_weights,
     )

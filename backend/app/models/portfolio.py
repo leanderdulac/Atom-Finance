@@ -147,14 +147,50 @@ class PortfolioOptimizer:
             "volatility": round(vol * 100, 4),
         }
 
+    def _market_weights_array(self, market_weights: dict | list | np.ndarray) -> np.ndarray:
+        """Builds a normalized, non-negative market-cap weight vector.
+
+        Accepts either a dict keyed by asset name (assets not mentioned get
+        weight 0) or a sequence aligned with ``asset_names``. Raises
+        ``ValueError`` on negatives or an all-zero allocation; always normalizes
+        to sum 1.
+        """
+        if isinstance(market_weights, dict):
+            w = np.zeros(self.n_assets)
+            for i, name in enumerate(self.asset_names):
+                w[i] = float(market_weights.get(name, 0.0))
+        else:
+            arr = np.asarray(market_weights, dtype=np.float64).ravel()
+            if arr.size != self.n_assets:
+                raise ValueError(
+                    f"market_weights must have {self.n_assets} entries (aligned with asset_names), got {arr.size}"
+                )
+            w = arr
+        if np.any(w < 0) or not np.all(np.isfinite(w)):
+            raise ValueError("market_weights must be finite and non-negative")
+        total = float(np.sum(w))
+        if total <= 0:
+            raise ValueError("market_weights must sum to a positive value")
+        return w / total
+
     def black_litterman(self, views: dict, tau: float = 0.05,
-                        risk_free_rate: float = 0.02) -> dict:
+                        risk_free_rate: float = 0.02,
+                        market_weights: dict | list | np.ndarray | None = None) -> dict:
         """
         Black-Litterman model.
-        views: {"Asset_1": 0.10, "Asset_2": 0.05} - absolute return views
+
+        views: {"Asset_1": 0.10, "Asset_2": 0.05} - absolute return views.
+
+        market_weights: optional market-capitalization weights (dict keyed by
+        asset name, or a sequence aligned with asset_names). The implied
+        equilibrium returns are anchored to these instead of an arbitrary
+        equal-weighted benchmark. When omitted it defaults to equal weights
+        (safe fallback), matching the prior behaviour.
         """
-        # Market cap weights (assume equal for simplicity)
-        w_mkt = np.ones(self.n_assets) / self.n_assets
+        if market_weights is not None:
+            w_mkt = self._market_weights_array(market_weights)
+        else:
+            w_mkt = np.ones(self.n_assets) / self.n_assets
 
         # Implied equilibrium returns
         delta = (np.dot(w_mkt, self.mean_returns) - risk_free_rate) / np.dot(w_mkt, np.dot(self.cov_matrix, w_mkt))
@@ -187,4 +223,5 @@ class PortfolioOptimizer:
             "weights": {name: round(float(w), 4) for name, w in zip(self.asset_names, bl_weights, strict=False)},
             "bl_expected_returns": {name: round(float(r) * 100, 4) for name, r in zip(self.asset_names, bl_returns, strict=False)},
             "equilibrium_returns": {name: round(float(r) * 100, 4) for name, r in zip(self.asset_names, pi, strict=False)},
+            "market_cap_weights": {name: round(float(w), 4) for name, w in zip(self.asset_names, w_mkt, strict=False)},
         }
