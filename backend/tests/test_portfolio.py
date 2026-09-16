@@ -53,3 +53,40 @@ class TestPortfolioOptimizer:
         result = opt.black_litterman(views={"A": 0.10, "C": 0.05})
         for w in result["weights"].values():
             assert not np.isnan(w) and not np.isinf(w)
+
+
+class TestBlackLittermanMarketWeights:
+    def _opt(self):
+        rng = np.random.default_rng(1)
+        returns = rng.normal(0.0002, 0.02, (600, 3))
+        return PortfolioOptimizer(returns, ['AAA', 'BBB', 'CCC'])
+
+    def test_equal_market_weights_match_legacy_default(self):
+        # Backward compatibility: passing equal weights must reproduce the default.
+        opt = self._opt()
+        views = {'BBB': 0.10}
+        base = opt.black_litterman(views)
+        eqw = opt.black_litterman(views, market_weights={'AAA': 1/3, 'BBB': 1/3, 'CCC': 1/3})
+        assert base['weights'] == eqw['weights']
+        assert sum(v for v in eqw['market_cap_weights'].values()) == pytest.approx(1.0, abs=0.02)
+
+    def test_market_weights_shift_equilibrium_and_output(self):
+        opt = self._opt()
+        views = {'BBB': 0.10}
+        tilt = opt.black_litterman(views, market_weights={'AAA': 0.8, 'BBB': 0.1, 'CCC': 0.1})
+        assert abs(tilt['market_cap_weights']['AAA'] - 0.8) < 0.02
+        # A heavy anchor (AAA) must raise its implied equilibrium return relative
+        # to the equal-weight case.
+        eqw = opt.black_litterman(views, market_weights={'AAA': 1/3, 'BBB': 1/3, 'CCC': 1/3})
+        # equilibrium returns are exposed in percent; AAA should be more demanded
+        assert tilt['equilibrium_returns']['AAA'] != eqw['equilibrium_returns']['AAA']
+
+    def test_invalid_market_weights_rejected(self):
+        opt = self._opt()
+        views = {'BBB': 0.10}
+        for bad in ({'AAA': -0.1, 'BBB': 0.5, 'CCC': 0.6},
+                    {'AAA': 0.0, 'BBB': 0.0, 'CCC': 0.0}):
+            with pytest.raises(ValueError):
+                opt.black_litterman(views, market_weights=bad)
+        with pytest.raises(ValueError):
+            opt.black_litterman(views, market_weights=[0.5, 0.5])  # wrong length

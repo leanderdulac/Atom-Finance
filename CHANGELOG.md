@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 16: Black-Litterman com pesos de mercado reais
+
+### Changed
+- `black_litterman` aceita `market_weights` opcionais (dict por ativo ou sequência alinhada a `asset_names`): o prior de equilíbrio (π = δ·Σ·w) agora ancora-se em capitalizações reais em vez do arbitrário `1/N`. Validação rejeita pesos negativos/zero/comprimento errado; `market_cap_weights` é exposto na resposta. **Fallback seguro para equal-weighted quando omitido** — comportamento legado preservado.
+- `POST /api/portfolio/black-litterman` repassa `market_weights` opcionalmente.
+
 ## [Unreleased] — round 15: sessão com refresh token HttpOnly
 
 Mover a sessão do JWT de localStorage (exfiltrável por XSS) para um **access token de vida curta em memória** + um **refresh token opaco em cookie HttpOnly (SameSite=Lax, Secure em prod)**, com **rotação** e **revogação**.
