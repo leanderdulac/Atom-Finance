@@ -4,6 +4,7 @@ Raw asyncpg, no ORM — schema lives in alembic/versions/, not here.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -177,3 +178,99 @@ async def readiness() -> None:
             )
         finally:
             await tx.rollback()
+
+
+# ── Refresh tokens (HttpOnly-cookie sessions) ─────────────────────────────
+
+def hash_token(token: str) -> str:
+    """sha256 of the opaque refresh token. Only this hash is ever persisted."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def create_refresh_token(user_id: int, token_hash: str, expires_at: datetime) -> int | None:
+    """Persists a new refresh-token hash. Returns the row id or None on error."""
+    try:
+        pool = await get_pool()
+        return await pool.fetchval(
+            "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3) RETURNING id",
+            user_id, token_hash, expires_at,
+        )
+    except Exception as exc:
+        logger.error("Failed to create refresh token: %s", exc)
+        return None
+
+
+async def get_user_by_id(user_id: int) -> dict | None:
+    """Returns a user dict by primary key, or None."""
+    try:
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT id, username, email, role, is_active, created_at "
+            "FROM users WHERE id = $1 AND is_active = TRUE",
+            user_id,
+        )
+        return dict(row) if row else None
+    except Exception as exc:
+        logger.error("Failed to get user id=%s: %s", user_id, exc)
+        return None
+
+
+async def rotate_refresh_token(
+    old_token_hash: str,
+    new_token_hash: str,
+    new_expires_at: datetime,
+) -> int | None:
+    """Atomically consume and replace one refresh token (rotation).
+
+    Returns the new token's user_id on success, or None if the old token was
+    invalid/expired/revoked. A replayed (already-used) token is treated as
+    theft: the whole family for that user is revoked.
+    """
+    now = datetime.now(UTC)
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT id, user_id, used_at, revoked_at, expires_at "
+                    "FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE",
+                    old_token_hash,
+                )
+                if row is None:
+                    return None
+                if row["revoked_at"] is not None or row["expires_at"] <= now:
+                    return None
+                if row["used_at"] is not None:
+                    # Token reuse — a stolen/duplicated token; shut the family down.
+                    await conn.execute(
+                        "UPDATE refresh_tokens SET revoked_at = $1 "
+                        "WHERE user_id = $2 AND revoked_at IS NULL",
+                        now, row["user_id"],
+                    )
+                    return None
+                await conn.execute(
+                    "UPDATE refresh_tokens SET used_at = $1, replaced_by_token_hash = $2 WHERE id = $3",
+                    now, new_token_hash, row["id"],
+                )
+                await conn.execute(
+                    "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)",
+                    row["user_id"], new_token_hash, new_expires_at,
+                )
+                return row["user_id"]
+    except Exception as exc:
+        logger.error("Failed to rotate refresh token: %s", exc)
+        return None
+
+
+async def revoke_refresh_token(token_hash: str) -> bool:
+    """Revokes one refresh token (logout)."""
+    try:
+        pool = await get_pool()
+        await pool.execute(
+            "UPDATE refresh_tokens SET revoked_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL",
+            datetime.now(UTC), token_hash,
+        )
+        return True
+    except Exception as exc:
+        logger.error("Failed to revoke refresh token: %s", exc)
+        return False

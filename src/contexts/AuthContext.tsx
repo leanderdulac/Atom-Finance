@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { api, getAccessToken, setAccessToken } from '../services/api';
 
 interface User {
   username: string;
@@ -13,56 +14,53 @@ interface AuthContextValue {
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const TOKEN_KEY = 'atom_jwt';
-
-async function apiCall(path: string, body: object) {
-  const res = await fetch(`/api/auth${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || 'Erro na requisição');
-  return data;
-}
-
+// Credentials live in an HttpOnly refresh cookie + an in-memory access token.
+// Nothing is written to localStorage, so a stored-XSS cannot lift the session.
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+  const [token, setToken] = useState<string | null>(() => getAccessToken());
   const [loading, setLoading] = useState(true);
 
-  // Restore session from stored token
+  // Restore any existing session by refreshing through the HttpOnly cookie.
   useEffect(() => {
-    const stored = localStorage.getItem(TOKEN_KEY);
-    if (!stored) { setLoading(false); return; }
-    fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${stored}` },
-    })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then((me: User) => { setUser(me); setToken(stored); })
-      .catch(() => { localStorage.removeItem(TOKEN_KEY); setToken(null); })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    (async () => {
+      const restored = await api.refresh();
+      if (cancelled) return;
+      if (!restored) { setLoading(false); return; }
+      setToken(getAccessToken());
+      try {
+        const me = await api.me();
+        if (!cancelled) setUser(me);
+      } catch {
+        if (!cancelled) { setToken(null); setAccessToken(null); }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    const data = await apiCall('/login', { username, password });
-    localStorage.setItem(TOKEN_KEY, data.access_token);
+    const data = await api.login(username, password);
+    setAccessToken(data.access_token);
     setToken(data.access_token);
-    setUser({ username: data.username });
+    setUser({ username: data.username, role: data.role });
   }, []);
 
   const register = useCallback(async (username: string, email: string, password: string) => {
-    await apiCall('/register', { username, email, password });
+    await api.register(username, email, password);
     await login(username, password);
   }, [login]);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
+  const logout = useCallback(async () => {
+    try { await api.logout(); } catch { /* best-effort: clear locally regardless */ }
+    setAccessToken(null);
     setToken(null);
     setUser(null);
   }, []);

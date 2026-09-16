@@ -15,7 +15,7 @@ import {
   LineChart, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts';
-import { api } from '../services/api';
+import { api, getAccessToken } from '../services/api';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@ function downsample<T>(arr: T[], max = 200): T[] {
 }
 
 function downloadExcel(initial: number, profile: ProfileKey, nPaths: number, T: number) {
-  const token = localStorage.getItem('atom_jwt');
+  const token = getAccessToken();
   fetch('/api/ibovespa/export-excel', {
     method: 'POST',
     headers: {
