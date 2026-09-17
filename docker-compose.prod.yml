@@ -50,6 +50,11 @@ services:
       # frontend proxy sets ($proxy_add_x_forwarded_for). Only enable while the ONLY
       # path to /api is through that nginx (it is, here).
       - ATOM_TRUST_X_FORWARDED_FOR=1
+      # Observability: expose /metrics for a Prometheus scraper and emit one JSON
+      # object per log line. /metrics is on the backend port, not under /api, so
+      # the scraper talks to backend:8000 directly (internal network).
+      - ATOM_ENABLE_METRICS=1
+      - ATOM_LOG_FORMAT=json
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]

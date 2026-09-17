@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 17: observabilidade (structured logging + Prometheus)
+
+A fechar o maior vão da pilha de produção: métricas e logs de máquina.
+
+### Added
+- `app/core/metrics.py` — métricas Prometheus **opt-in** (`ATOM_ENABLE_METRICS=1`): `http_requests_total`/`http_request_duration_seconds`/`http_requests_in_progress`/`app_started_at_time` + middleware + rota `/metrics` (na porta do backend, fora de `/api`). Cardinalidade limitada por **rota-grupo** (primeiros 2 segmentos) para não explodir com `/{ticker}`.
+- `GET /metrics` — formato de exposição Prometheus; `prometheus-client` adicionado às deps.
+- `app/core/observability.py` — `JsonFormatter` (`ATOM_LOG_FORMAT=json`): um JSON por linha com o `request_id` correlacionado e campos estruturados (user/ticker/method/...). Default continua texto para dev/CI.
+- `docker-compose.prod.yml`/`.env.example`: `ATOM_ENABLE_METRICS=1` + `ATOM_LOG_FORMAT=json` em produção.
+- `tests/test_observability.py`: formatter JSON, cardinality bounded, exposição de métricas.
+
 ## [Unreleased] — round 16: Black-Litterman com pesos de mercado reais
 
 ### Changed
