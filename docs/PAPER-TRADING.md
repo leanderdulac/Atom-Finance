@@ -1,5 +1,7 @@
 # Acompanhamento manual de operações simuladas
 
+Há um segundo caminho paper, fechado e automático, só para o par ETH/SOL perpétuo: [ETH-SOL-PAPER-PIPELINE.md](ETH-SOL-PAPER-PIPELINE.md). Também não envia ordens. Este diário continua sendo o acompanhamento **manual** de planos da Mesa de derivativos.
+
 Na Mesa de derivativos, gere um plano e escolha **Acompanhar como operação simulada**. A operação começa aguardando entrada. Informe fonte, horário original com fuso, preço do ativo, bid/ask e quantidades de todas as pernas, além do motivo da observação. Registre entrada, atualizações e encerramento; antes da entrada também é possível cancelar.
 
 A estrutura e as quantidades são copiadas do plano salvo. Entradas exigem plano vigente, gatilho alcançado, tese ainda válida, débito dentro do limite e orçamento agregado suficiente. As simulações abertas do mesmo usuário consomem esse orçamento. Ele usa o capital e o risco externo declarados no plano; não representa uma conta de corretora conciliada.
