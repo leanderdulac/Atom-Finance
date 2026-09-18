@@ -16,8 +16,9 @@ import argparse
 import json
 import math
 import sys
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import numpy as np
 
