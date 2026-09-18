@@ -39,7 +39,7 @@ API autenticada, mesmo DGP sintético:
 
 ```http
 POST /api/desk/pairs/eth-sol-paper
-{"demo": true, "n": 400, "seed": 7}
+{"demo": true, "n": 400, "seed": 2}
 ```
 
 Séries do caller (mids alinhados, timestamps opcionais em ms):

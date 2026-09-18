@@ -170,9 +170,13 @@ class TestRejection:
         assert out["eligible_for_live_trading"] is False
 
     def test_slow_half_life_is_rejected(self):
-        bars = _coint_bars(n=360, seed=5, half_life=10.0)
+        bars = _coint_bars(n=500, seed=5, half_life=10.0, resid_vol=0.4)
+        accepted = run_paper_pipeline(bars, PipelineConfig(warmup=60), source="synthetic")
+        assert accepted["accepted"] is True
+        hl = accepted["signal"]["half_life_bars"]
+        assert hl is not None and hl > 0
         out = run_paper_pipeline(
-            bars, PipelineConfig(max_half_life_bars=0.25, warmup=60), source="synthetic",
+            bars, PipelineConfig(max_half_life_bars=max(hl * 0.25, 0.05), warmup=60), source="synthetic",
         )
         assert out["accepted"] is False
         assert out["rejection"]["reason"] == "half_life_too_slow"
@@ -204,18 +208,32 @@ class TestDataHygiene:
 
 class TestDemoAndRoute:
     def test_evaluate_demo_stays_paper(self):
-        out = evaluate(demo=True, n=320, seed=7, entry_z=1.5)
+        out = evaluate(demo=True, n=400, seed=2, entry_z=1.5)
+        assert out["accepted"] is True
         assert out["eligible_for_live_trading"] is False
         assert out["mode"] == "paper_only"
         assert out["pair"] == {"y": "ETHUSDT", "x": "SOLUSDT"}
         assert "what_broke" in out
         assert out["broker_orders_sent"] == 0
+        assert out["decision"]["trades"] >= 1
 
     def test_desk_route_demo(self):
+        import sys
+        import types
+        from pathlib import Path
+
         from fastapi import Depends, FastAPI
         from fastapi.testclient import TestClient
 
-        from app.api.desk import router
+        # Import desk.py without executing app.api.__init__ (that module pulls every
+        # legacy router and optional LLM SDK). CI still loads the full package.
+        api_dir = Path(__file__).resolve().parents[1] / "app" / "api"
+        pkg = types.ModuleType("app.api")
+        pkg.__path__ = [str(api_dir)]
+        pkg.__package__ = "app.api"
+        sys.modules["app.api"] = pkg
+
+        from app.api.stat_arb_paper import router
         from app.core.limiter import limiter
         from app.core.security import get_current_user
 
