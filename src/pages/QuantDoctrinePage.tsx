@@ -37,7 +37,7 @@ export default function QuantDoctrinePage() {
       <Typography color="text.secondary" sx={{ mb: 2 }}>
         Os laboratórios não são demos isolados: são o currículo. Cada chamada LLM da ATOM
         carrega a mesma constituição — maldição do vencedor, relógio sequencial, K-Fold
-        não é finança, preço não é alvo. Isto não é fine-tune de pesos.
+        não é finança, preço não é alvo, vetorização. Isto não é fine-tune de pesos.
       </Typography>
       <Stack direction="row" spacing={1} sx={{ mb: 2 }} alignItems="center" flexWrap="wrap" useFlexGap>
         <Button variant="contained" disabled={loading} onClick={() => void load()}>

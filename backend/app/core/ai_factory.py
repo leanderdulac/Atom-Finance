@@ -237,6 +237,7 @@ class AIFactory:
         system = (
             "Mesa quant ATOM: não gere um backtest como prova de edge. "
             "Sinal atrasado um pregão, retornos (não preços), sem K-Fold shuffled, "
+            "sem for i in range(len(df)) / .iloc[i] — broadcasting NumPy, "
             "pergunte N de candidatos, recuse capital real."
         )
         prompt = f"Desenvolva a lógica de backtesting para a estratégia {strategy_name} com os parâmetros: {parameters}"

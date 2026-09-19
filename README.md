@@ -44,7 +44,8 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 - **Winner's curse** (`/winners-curse`) — N zero-edge Sharpes, IS×OOS scatter, Deflated Sharpe (Bailey & López de Prado). The champion of a search is a lottery ticket until DSR says otherwise.
 - **Sequential forward test** (`/forward-test`) — frozen SMA spec scored one bar later vs mined TA on the same history vs walk-forward refits. Backtest is research; the sequential series is the evidence clock.
 - **Price vs return vs regime** (`/target-choice`) — identical log-returns at PETR4 and BTC levels; R$500 is not a feature; ADF on the print vs the return; the protocol predicts r_{t+1} or the next vol state, never the next price.
-- **Desk doctrine** (`/quant-doctrine`) — constitution loaded into every LLM `complete()` (not weight fine-tuning). Winner's curse, sequential clock, purged CV, returns-not-prices, regime. Labs are the curriculum.
+- **Desk doctrine** (`/quant-doctrine`) — constitution loaded into every LLM `complete()` (not weight fine-tuning). Winner's curse, sequential clock, purged CV, returns-not-prices, regime, vectorization. Labs are the curriculum.
+- **Vectorization** (`/vectorize`) — `for i in range(len(df))` / `.iloc[i]` vs NumPy broadcast; same-bar i vs delayed i+1; cross-sectional z-score. Speed is how many hypotheses you test, not aesthetics.
 
 Every desk endpoint returns a `what_broke` list. See [docs/WHAT-BROKE.md](docs/WHAT-BROKE.md). Signal catalog: [docs/strategy/signals.md](docs/strategy/signals.md).
 
