@@ -47,6 +47,7 @@ class ResearchTests(unittest.TestCase):
         self.assertIn("not reported", flow.call_args.kwargs["extra_instructions"])
         self.assertIn("Deflated Sharpe", flow.call_args.kwargs["extra_instructions"])
         self.assertIn("Ledoit", flow.call_args.kwargs["extra_instructions"])
+        self.assertIn("range(len(df))", flow.call_args.kwargs["extra_instructions"])
         self.assertEqual(
             len(self.client.get("/papers", params={"owner": "alice"}).json()), 1
         )

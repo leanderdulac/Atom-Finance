@@ -59,6 +59,7 @@ async def policy():
             'O aleatório é a base do sinal; desconte a maldição do vencedor.',
             'Backtest pesquisa; evidência é sequencial.',
             'Alvo é retorno ou regime, nunca o print.',
+            'Série de preço se vetoriza; for i in range(len(df)) / .iloc[i] vaza e não escala.',
         ],
     }
 

@@ -563,5 +563,7 @@ export const api = {
     request<T>('/desk/target-choice/evaluate', { method: 'POST', body: JSON.stringify(data) }),
   deskErrorMaximizer: <T = unknown>(data: object) =>
     request<T>('/desk/error-maximizer/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskVectorize: <T = unknown>(data: object) =>
+    request<T>('/desk/vectorize/evaluate', { method: 'POST', body: JSON.stringify(data) }),
   deskDoctrine: <T = unknown>() => request<T>('/desk/doctrine'),
 };
