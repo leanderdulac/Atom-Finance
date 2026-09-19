@@ -122,7 +122,11 @@ class PaperBook:
 # ── 1. Data ──────────────────────────────────────────────────────────────────
 
 
-def _require_finite(name: str, values: Sequence[float]) -> np.ndarray:
+Floats = Sequence[float] | np.ndarray
+Ints = Sequence[int] | np.ndarray
+
+
+def _require_finite(name: str, values: Floats) -> np.ndarray:
     arr = np.asarray(values, dtype=np.float64)
     if arr.size == 0:
         raise ValueError(f"{name} is empty")
@@ -142,7 +146,7 @@ def _quotes_from_mid(mid: float, half_spread_bps: float) -> tuple[float, float]:
     return bid, ask
 
 
-def document_gaps(timestamps_ms: Sequence[int], expected_interval_ms: int | None) -> dict[str, Any]:
+def document_gaps(timestamps_ms: Ints, expected_interval_ms: int | None) -> dict[str, Any]:
     ts = np.asarray(timestamps_ms, dtype=np.int64)
     if ts.size < 2:
         return {"expected_interval_ms": expected_interval_ms, "n_gaps": 0, "gaps": [], "median_dt_ms": None}
@@ -172,14 +176,14 @@ def document_gaps(timestamps_ms: Sequence[int], expected_interval_ms: int | None
 
 
 def bars_from_arrays(
-    timestamps_ms: Sequence[int],
-    y_mid: Sequence[float],
-    x_mid: Sequence[float],
+    timestamps_ms: Ints,
+    y_mid: Floats,
+    x_mid: Floats,
     *,
-    y_bid: Sequence[float] | None = None,
-    y_ask: Sequence[float] | None = None,
-    x_bid: Sequence[float] | None = None,
-    x_ask: Sequence[float] | None = None,
+    y_bid: Floats | None = None,
+    y_ask: Floats | None = None,
+    x_bid: Floats | None = None,
+    x_ask: Floats | None = None,
     half_spread_bps: float = HALF_SPREAD_BPS,
     expected_interval_ms: int | None = None,
 ) -> tuple[list[PairBar], dict[str, Any]]:
@@ -193,7 +197,7 @@ def bars_from_arrays(
     if np.any(np.diff(ts) <= 0):
         raise ValueError("Timestamps must be strictly increasing")
 
-    def _opt(name: str, values: Sequence[float] | None) -> np.ndarray | None:
+    def _opt(name: str, values: Floats | None) -> np.ndarray | None:
         if values is None:
             return None
         arr = _require_finite(name, values)
@@ -208,8 +212,14 @@ def bars_from_arrays(
 
     bars: list[PairBar] = []
     for i in range(len(ts)):
-        y_b, y_a = (float(yb[i]), float(ya[i])) if yb is not None else _quotes_from_mid(float(y[i]), half_spread_bps)
-        x_b, x_a = (float(xb[i]), float(xa[i])) if xb is not None else _quotes_from_mid(float(x[i]), half_spread_bps)
+        if yb is None or ya is None:
+            y_b, y_a = _quotes_from_mid(float(y[i]), half_spread_bps)
+        else:
+            y_b, y_a = float(yb[i]), float(ya[i])
+        if xb is None or xa is None:
+            x_b, x_a = _quotes_from_mid(float(x[i]), half_spread_bps)
+        else:
+            x_b, x_a = float(xb[i]), float(xa[i])
         if y_b <= 0 or x_b <= 0 or y_a < y_b or x_a < x_b:
             raise ValueError(f"Invalid book at index {i}")
         bars.append(PairBar(int(ts[i]), float(y[i]), float(x[i]), y_b, y_a, x_b, x_a))
