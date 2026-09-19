@@ -23,6 +23,7 @@ from app.models.perp_arb import scan as perp_scan
 from app.models.regime import demo_payload
 from app.models.regime import evaluate as regime_evaluate
 from app.models.target_choice import evaluate as target_choice_evaluate
+from app.models.vectorize import evaluate as vectorize_evaluate
 from app.models.volatility import HestonModel
 from app.models.winners_curse import deflated_sharpe
 from app.models.winners_curse import simulate as winners_curse_simulate
@@ -546,5 +547,21 @@ class TargetChoiceRequest(BaseModel):
 async def target_choice_eval(request: Request, req: TargetChoiceRequest):
     try:
         return await _run(target_choice_evaluate, req.n, req.seed)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class VectorizeRequest(BaseModel):
+    n_names: int = Field(80, ge=10, le=400)
+    n_days: int = Field(504, ge=80, le=2000)
+    seed: int = Field(7, ge=0)
+    pe_max: float = Field(10.0, gt=1.0, le=40.0)
+
+
+@router.post("/vectorize/evaluate")
+@limiter.limit("20/minute")
+async def vectorize_eval(request: Request, req: VectorizeRequest):
+    try:
+        return await _run(vectorize_evaluate, req.n_names, req.n_days, req.seed, req.pe_max)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

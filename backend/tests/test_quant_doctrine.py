@@ -10,6 +10,7 @@ def test_doctrine_covers_the_posted_curriculum():
     assert "retorno" in text
     assert "eligible_for_live_trading" in text
     assert "preço" in text
+    assert "iloc" in text or "range(len" in text or "vetoriz" in text
 
 
 def test_compose_system_prefixes_task_without_dropping_doctrine():
@@ -21,7 +22,14 @@ def test_compose_system_prefixes_task_without_dropping_doctrine():
 def test_payload_lists_labs():
     body = payload()
     labs = {t["lab"] for t in body["tenets"]}
-    assert labs >= {"/winners-curse", "/forward-test", "/target-choice", "/ml", "/regime"}
+    assert labs >= {
+        "/winners-curse",
+        "/forward-test",
+        "/target-choice",
+        "/ml",
+        "/regime",
+        "/vectorize",
+    }
     assert body["eligible_for_live_trading"] is False
 
 

@@ -97,6 +97,8 @@ async def extract(req: ExtractRequest):
                 "Evidence is sequential (signal at t uses only information ≤ t). "
                 "Ask how many candidates a reported Sharpe beat (winner's curse / Deflated Sharpe). "
                 "Shuffled K-Fold is invalid for financial series; require purged/embargoed temporal CV. "
+                "Row-wise Python loops over price panels (for i in range(len(df)) / .iloc[i]) "
+                "are a look-ahead and scaling fail; require vectorized NumPy/pandas broadcasting. "
                 "For each absent item say not reported; never infer that an unreported check passed. "
                 "Model complexity or training fit is not evidence of tradable alpha. "
                 "Preserve supporting citations and distinguish author claims from demonstrated results."

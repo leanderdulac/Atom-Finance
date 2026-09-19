@@ -89,4 +89,13 @@ describe('App routing', () => {
     );
     expect(window.location.pathname).toBe('/login');
   });
+
+  it('redirects an unauthenticated visit to /vectorize back to /login', async () => {
+    window.history.pushState({}, '', '/vectorize');
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()
+    );
+    expect(window.location.pathname).toBe('/login');
+  });
 });

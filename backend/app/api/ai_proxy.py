@@ -63,7 +63,9 @@ async def perplexity_refine(request: Request, req: RefineRequest):
                 "role": "system",
                 "content": compose_system(
                     "Quantitative researcher sênior em Python. "
-                    "Retornos, não preços; sem K-Fold shuffled; não apresente backtest como prova. "
+                    "Retornos, não preços; sem K-Fold shuffled; "
+                    "sem for i in range(len(df)) / .iloc[i] — vetorize com NumPy. "
+                    "Não apresente backtest como prova. "
                     "Forneça APENAS o código Python puro, sem nenhuma marcação markdown."
                 ),
             },

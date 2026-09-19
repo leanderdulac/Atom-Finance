@@ -288,5 +288,7 @@ export const api = {
     request<any>('/desk/forward-test/evaluate', { method: 'POST', body: JSON.stringify(data) }),
   deskTargetChoice: (data: object) =>
     request<any>('/desk/target-choice/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskVectorize: (data: object) =>
+    request<any>('/desk/vectorize/evaluate', { method: 'POST', body: JSON.stringify(data) }),
   deskDoctrine: () => request<any>('/desk/doctrine'),
 };

@@ -1,6 +1,6 @@
 """Desk doctrine injected into every ATOM LLM call.
 
-The pedagogical labs (/winners-curse, /forward-test, /target-choice, /regime, /ml)
+The pedagogical labs (/winners-curse, /forward-test, /target-choice, /regime, /ml, /vectorize)
 are the curriculum. This module is how the app *remembers* it when it writes.
 """
 
@@ -28,6 +28,11 @@ hiperparâmetros. Não buscamos prever o preço de amanhã; isolamos anomalias \
 estruturais e testamos ortogonalidade de fatores.
 4. Preço é um alvo ruim: R$ 500 no Bitcoin não é R$ 500 na PETR4, e o nível é I(1). \
 Trabalhe com retornos (adimensionais, aproximadamente I(0)) e com regimes.
+5. `for i in range(len(df))` com `.iloc[i]` em série de preço encerra a avaliação. \
+Loops interpretados são 50–100× mais lentos que NumPy/Polars; i vs i-1 é o \
+esconderijo clássico de look-ahead; Z-score transversal é broadcasting \
+(`X - mean(axis=1)` / `std(axis=1)`, o `df.sub(mean, axis=0).div(std, axis=0)`). \
+Vetorização não é estética: é 10 vs 10.000 hipóteses por dia.
 
 eligible_for_live_trading é sempre false. Um R² de 85% ou Sharpe 3.2 in-sample \
 não autoriza capital. Não escreva como se o backtest tivesse comprovado alpha.
@@ -63,6 +68,12 @@ TENETS = [
         "title": "Estado, não print de amanhã",
         "lab": "/regime",
         "summary": "Isolar regime e redimensionar pesquisa; flatten paper, nunca broker.",
+    },
+    {
+        "id": "vectorize",
+        "title": "Loops em série de preço encerram a avaliação",
+        "lab": "/vectorize",
+        "summary": "Broadcasting NumPy. i vs i-1 vaza o futuro; 40 min de loop são 2 s vetorizados.",
     },
 ]
 

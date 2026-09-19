@@ -48,6 +48,7 @@ should read this before the feature list. Nothing below is live-trading eligible
 | Sequential forward test | Locked SMA scored at t+1, mined TA grid, walk-forward refit | Synthetic GBM clock; SMA is one family; walk-forward still searches; **no broker** |
 | Price vs return | Same log-return path at two levels; ADF; walk-forward Ridge on P, r, vol-regime | Toy DGP; regime is trailing vol vs expanding median, not the six-signal classifier |
 | Desk doctrine | `compose_system` on every LLM `complete()`; GET `/api/desk/doctrine`; UI `/quant-doctrine` | Prompt prefix, not weight fine-tuning; bypass surfaces must opt in (`ai_proxy`, `options_api`, QuantMind) |
+| Vectorization | Nested Python mask vs broadcast; z-score `mean(axis=1)`; same-bar vs t+1 Sharpe | Timing is machine-dependent; PE is a toy walk; **no broker** |
 
 ## Protocol that was already honest
 

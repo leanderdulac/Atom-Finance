@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Doutrina da mesa ATOM (ATOM-QUANT-1.0)
 
-Os tópicos que o operador postou (maldição do vencedor, teste sequencial, K-Fold ≠ finança, preço ≠ alvo, regime) **treinam o modelo do app**. Não é fine-tune de pesos. A constituição vive em `backend/app/core/quant_doctrine.py` e entra em **todo** `complete()` via `compose_system`.
+Os tópicos que o operador postou (maldição do vencedor, teste sequencial, K-Fold ≠ finança, preço ≠ alvo, regime, vetorização) **treinam o modelo do app**. Não é fine-tune de pesos. A constituição vive em `backend/app/core/quant_doctrine.py` e entra em **todo** `complete()` via `compose_system`.
 
 ## Regras permanentes
 
@@ -14,6 +14,8 @@ Os tópicos que o operador postou (maldição do vencedor, teste sequencial, K-F
 3. **Finança não é CV/NLP.** SNR ≈ 0, DGP não-estacionário. K-Fold shuffled vaza o futuro. Purga + embargo. Tese econômica > grid. Não prever o preço de amanhã. Lab: `/ml`.
 4. **Preço não é alvo.** R$500 no BTC ≠ R$500 na PETR4; o print é I(1). Trabalhe com retornos e regimes. Lab: `/target-choice`.
 5. **Estado, não print.** Isolar regime e redimensionar pesquisa. Flatten paper; nunca broker. Lab: `/regime`.
+
+6. **Vetorização é pré-requisito silencioso.** `for i in range(len(df))` com `.iloc[i]` encerra a avaliação: 50–100× mais lento, look-ahead i vs i-1, 10 vs 10.000 hipóteses/dia. Lab: `/vectorize`.
 
 `eligible_for_live_trading` é **sempre** `false`. Um R² de 85% ou Sharpe 3.2 in-sample não autoriza capital.
 
