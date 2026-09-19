@@ -17,7 +17,7 @@ import json
 import math
 import sys
 from collections.abc import Iterable, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -27,12 +27,14 @@ from app.models.mean_reversion import _ar1_half_life
 
 DEFAULT_Y = "ETHUSDT"
 DEFAULT_X = "SOLUSDT"
+ALLOWED_PERPS = frozenset({DEFAULT_Y, DEFAULT_X})
+EG_MIN_BARS = 60
 ENTRY_Z = 2.0
 EXIT_Z = 0.5
 MAX_HALF_LIFE_BARS = 48.0
 SIGNIFICANCE = 0.05
 Z_WINDOW = 60
-WARMUP = 60
+WARMUP = 200
 MAX_DRAWDOWN = 0.15
 MAX_POSITION = 1.0
 HALF_SPREAD_BPS = 2.0
@@ -45,7 +47,7 @@ MIN_BARS = 80
 _MACKINNON_P = ((-3.90, 0.01), (-3.34, 0.05), (-3.04, 0.10))
 
 _WHAT_BROKE = [
-    "Full-sample Engle–Granger is a research gate, not a rolling live rank test.",
+    "Engle–Granger gate runs on the warmup prefix only; it is not a rolling live rank test.",
     "Expanding OLS beta is not a Kalman hedge; funding, lot size and borrow are ignored.",
     "When the caller omits a book, bid/ask are mid ± half-spread — not a firm quote.",
     "Signal at t fills at t+1; a hole between those bars is flagged, never interpolated.",
@@ -316,19 +318,41 @@ def spread_half_life(residual: np.ndarray) -> float:
     return float(_half_life(np.asarray(residual, dtype=np.float64)))
 
 
+def require_allowed_pair(y_symbol: str, x_symbol: str) -> tuple[str, str]:
+    y, x = y_symbol.upper().strip(), x_symbol.upper().strip()
+    if y not in ALLOWED_PERPS or x not in ALLOWED_PERPS:
+        raise ValueError("Only ETHUSDT and SOLUSDT are allowed on this route")
+    if y == x:
+        raise ValueError("y_symbol and x_symbol must differ")
+    return y, x
+
+
 def rolling_zscore(values: np.ndarray, window: int) -> np.ndarray:
     """Causal rolling z: at t, moments use only values[max(0,t-window+1):t+1]."""
     if window < 2:
         raise ValueError("z_window must be ≥2")
     x = np.asarray(values, dtype=np.float64)
-    z = np.full(len(x), np.nan)
-    for t in range(len(x)):
-        w = x[max(0, t - window + 1) : t + 1]
-        w = w[np.isfinite(w)]
-        if len(w) < 2 or not np.isfinite(x[t]):
-            continue
-        sd = float(np.std(w, ddof=1))
-        z[t] = 0.0 if sd < 1e-12 else float((x[t] - float(np.mean(w))) / sd)
+    n = len(x)
+    finite = np.isfinite(x)
+    filled = np.where(finite, x, 0.0)
+    c1 = np.concatenate(([0.0], np.cumsum(filled)))
+    c2 = np.concatenate(([0.0], np.cumsum(filled * filled)))
+    cnt = np.concatenate(([0], np.cumsum(finite.astype(np.int64))))
+    start = np.maximum(0, np.arange(n) - window + 1)
+    idx = np.arange(n)
+    count = (cnt[idx + 1] - cnt[start]).astype(np.float64)
+    s = c1[idx + 1] - c1[start]
+    q = c2[idx + 1] - c2[start]
+    mean = np.divide(s, count, out=np.zeros(n), where=count > 0)
+    ss = q - np.divide(s * s, count, out=np.zeros(n), where=count > 0)
+    var = np.divide(ss, count - 1.0, out=np.zeros(n), where=count >= 2)
+    sd = np.sqrt(np.maximum(var, 0.0))
+    z = np.full(n, np.nan)
+    ok = finite & (count >= 2)
+    tiny = ok & (sd < 1e-12)
+    good = ok & (sd >= 1e-12)
+    z[tiny] = 0.0
+    z[good] = (x[good] - mean[good]) / sd[good]
     return z
 
 
@@ -506,6 +530,8 @@ def run_paper_pipeline(
     gap_doc: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cfg = cfg or PipelineConfig()
+    y_sym, x_sym = require_allowed_pair(cfg.y_symbol, cfg.x_symbol)
+    cfg = replace(cfg, y_symbol=y_sym, x_symbol=x_sym)
     if len(bars) < MIN_BARS:
         raise ValueError(f"Need ≥{MIN_BARS} aligned bars")
     ts, y, x = _bars_to_arrays(bars)
@@ -520,8 +546,13 @@ def run_paper_pipeline(
         "synthesized_book": source != "caller_with_book",
     }
 
-    eg = engle_granger(y, x, significance=cfg.significance)
-    residual = y - (eg["alpha"] + eg["beta"] * x)
+    min_est = 20
+    gate_n = max(EG_MIN_BARS, min(int(cfg.warmup), len(y) // 2))
+    if gate_n >= len(y) - 1:
+        raise ValueError(f"Need more than {gate_n} bars after the warmup EG gate")
+
+    eg = engle_granger(y[:gate_n], x[:gate_n], significance=cfg.significance)
+    residual = y[:gate_n] - (eg["alpha"] + eg["beta"] * x[:gate_n])
     hl = spread_half_life(residual)
     _, ar1_hl = _ar1_half_life(residual)
     pvalue = eg_pvalue_bound(float(eg["adf_tstat"]))
@@ -539,12 +570,12 @@ def run_paper_pipeline(
         "ar1_half_life_bars": None if not np.isfinite(ar1_hl) else round(float(ar1_hl), 4),
         "z_window": cfg.z_window,
         "max_half_life_bars": cfg.max_half_life_bars,
+        "gate": "warmup_prefix",
+        "gate_bars": int(gate_n),
     }
     if not gate["ok"]:
-        return _rejected(gate["reason"], cfg=cfg, data=data, signal=signal, extra={"pvalue": pvalue, "half_life_bars": signal["half_life_bars"]})
+        return _rejected(gate["reason"], cfg=cfg, data=data, signal=signal, extra={"pvalue": pvalue, "half_life_bars": signal["half_life_bars"], "gate_bars": gate_n})
 
-    min_est = 20
-    warmup = max(min_est, min(cfg.warmup, len(y) // 3))
     _, betas, spread = _expanding_hedge(y, x, min_est)
     z = rolling_zscore(spread, cfg.z_window)
 
@@ -568,7 +599,7 @@ def run_paper_pipeline(
         kill.flattened_at_ms = bar.ts_ms
 
     n = len(bars)
-    for t in range(warmup, n - 1):
+    for t in range(gate_n, n - 1):
         fill_i = t + 1
         fill_bar = bars[fill_i]
         equity = book.mark(fill_bar.y_mid, fill_bar.x_mid)
@@ -645,7 +676,7 @@ def run_paper_pipeline(
         "accepted": True,
         "rejection": None,
         "data": data,
-        "signal": {**signal, "last_z": None if last_z is None else round(float(last_z), 4), "warmup": warmup},
+        "signal": {**signal, "last_z": None if last_z is None else round(float(last_z), 4), "warmup": cfg.warmup},
         "decision": {
             "entry_z": cfg.entry_z,
             "exit_z": cfg.exit_z,

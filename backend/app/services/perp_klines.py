@@ -19,6 +19,7 @@ from app.models.stat_arb_paper import (
     MIN_BARS,
     PairBar,
     align_pair_series,
+    require_allowed_pair,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ async def fetch_eth_sol_pair(
     half_spread_bps: float = HALF_SPREAD_BPS,
 ) -> dict[str, Any]:
     """Fetch both legs, inner-join on timestamp, synthesize bid/ask from half-spread."""
+    y_symbol, x_symbol = require_allowed_pair(y_symbol, x_symbol)
     y_rows = await fetch_mark_klines(y_symbol, client=client, interval=interval, limit=limit)
     x_rows = await fetch_mark_klines(x_symbol, client=client, interval=interval, limit=limit)
     expected = INTERVAL_MS[interval]

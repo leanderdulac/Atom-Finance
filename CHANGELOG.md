@@ -10,6 +10,11 @@ All notable changes to this project are documented here. Format loosely follows 
 - Entrypoints: `POST /api/desk/pairs/eth-sol-paper` (`demo`, caller series, or unsigned `markPriceKlines`) and `python -m app.models.stat_arb_paper --demo|--fetch`.
 - Tests in `backend/tests/test_stat_arb_paper.py` (synthetic cointegrated series; no network in CI). Note: [docs/ETH-SOL-PAPER-PIPELINE.md](docs/ETH-SOL-PAPER-PIPELINE.md).
 
+### Changed
+- Engle–Granger + half-life gate uses the warmup prefix only (`gate_n = max(60, min(warmup, n/2))`, default 200); the trade loop starts after that prefix.
+- Rolling z is prefix-sum / broadcast (`ddof=1`), still causal.
+- Route and fetch allowlist `{ETHUSDT, SOLUSDT}` with distinct legs — unlisted symbols never become a Binance proxy.
+
 ## [Unreleased] — round 16: Black-Litterman com pesos de mercado reais
 
 ### Changed
