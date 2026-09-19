@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — ETH/SOL paper statistical-arbitrage pipeline
+
+### Added
+- Closed **paper-only** loop for one perpetual pair (`ETHUSDT` / `SOLUSDT`): data (aligned marks, documented gaps, no silent NaNs) → Engle–Granger p-gate + OU half-life + rolling z → entry `|z|>2` / exit `|z|<0.5` → max position / max drawdown / kill switch that flattens the paper book **before** any further paper fills → bid/ask fills with two-leg inventory and reconcile → PnL net of costs, gap flags, kill reason.
+- Reuses `engle_granger`, `_expanding_hedge`, `_half_life` and the mean-reversion AR(1) half-life. No broker OMS, no signed exchange keys for trading. `eligible_for_live_trading` stays `false`.
+- Entrypoints: `POST /api/desk/pairs/eth-sol-paper` (`demo`, caller series, or unsigned `markPriceKlines`) and `python -m app.models.stat_arb_paper --demo|--fetch`.
+- Tests in `backend/tests/test_stat_arb_paper.py` (synthetic cointegrated series; no network in CI). Note: [docs/ETH-SOL-PAPER-PIPELINE.md](docs/ETH-SOL-PAPER-PIPELINE.md).
+
+### Changed
+- Engle–Granger + half-life gate uses the warmup prefix only (`gate_n = max(60, min(warmup, n/2))`, default 200); the trade loop starts after that prefix.
+- Rolling z is prefix-sum / broadcast (`ddof=1`), still causal.
+- Route and fetch allowlist `{ETHUSDT, SOLUSDT}` with distinct legs — unlisted symbols never become a Binance proxy.
+
 ## [Unreleased] — round 16: Black-Litterman com pesos de mercado reais
 
 ### Changed

@@ -37,6 +37,8 @@ Promoção a qualquer uso real exige holdout independente, revisão humana e uma
 
 O teste sequencial (`POST /api/desk/forward-test/evaluate`, `/forward-test`) deixa o princípio explícito: o sinal no fechamento `t` só pode usar preços até `t`, e o retorno que o avalia é o preço seguinte — ainda desconhecido na hora da decisão. Mineração de indicadores no mesmo histórico é a versão de análise técnica da maldição do vencedor. Uma spec travada, testável e executada todos os dias é o relógio; um backtest minerado não é. `eligible_for_live_trading` permanece `false`.
 
+O loop paper ETH/SOL (`POST /api/desk/pairs/eth-sol-paper`, `python -m app.models.stat_arb_paper`) é o mesmo tipo de relógio para um par: sinal em `t`, fill paper em `t+1`, custos no bid/ask, kill switch que achata o livro simulado. **Não** é o protocolo de evidência do Laboratório Quant; é pesquisa/diário. Ver [ETH-SOL-PAPER-PIPELINE.md](ETH-SOL-PAPER-PIPELINE.md).
+
 ## Interpretação do comentário
 
 A regra prioriza qualidade da hipótese, dos dados e da validação sobre complexidade. Não assume que toda rede neural falha nem usa opinião sobre recrutamento como fato mensurável. O ATOM exige evidência para sustentar qualquer método. As antigas simulações apresentadas como LSTM/RF/DQN foram retiradas das rotas de previsão; chamadas legadas autenticadas recebem HTTP 410.
