@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.core.limiter import limiter
 from app.models.stat_arb_paper import evaluate as eth_sol_paper_evaluate
+from app.models.stat_arb_paper import require_allowed_pair
 
 router = APIRouter()
 
@@ -49,7 +50,7 @@ class EthSolPaperRequest(BaseModel):
     significance: float = Field(0.05, gt=0, le=0.1)
     max_half_life_bars: float = Field(48.0, gt=0, le=500)
     z_window: int = Field(60, ge=10, le=250)
-    warmup: int = Field(60, ge=20, le=400)
+    warmup: int = Field(200, ge=60, le=400)
     max_drawdown: float = Field(0.15, gt=0, le=0.9)
     max_position: float = Field(1.0, gt=0, le=5)
     half_spread_bps: float = Field(2.0, ge=0, le=50)
@@ -62,9 +63,10 @@ class EthSolPaperRequest(BaseModel):
 
 
 def _cfg(req: EthSolPaperRequest) -> dict:
+    y_symbol, x_symbol = require_allowed_pair(req.y_symbol, req.x_symbol)
     return {
-        "y_symbol": req.y_symbol.upper(),
-        "x_symbol": req.x_symbol.upper(),
+        "y_symbol": y_symbol,
+        "x_symbol": x_symbol,
         "entry_z": req.entry_z,
         "exit_z": req.exit_z,
         "significance": req.significance,
@@ -85,8 +87,8 @@ def _cfg(req: EthSolPaperRequest) -> dict:
 @limiter.limit("20/minute")
 async def eth_sol_paper(request: Request, req: EthSolPaperRequest):
     """Paper ETH/SOL stat-arb loop. Never sends real orders or uses private keys."""
-    cfg = _cfg(req)
     try:
+        cfg = _cfg(req)
         if req.bars:
             return await _run(eth_sol_paper_evaluate, bars=[b.model_dump() for b in req.bars], source="caller", **cfg)
         if req.y_mid is not None and req.x_mid is not None:
@@ -113,7 +115,7 @@ async def eth_sol_paper(request: Request, req: EthSolPaperRequest):
             from app.services.perp_klines import fetch_eth_sol_pair
 
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     pulled = await fetch_eth_sol_pair(
                         client=client,
                         y_symbol=req.y_symbol,

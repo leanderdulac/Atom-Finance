@@ -58,6 +58,14 @@ class TestZScoreAndDecision:
         x2[-1] = 1e6
         assert rolling_zscore(x2, 5)[14] == pytest.approx(z[14])
 
+    def test_rolling_z_skips_nans_and_matches_window_moments(self):
+        x = np.array([1.0, 2.0, np.nan, 4.0, 5.0, 6.0, 7.0])
+        z = rolling_zscore(x, 4)
+        assert np.isnan(z[2])
+        w = x[1:5]  # positional window at t=4, then drop NaN
+        finite = w[np.isfinite(w)]
+        assert z[4] == pytest.approx((x[4] - finite.mean()) / finite.std(ddof=1))
+
     def test_entry_exit_rules(self):
         assert decide_target(2.1, 0, ENTRY_Z, EXIT_Z) == -1
         assert decide_target(-2.1, 0, ENTRY_Z, EXIT_Z) == 1
@@ -99,10 +107,10 @@ class TestFillsAndCosts:
         assert cash == pytest.approx(-100.04)
 
     def test_cost_aware_pnl_identity(self):
-        bars = _coint_bars(n=360, seed=11, half_life=8.0, resid_vol=3.5)
+        bars = _coint_bars(n=400, seed=11, half_life=8.0, resid_vol=3.5)
         out = run_paper_pipeline(
             bars,
-            PipelineConfig(entry_z=1.5, exit_z=0.4, taker_fee_bps=4.0, half_spread_bps=2.0, warmup=60),
+            PipelineConfig(entry_z=1.5, exit_z=0.4, taker_fee_bps=4.0, half_spread_bps=2.0),
             source="synthetic",
         )
         assert out["eligible_for_live_trading"] is False
@@ -120,10 +128,10 @@ class TestFillsAndCosts:
 
 class TestKillSwitch:
     def test_flattens_before_further_paper_fills(self):
-        bars = _coint_bars(n=360, seed=3, half_life=8.0, resid_vol=4.0)
+        bars = _coint_bars(n=500, seed=0, half_life=8.0, resid_vol=4.0)
         out = run_paper_pipeline(
             bars,
-            PipelineConfig(entry_z=1.25, exit_z=0.3, max_drawdown=0.0005, warmup=60, taker_fee_bps=8.0),
+            PipelineConfig(entry_z=1.25, exit_z=0.3, max_drawdown=0.0005, taker_fee_bps=8.0),
             source="synthetic",
         )
         assert out["eligible_for_live_trading"] is False
@@ -162,21 +170,21 @@ class TestRejection:
         )["ok"] is True
 
     def test_independent_walks_are_rejected(self):
-        bars = synthetic_perp_pair(n=360, seed=21, independent=True)
-        out = run_paper_pipeline(bars, PipelineConfig(warmup=60), source="synthetic")
+        bars = synthetic_perp_pair(n=400, seed=21, independent=True)
+        out = run_paper_pipeline(bars, PipelineConfig(), source="synthetic")
         assert out["accepted"] is False
         assert out["rejection"]["reason"] == "cointegration_failed"
         assert out["execution"]["fills"] == []
         assert out["eligible_for_live_trading"] is False
 
     def test_slow_half_life_is_rejected(self):
-        bars = _coint_bars(n=500, seed=5, half_life=10.0, resid_vol=0.4)
-        accepted = run_paper_pipeline(bars, PipelineConfig(warmup=60), source="synthetic")
+        bars = _coint_bars(n=400, seed=2, half_life=8.0, resid_vol=0.4)
+        accepted = run_paper_pipeline(bars, PipelineConfig(), source="synthetic")
         assert accepted["accepted"] is True
         hl = accepted["signal"]["half_life_bars"]
         assert hl is not None and hl > 0
         out = run_paper_pipeline(
-            bars, PipelineConfig(max_half_life_bars=max(hl * 0.25, 0.05), warmup=60), source="synthetic",
+            bars, PipelineConfig(max_half_life_bars=max(hl * 0.25, 0.05)), source="synthetic",
         )
         assert out["accepted"] is False
         assert out["rejection"]["reason"] == "half_life_too_slow"
@@ -216,22 +224,36 @@ class TestDemoAndRoute:
         assert "what_broke" in out
         assert out["broker_orders_sent"] == 0
         assert out["decision"]["trades"] >= 1
+        assert out["signal"]["gate"] == "warmup_prefix"
+        assert out["signal"]["gate_bars"] == 200
+        assert out["signal"]["n"] == 200
+
+    def test_short_sample_still_holds_out_the_eg_min_prefix(self):
+        bars = _coint_bars(n=80, seed=2)
+        out = run_paper_pipeline(bars, PipelineConfig(), source="synthetic")
+        assert out["signal"]["gate_bars"] == 60
+        assert out["data"]["n"] == 80
+        assert out["eligible_for_live_trading"] is False
+
+    def test_gate_does_not_see_the_trade_sample(self):
+        bars = _coint_bars(n=400, seed=2, half_life=8.0)
+        out = run_paper_pipeline(bars, PipelineConfig(), source="synthetic")
+        assert out["accepted"] is True
+        assert out["signal"]["gate"] == "warmup_prefix"
+        assert out["signal"]["gate_bars"] == 200
+        assert out["signal"]["n"] == 200
+        assert out["data"]["n"] == 400
+
+    def test_unlisted_symbols_are_refused(self):
+        bars = _coint_bars(n=120, seed=2)
+        with pytest.raises(ValueError, match="ETHUSDT"):
+            run_paper_pipeline(bars, PipelineConfig(y_symbol="BTCUSDT"), source="synthetic")
+        with pytest.raises(ValueError, match="must differ"):
+            run_paper_pipeline(bars, PipelineConfig(y_symbol="ETHUSDT", x_symbol="ETHUSDT"), source="synthetic")
 
     def test_desk_route_demo(self):
-        import sys
-        import types
-        from pathlib import Path
-
         from fastapi import Depends, FastAPI
         from fastapi.testclient import TestClient
-
-        # Import desk.py without executing app.api.__init__ (that module pulls every
-        # legacy router and optional LLM SDK). CI still loads the full package.
-        api_dir = Path(__file__).resolve().parents[1] / "app" / "api"
-        pkg = types.ModuleType("app.api")
-        pkg.__path__ = [str(api_dir)]
-        pkg.__package__ = "app.api"
-        sys.modules["app.api"] = pkg
 
         from app.api.stat_arb_paper import router
         from app.core.limiter import limiter
@@ -242,13 +264,21 @@ class TestDemoAndRoute:
         app.include_router(router, prefix="/api/desk", dependencies=[Depends(get_current_user)])
         app.dependency_overrides[get_current_user] = lambda: "tester"
         client = TestClient(app)
-        res = client.post("/api/desk/pairs/eth-sol-paper", json={"demo": True, "n": 320, "seed": 4})
+        res = client.post("/api/desk/pairs/eth-sol-paper", json={"demo": True, "n": 400, "seed": 2})
         assert res.status_code == 200, res.text
         body = res.json()
         assert body["eligible_for_live_trading"] is False
         assert body["mode"] == "paper_only"
         assert body["broker_orders_sent"] == 0
         assert body["pair"]["y"] == "ETHUSDT"
+        assert body["signal"]["gate"] == "warmup_prefix"
+
+        banned = client.post(
+            "/api/desk/pairs/eth-sol-paper",
+            json={"demo": True, "y_symbol": "BTCUSDT", "x_symbol": "ETHUSDT"},
+        )
+        assert banned.status_code == 400
+        assert "ETHUSDT" in banned.json()["detail"]
 
 
 class TestPublicMarksMocked:
@@ -285,3 +315,11 @@ class TestPublicMarksMocked:
         assert pulled["broker_orders_sent"] == 0
         assert pulled["gaps"]["n_unmatched_y"] == 1
         assert len(pulled["bars"]) == 89
+
+    @pytest.mark.asyncio
+    async def test_refuses_unlisted_symbols_before_http(self):
+        client = MagicMock()
+        client.get = MagicMock(side_effect=AssertionError("must not hit the network"))
+        with pytest.raises(ValueError, match="ETHUSDT"):
+            await fetch_eth_sol_pair(client=client, y_symbol="BTCUSDT", x_symbol="SOLUSDT")
+        client.get.assert_not_called()

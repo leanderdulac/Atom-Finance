@@ -9,6 +9,7 @@ All notable changes to this project are documented here. Format loosely follows 
 - Reuses `engle_granger`, `_expanding_hedge`, `_half_life` and the mean-reversion AR(1) half-life. No broker OMS, no signed exchange keys for trading. `eligible_for_live_trading` stays `false`.
 - Entrypoints: `POST /api/desk/pairs/eth-sol-paper` (`demo`, caller series, or unsigned `markPriceKlines`) and `python -m app.models.stat_arb_paper --demo|--fetch`.
 - Tests in `backend/tests/test_stat_arb_paper.py` (synthetic cointegrated series; no network in CI). Note: [docs/ETH-SOL-PAPER-PIPELINE.md](docs/ETH-SOL-PAPER-PIPELINE.md).
+- EG gate on the warmup prefix only; vectorized causal rolling z; `{ETHUSDT, SOLUSDT}` allowlist (unlisted symbols never become a Binance proxy).
 
 ## [Unreleased] — round 31: logs JSON estruturados
 

@@ -17,7 +17,7 @@ Par padrão: perpétuos `ETHUSDT` (y) e `SOLUSDT` (x), nomenclatura Binance USDM
 
 O sinal no fecho `t` usa só informação ≤ `t`. O fill paper é o bid/ask da barra `t+1`. Um furo entre `t` e `t+1` é flag, não um mid inventado; não se abre posição através do buraco.
 
-A porteira Engle–Granger + half-life corre no amostra completo (filtro de pesquisa, como o `pairs_backtest` já existente). O hedge e o z **dentro** do loop são expansivos / rolantes — sem olhar o futuro da barra.
+A porteira Engle–Granger + half-life corre só no prefixo de warmup (`gate_n = max(60, min(warmup, n/2))`, default 200), antes de qualquer fill. O hedge e o z **dentro** do loop são expansivos / rolantes — sem olhar o futuro da barra. Símbolos fora de `{ETHUSDT, SOLUSDT}` são recusados (não viram proxy Binance). ADF em 60 barras quase não tem poder — daí o default 200, ainda sem ver a metade que se transaciona.
 
 ## O que nunca acontece
 
