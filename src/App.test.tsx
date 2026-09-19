@@ -81,6 +81,15 @@ describe('App routing', () => {
     expect(window.location.pathname).toBe('/login');
   });
 
+  it('redirects an unauthenticated visit to /error-maximizer back to /login', async () => {
+    window.history.pushState({}, '', '/error-maximizer');
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument()
+    );
+    expect(window.location.pathname).toBe('/login');
+  });
+
   it('redirects an unauthenticated visit to /quant-doctrine back to /login', async () => {
     window.history.pushState({}, '', '/quant-doctrine');
     render(<App />);

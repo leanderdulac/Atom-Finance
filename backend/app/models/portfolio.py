@@ -14,12 +14,27 @@ from scipy.optimize import minimize
 class PortfolioOptimizer:
     """Portfolio optimization suite."""
 
-    def __init__(self, returns: np.ndarray, asset_names: list[str] | None = None):
+    def __init__(
+        self,
+        returns: np.ndarray,
+        asset_names: list[str] | None = None,
+        shrinkage: str = "none",
+    ):
         self.returns = np.asarray(returns, dtype=np.float64)
         self.n_assets = self.returns.shape[1] if self.returns.ndim > 1 else 1
         self.asset_names = asset_names or [f"Asset_{i+1}" for i in range(self.n_assets)]
         self.mean_returns = np.mean(self.returns, axis=0) * 252
-        self.cov_matrix = np.cov(self.returns.T) * 252
+        if shrinkage == "ledoit_wolf":
+            from app.models.covariance import ledoit_wolf_constant_correlation
+
+            daily, meta = ledoit_wolf_constant_correlation(self.returns)
+            self.cov_matrix = daily * 252.0
+            self.shrinkage = meta
+        elif shrinkage in ("none", "", None):
+            self.cov_matrix = np.cov(self.returns.T) * 252
+            self.shrinkage = None
+        else:
+            raise ValueError("shrinkage must be 'none' or 'ledoit_wolf'")
 
     def _portfolio_performance(self, weights: np.ndarray) -> tuple[float, float]:
         ret = np.dot(weights, self.mean_returns)

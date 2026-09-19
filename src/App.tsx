@@ -9,7 +9,7 @@ import {
   ShowChart, Assessment, AccountBalance, Psychology, Warning,
   Timeline, DarkMode, LightMode, Menu as MenuIcon, Waves, Terminal, AutoGraph,
   FindInPage, Functions, TrendingUp, MonetizationOn, CallMerge, RocketLaunch, AutoFixHigh,
-  CurrencyExchange, Logout, Science, Percent, MenuBook,
+  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune,
 } from '@mui/icons-material';
 import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -52,6 +52,7 @@ const WinnerCursePage = lazy(() => import('./pages/WinnerCursePage'));
 const ForwardTestPage = lazy(() => import('./pages/ForwardTestPage'));
 const TargetChoicePage = lazy(() => import('./pages/TargetChoicePage'));
 const QuantDoctrinePage = lazy(() => import('./pages/QuantDoctrinePage'));
+const ErrorMaximizerPage = lazy(() => import('./pages/ErrorMaximizerPage'));
 
 function RouteFallback() {
   return (
@@ -102,6 +103,7 @@ const coreItems = [
   { label: 'Maldição do vencedor', path: '/winners-curse', icon: <Timeline /> },
   { label: 'Teste sequencial', path: '/forward-test', icon: <Science /> },
   { label: 'Preço × retorno', path: '/target-choice', icon: <Percent /> },
+  { label: 'Maximizadora de erros', path: '/error-maximizer', icon: <Tune /> },
   { label: 'Fontes de mercado', path: '/sources', icon: <AccountBalance /> },
   { label: 'Mesa de derivativos', path: '/derivatives', icon: <ShowChart /> },
   { label: 'Operações simuladas', path: '/paper-trades', icon: <Timeline /> },
@@ -270,6 +272,7 @@ function AppLayout() {
           <Route path="/winners-curse" element={<ProtectedRoute><WinnerCursePage /></ProtectedRoute>} />
           <Route path="/forward-test" element={<ProtectedRoute><ForwardTestPage /></ProtectedRoute>} />
           <Route path="/target-choice" element={<ProtectedRoute><TargetChoicePage /></ProtectedRoute>} />
+          <Route path="/error-maximizer" element={<ProtectedRoute><ErrorMaximizerPage /></ProtectedRoute>} />
           <Route path="/quant-doctrine" element={<ProtectedRoute><QuantDoctrinePage /></ProtectedRoute>} />
           <Route path="/pricing" element={<ProtectedRoute><PricingPage /></ProtectedRoute>} />
           <Route path="/strategies" element={<ProtectedRoute><StrategiesPage /></ProtectedRoute>} />
