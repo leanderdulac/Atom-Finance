@@ -8,7 +8,7 @@ All notable changes to this project are documented here. Format loosely follows 
 
 ### Added
 - `POST /api/desk/vectorize/evaluate`: máscara cheap×momentum em loop vs broadcasting, Z-score transversal (`X - mean(axis=1)`), Sharpe no mesmo bar vs t+1. `eligible_for_live_trading` permanece false.
-- UI `/vectorize`. Doutrina `ATOM-QUANT-1.0` tenet 5; `analyze_quant` / `ai_proxy` / QuantMind recusam o loop.
+- UI `/vectorize`. Doutrina `ATOM-QUANT-1.0` tenet 6 (ponto 5 do system prompt); `analyze_quant` / `ai_proxy` / QuantMind recusam o loop.
 
 ## [Unreleased] — round 16: Black-Litterman com pesos de mercado reais
 
