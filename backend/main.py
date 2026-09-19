@@ -42,6 +42,9 @@ from app.api import (  # noqa: E402
 from app.api.research import router as research_router
 from app.core.cache import Cache  # noqa: E402
 from app.core.limiter import limiter
+from app.core.metrics import ENABLED as METRICS_ENABLED
+from app.core.metrics import metrics_response
+from app.core.metrics import middleware as metrics_middleware
 from app.core.observability import configure_logging, init_sentry, request_id_middleware
 from app.core.runtime import exclusive_runtime
 from app.core.security import get_current_user
@@ -111,6 +114,14 @@ app = FastAPI(
 # so their log lines (and any error Sentry captures) carry it too.
 app.middleware("http")(request_id_middleware)
 app.state.limiter = limiter
+
+# Prometheus metrics — opt-in (ATOM_ENABLE_METRICS=1). Added after the
+# request-id middleware so metrics and logs carry the same correlation id.
+# /metrics is intentionally public (Prometheus scrapes without a bearer token).
+if METRICS_ENABLED:
+    app.middleware("http")(metrics_middleware)
+    app.add_route("/metrics", metrics_response, methods=["GET"], name="prometheus_metrics")
+
 app.add_middleware(SlowAPIMiddleware)
 from slowapi import _rate_limit_exceeded_handler
 

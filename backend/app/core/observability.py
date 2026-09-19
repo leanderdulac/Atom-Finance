@@ -1,12 +1,13 @@
-"""Request-id log correlation and optional Sentry error tracking.
+"""
+Request-id log correlation, structured logging, and optional Sentry error tracking.
 
-Both are safe no-ops when unconfigured: the request-id middleware and log
-filter work with or without Sentry (correlation is useful on its own, e.g.
-for grepping one request's log lines across a busy server); `init_sentry()`
-does nothing unless `SENTRY_DSN` is set, so every environment without it
-(local dev, CI) behaves exactly as before this module existed.
+All are safe no-ops when unconfigured: the request-id middleware and log
+filter work with or without Sentry; `init_sentry()` does nothing unless
+`SENTRY_DSN` is set; and structured JSON logging is a single formatter swap
+chosen by `ATOM_LOG_FORMAT=json` (default: readable text for local dev/CI).
 """
 import contextvars
+import json
 import logging
 import os
 import uuid
@@ -30,6 +31,44 @@ class RequestIDLogFilter(logging.Filter):
         return True
 
 
+class JsonFormatter(logging.Formatter):
+    """One JSON object per log line, machine-parseable for log shippers.
+
+    Includes the correlated request_id and any structured extra fields a
+    caller attaches (user, ticker, status, ...), so a single request's story
+    can be grepped across a busy server or shipped to a collector.
+    """
+
+    # Fields that add signal when present on a record; ignore the rest to avoid
+    # leaking unrelated internal state into logs.
+    _EXTRA_FIELDS = ("user", "owner", "ticker", "method", "path", "status", "attempt")
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "request_id": getattr(record, "request_id", request_id_var.get()),
+        }
+        for key in self._EXTRA_FIELDS:
+            value = getattr(record, key, None)
+            if value is not None:
+                payload[key] = str(value)
+        if record.exc_info:
+            payload["exc"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def _install_root_handler(formatter: logging.Formatter) -> None:
+    """Attaches formatter + request-id filter to the root handler(s)."""
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO)
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(formatter)
+        handler.addFilter(RequestIDLogFilter())
+
+
 async def request_id_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
@@ -50,13 +89,21 @@ async def request_id_middleware(
 
 
 def configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s  %(levelname)-8s  %(name)s  [%(request_id)s] — %(message)s",
-    )
-    request_id_filter = RequestIDLogFilter()
-    for handler in logging.getLogger().handlers:
-        handler.addFilter(request_id_filter)
+    """Configures the root logger with request-id correlation and (optionally)
+    JSON structured output.
+
+    `ATOM_LOG_FORMAT=json` emits one JSON object per line — the mode a
+    deployment stands up before shipping logs to a collector. The default text
+    format keeps local dev and CI readable.
+    """
+    fmt = os.getenv("ATOM_LOG_FORMAT", "text").strip().lower()
+    if fmt == "json":
+        formatter: logging.Formatter = JsonFormatter()
+    else:
+        formatter = logging.Formatter(
+            "%(asctime)s  %(levelname)-8s  %(name)s  [%(request_id)s] — %(message)s"
+        )
+    _install_root_handler(formatter)
 
 
 def init_sentry() -> None:
