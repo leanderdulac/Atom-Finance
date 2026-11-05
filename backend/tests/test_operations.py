@@ -82,3 +82,34 @@ def test_monitor_healthy_then_stale(tmp_path, monkeypatch):
     (tmp_path / 'backup-success.json').write_text('{"completed_at":"2026-09-10T00:00:00+00:00"}')
     assert monitor.problems(datetime(2026,9,10,12,tzinfo=UTC)) == []
     assert monitor.problems(datetime(2026,9,12,tzinfo=UTC)) == ['Offsite backup stale or invalid timestamp']
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _exec_start_lines(unit_text: str) -> list[str]:
+    return [line.split('=', 1)[1] for line in unit_text.splitlines() if line.startswith('ExecStart=')]
+
+
+def test_atom_unit_reuses_images_on_boot_instead_of_rebuilding():
+    unit = (ROOT / 'ops/systemd/atom.service').read_text()
+    starts = _exec_start_lines(unit)
+    assert len(starts) == 1
+    start = starts[0]
+    assert '--no-build' in start
+    assert '--build' not in start.replace('--no-build', '')
+    timeout_line = next(line for line in unit.splitlines() if line.startswith('TimeoutStartSec='))
+    timeout = timeout_line.split('=', 1)[1]
+    assert timeout.endswith('s') or timeout.isdigit()
+    seconds = int(timeout.rstrip('s'))
+    assert seconds <= 180
+    setup = (ROOT / 'scripts/setup-server.sh').read_text()
+    assert 'ops/systemd/atom.service' in setup
+    assert 'up -d --build' not in setup.split('Installing systemd service')[1].split('Summary')[0]
+
+
+def test_deploy_script_builds_then_ups_without_rebuild():
+    script = (ROOT / 'scripts/deploy.sh').read_text()
+    assert 'build backend frontend' in script
+    assert 'up -d --no-build' in script
+    assert 'up -d --build' not in script
