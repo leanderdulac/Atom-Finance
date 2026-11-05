@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from app.core.cache import Cache, _MemStore
+from app.core.cache import Cache, _MemStore, _redact_url
 
 
 @pytest.fixture(autouse=True)
@@ -42,3 +42,14 @@ class TestMemoryCache:
         val = {"list": [1, 2, 3], "nested": {"a": True}}
         Cache.set("complex", val, ex=60)
         assert Cache.get("complex") == val
+
+
+class TestRedactUrl:
+    def test_strips_password_and_keeps_host(self):
+        assert _redact_url("redis://user:super-secret@localhost:6379/0") == "redis://user:***@localhost:6379/0"
+
+    def test_password_only_userinfo(self):
+        assert _redact_url("redis://:hunter2@cache.internal:6379/1") == "redis://:***@cache.internal:6379/1"
+
+    def test_leaves_urls_without_password_unchanged(self):
+        assert _redact_url("redis://localhost:6379/0") == "redis://localhost:6379/0"

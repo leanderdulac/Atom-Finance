@@ -44,7 +44,7 @@ class KronosAgent:
         # 1. Fetch historical data
         hist_df = DataFetcher.get_historical_data(symbol, period="1y", interval="1d")
         if hist_df is None or hist_df.empty:
-            logger.warning(f"No historical data found for {symbol}")
+            # DataFetcher already warns once per ticker for empty/missing history.
             return None
 
         hist_df.reset_index(inplace=True)

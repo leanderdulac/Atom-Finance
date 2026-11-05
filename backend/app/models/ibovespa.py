@@ -49,7 +49,11 @@ IBOVESPA_ASSETS: list[dict] = [
     {"ticker": "PRIO3", "S0": 42.0,  "mu": 0.16, "sigma": 0.42, "sector": "Energia"},
     {"ticker": "GGBR4", "S0": 20.0,  "mu": 0.09, "sigma": 0.31, "sector": "Siderurgia"},
     {"ticker": "CSAN3", "S0": 16.0,  "mu": 0.10, "sigma": 0.35, "sector": "Energia"},
-    {"ticker": "JBSS3", "S0": 22.0,  "mu": 0.11, "sigma": 0.28, "sector": "Alimentos"},
+    # JBSS3 (JBS S.A.) stopped trading on B3 on 2025-06-09 after the dual listing;
+    # shareholders received JBS N.V. BDRs under JBSS32. Yahoo Finance chart for
+    # JBSS32.SA returns live SAO prices (JBS N.V. DR2). Do not use JBSS3.SA —
+    # yfinance reports it as possibly delisted / no price data.
+    {"ticker": "JBSS32", "S0": 70.0, "mu": 0.11, "sigma": 0.28, "sector": "Alimentos"},
     {"ticker": "MGLU3", "S0":  4.0,  "mu": 0.14, "sigma": 0.58, "sector": "Varejo"},
     {"ticker": "LREN3", "S0": 18.0,  "mu": 0.09, "sigma": 0.30, "sector": "Varejo"},
     {"ticker": "SUZB3", "S0": 60.0,  "mu": 0.10, "sigma": 0.27, "sector": "Papel/Celulose"},
@@ -122,14 +126,15 @@ async def refresh_ibovespa_params(force: bool = False) -> bool:
         for asset in IBOVESPA_ASSETS:
             ticker = asset["ticker"]
             yf_ticker = f"{ticker}.SA"
-            
-            # 1. Update S0 (Price)
+
+            # 1. Update S0 (Price). Missing quotes are skipped — DataFetcher
+            # already emits a single warning per ticker.
             quote = quotes.get(yf_ticker)
-            if quote:
-                price = quote.get("price")
-                if price and price > 0:
-                    asset["S0"] = price
-            
+            price = quote.get("price") if quote else None
+            if not price or price <= 0:
+                continue
+            asset["S0"] = price
+
             # 2. Update mu (Drift) via Kronos
             try:
                 kronos_pred = await asyncio.to_thread(KronosAgent.predict, yf_ticker, 30)

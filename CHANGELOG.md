@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — health público sem trechos de chave; JBS BDR
+
+### Changed
+- `GET /api/health` volta a informar app/versão/banco/cache e se brapi e provedores de IA estão configurados, **somente como booleanos**. O mask antigo `key[:4]...key[-4:]` (Anthropic/OpenAI/Perplexity/Gemini) não retorna. Falha de banco continua 503 com `{"status":"unavailable"}`.
+- Universo Ibovespa: `JBSS3` → `JBSS32` (BDR da JBS N.V. na B3 desde 2025-06-09). Confirmado via Yahoo Finance chart `JBSS32.SA` (SAO, preço ao vivo). Tickers sem dados no yfinance são pulados com um único warning; o ERROR repetido "possibly delisted" é filtrado.
+- Logs de Redis não incluem senha da URL.
+
 ## [Unreleased] — round 16: Black-Litterman com pesos de mercado reais
 
 ### Changed

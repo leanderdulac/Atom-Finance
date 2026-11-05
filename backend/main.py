@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI
@@ -182,6 +183,40 @@ def live():
     return {"status": "alive"}
 
 
+def _credential_configured(name: str) -> bool:
+    """Presence only — never return or log the value."""
+    return bool(os.getenv(name, "").strip())
+
+
+# Public health may say whether a provider is configured. It must never echo
+# key prefixes/suffixes (the old `key[:4]...key[-4:]` mask leaked live secrets).
+_AI_PROVIDER_ENV = (
+    ("anthropic", "ANTHROPIC_API_KEY"),
+    ("openai", "OPENAI_API_KEY"),
+    ("perplexity", "PERPLEXITY_API_KEY"),
+    ("gemini", "GOOGLE_API_KEY"),
+    ("grok", "XAI_API_KEY"),
+)
+
+
+def _health_payload() -> dict:
+    return {
+        "status": "healthy",
+        "app": "ATOM",
+        "version": app.version,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "dependencies": {
+            "database": "healthy",
+            "cache": "redis" if Cache.is_redis_available() else "memory",
+            "brapi": {"configured": _credential_configured("BRAPI_TOKEN")},
+        },
+        "ai_configuration": {
+            provider: _credential_configured(env_name)
+            for provider, env_name in _AI_PROVIDER_ENV
+        },
+    }
+
+
 @app.get("/api/health")
 @limiter.exempt
 async def health_check():
@@ -190,4 +225,4 @@ async def health_check():
     except Exception:
         logger.exception("Database readiness failed")
         return JSONResponse(status_code=503, content={"status": "unavailable"})
-    return {"status": "healthy"}
+    return _health_payload()
