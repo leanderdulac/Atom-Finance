@@ -9,6 +9,7 @@ All notable changes to this project are documented here. Format loosely follows 
 - Universo Ibovespa: `JBSS3` → `JBSS32` (BDR da JBS N.V. na B3 desde 2025-06-09). Confirmado via Yahoo Finance chart `JBSS32.SA` (SAO, preço ao vivo). Tickers sem dados no yfinance são pulados com um único warning; o ERROR repetido "possibly delisted" é filtrado.
 - Logs de Redis não incluem senha da URL.
 - `atom.service` (agora em `ops/systemd/atom.service`) faz `up -d --no-build` no boot. Rebuild de imagens (torch/CUDA) fica em `scripts/deploy.sh`. Evita `failed (Result: timeout)` após reboot quando o `--build` passava de `TimeoutStartSec`.
+- Auditoria de dependências (CVEs publicados depois do último CI verde em `main`, 2026-09-16): PyJWT 2.15.1, urllib3 2.8.0, certifi 2026.10.23, filelock 4.2.9, pyasn1 0.6.5, setuptools 84.2.1; npm `audit fix` (vite 7.3.7, source-map-js, undici) + override de `minimatch` 11.0.4. CI Node pinado em 22.22.
 
 ## [Unreleased] — round 16: Black-Litterman com pesos de mercado reais
 
