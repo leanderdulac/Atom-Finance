@@ -22,7 +22,8 @@ def call(path, expected=200, payload=None, authenticated=True):
     return json.loads(raw) if raw and response.headers.get('Content-Type','').startswith('application/json') else raw
 
 
-assert call('/api/health') == {'status': 'healthy'}
+health = call('/api/health')
+assert health.get('status') == 'healthy', health
 call('/')
 call('/api/ml/experiments', expected=401)
 login = call('/api/auth/login', payload={'username':os.environ['ATOM_SMOKE_USER'], 'password':os.environ['ATOM_SMOKE_PASSWORD']})

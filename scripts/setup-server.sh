@@ -154,29 +154,12 @@ fi
 
 # ── 8. Systemd service (manages docker-compose lifecycle) ─────────────────────
 info "8/9 Installing systemd service for ATOM..."
-cat > /etc/systemd/system/atom.service << EOF
-[Unit]
-Description=ATOM Quantitative Finance Platform
-Requires=docker.service
-After=docker.service network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=${APP_DIR}
-EnvironmentFile=${PROD_ENV}
-ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml --env-file ${PROD_ENV} up -d --build
-ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
-TimeoutStartSec=300
-User=${APP_USER}
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
+UNIT_SRC="$APP_DIR/ops/systemd/atom.service"
+[[ -f "$UNIT_SRC" ]] || error "Missing $UNIT_SRC — clone a revision that ships ops/systemd/atom.service."
+install -m 644 "$UNIT_SRC" /etc/systemd/system/atom.service
 systemctl daemon-reload
 systemctl enable atom.service
-success "Systemd service 'atom' installed and enabled on boot."
+success "Systemd service 'atom' installed and enabled on boot (up --no-build; images come from deploy.sh)."
 
 # ── 9. Summary ────────────────────────────────────────────────────────────────
 SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
@@ -198,7 +181,10 @@ echo "     access to it — this host, once docker is up, works):"
 echo "     cd ${APP_DIR} && docker compose -f docker-compose.prod.yml run --rm --entrypoint '' \\"
 echo "       --env-file ${PROD_ENV} backend alembic upgrade head"
 echo ""
-echo "  3. Start ATOM:"
+echo "  3. Build images once (slow; torch), then start the unit. The unit never"
+echo "     rebuilds — that belongs here or in scripts/deploy.sh, not on boot:"
+echo "     cd ${APP_DIR} && docker compose --project-name atom --env-file ${PROD_ENV} \\"
+echo "       -f docker-compose.prod.yml build"
 echo "     systemctl start atom"
 echo ""
 echo "  4. Check logs:"

@@ -1,4 +1,6 @@
 """Regression checks for the production boundary and disaster recovery."""
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -70,10 +72,52 @@ async def test_reports_private_and_legacy_quarantined(isolated):
     assert await database.get_report_by_id(report_id, owner='alice') is None
 
 
+_HEALTH_SECRET_ENV = {
+    'ANTHROPIC_API_KEY': 'sk-ant-abcdefghijklmnopqrstuvwxyz012345',
+    'OPENAI_API_KEY': 'sk-proj-abcdefghijklmnopqrstuvwxyz012345',
+    'PERPLEXITY_API_KEY': 'pplx-abcdefghijklmnopqrstuvwxyz012345',
+    'GOOGLE_API_KEY': 'AIzaSyabcdefghijklmnopqrstuvwxyz012345678',
+    'XAI_API_KEY': 'xai-abcdefghijklmnopqrstuvwxyz0123456789',
+    'BRAPI_TOKEN': 'brapi-secret-token-abcdefghijklmnop',
+}
+
+
+def _assert_health_has_no_secret_fragments(payload: dict, secrets: dict[str, str]) -> None:
+    blob = json.dumps(payload)
+    for value in secrets.values():
+        assert value not in blob
+        if len(value) >= 8:
+            # The pre-pilot health mask leaked key[:4]...key[-4:].
+            assert f'{value[:4]}...{value[-4:]}' not in blob
+            assert value[:8] not in blob
+            assert value[-8:] not in blob
+
+
 @pytest.mark.asyncio
 async def test_readiness_fails_closed_and_leaks_no_config(isolated, monkeypatch):
+    for name, value in _HEALTH_SECRET_ENV.items():
+        monkeypatch.setenv(name, value)
+
     client = TestClient(app)
-    assert client.get('/api/health').json() == {'status': 'healthy'}
+    healthy = client.get('/api/health').json()
+    assert healthy['status'] == 'healthy'
+    assert healthy['app'] == 'ATOM'
+    assert 'version' in healthy
+    assert healthy['dependencies']['database'] == 'healthy'
+    assert healthy['dependencies']['cache'] in {'redis', 'memory'}
+    assert healthy['dependencies']['brapi'] == {'configured': True}
+    assert healthy['ai_configuration'] == {
+        'anthropic': True,
+        'openai': True,
+        'perplexity': True,
+        'gemini': True,
+        'grok': True,
+    }
+    assert all(isinstance(flag, bool) for flag in healthy['ai_configuration'].values())
+    _assert_health_has_no_secret_fragments(healthy, _HEALTH_SECRET_ENV)
+    blob = json.dumps(healthy)
+    assert os.getenv('SECRET_KEY', '') not in blob
+    assert os.getenv('ATOM_DATABASE_URL', '') not in blob
 
     async def broken_pool():
         raise RuntimeError('simulated Postgres outage')
@@ -82,7 +126,29 @@ async def test_readiness_fails_closed_and_leaks_no_config(isolated, monkeypatch)
     response = client.get('/api/health')
     assert response.status_code == 503
     assert response.json() == {'status': 'unavailable'}
+    _assert_health_has_no_secret_fragments(response.json(), _HEALTH_SECRET_ENV)
     assert client.get('/api/live').status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_health_reports_unconfigured_providers_as_false(isolated, monkeypatch):
+    for name in _HEALTH_SECRET_ENV:
+        monkeypatch.setenv(name, '')
+
+    payload = TestClient(app).get('/api/health').json()
+    assert payload['status'] == 'healthy'
+    assert payload['dependencies']['brapi'] == {'configured': False}
+    assert payload['ai_configuration'] == {
+        'anthropic': False,
+        'openai': False,
+        'perplexity': False,
+        'gemini': False,
+        'grok': False,
+    }
+    blob = json.dumps(payload)
+    assert 'sk-' not in blob
+    assert 'AIza' not in blob
+    assert 'pplx-' not in blob
 
 
 @pytest.mark.asyncio

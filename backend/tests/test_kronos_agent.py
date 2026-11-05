@@ -56,17 +56,21 @@ class TestPredict:
             result = KronosAgent.predict("PETR4.SA")
         assert result is None
 
-    def test_returns_none_when_no_historical_data(self):
+    def test_returns_none_when_no_historical_data(self, caplog):
         with patch.object(KronosAgent, "get_predictor", return_value=MagicMock()), \
-             patch("app.models.kronos_agent.DataFetcher.get_historical_data", return_value=None):
+             patch("app.models.kronos_agent.DataFetcher.get_historical_data", return_value=None), \
+             caplog.at_level("WARNING", logger="app.models.kronos_agent"):
             result = KronosAgent.predict("PETR4.SA")
         assert result is None
+        assert caplog.records == []
 
-    def test_returns_none_when_historical_data_is_empty(self):
+    def test_returns_none_when_historical_data_is_empty(self, caplog):
         with patch.object(KronosAgent, "get_predictor", return_value=MagicMock()), \
-             patch("app.models.kronos_agent.DataFetcher.get_historical_data", return_value=pd.DataFrame()):
+             patch("app.models.kronos_agent.DataFetcher.get_historical_data", return_value=pd.DataFrame()), \
+             caplog.at_level("WARNING", logger="app.models.kronos_agent"):
             result = KronosAgent.predict("PETR4.SA")
         assert result is None
+        assert caplog.records == []
 
     def test_bullish_prediction_shape(self):
         hist = _fake_history(n=30)

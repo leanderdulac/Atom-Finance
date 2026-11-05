@@ -1,11 +1,13 @@
 """Tests for DataFetcher — mocks the yfinance boundary, exercises our own
 caching, error-handling, and concurrent-fetch logic around it."""
 import asyncio
+import logging
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
+from app.services import data_fetcher as data_fetcher_mod
 from app.services.data_fetcher import DataFetcher
 
 
@@ -13,6 +15,13 @@ def _mock_yf_with_ticker(ticker_mock):
     yf = MagicMock()
     yf.Ticker.return_value = ticker_mock
     return yf
+
+
+@pytest.fixture(autouse=True)
+def _clear_missing_data_warnings():
+    data_fetcher_mod._MISSING_DATA_WARNED.clear()
+    yield
+    data_fetcher_mod._MISSING_DATA_WARNED.clear()
 
 
 class TestGetQuote:
@@ -63,6 +72,23 @@ class TestGetQuote:
             result = DataFetcher.get_quote("BROKEN")
         assert result is None
 
+    def test_missing_price_returns_none_and_warns_once(self, caplog):
+        ticker = MagicMock()
+        ticker.info = {}
+        yf = _mock_yf_with_ticker(ticker)
+        with patch("app.services.data_fetcher.Cache.get", return_value=None), \
+             patch("app.services.data_fetcher.Cache.set") as cache_set, \
+             patch("app.services.data_fetcher._get_yfinance", return_value=yf), \
+             caplog.at_level("WARNING", logger="app.services.data_fetcher"):
+            first = DataFetcher.get_quote("JBSS3.SA")
+            second = DataFetcher.get_quote("JBSS3.SA")
+        assert first is None
+        assert second is None
+        cache_set.assert_not_called()
+        warnings = [rec for rec in caplog.records if rec.levelname == "WARNING"]
+        assert len(warnings) == 1
+        assert "JBSS3.SA" in warnings[0].message
+
 
 class TestGetHistoricalData:
     def test_returns_dataframe_from_yfinance(self):
@@ -86,6 +112,41 @@ class TestGetHistoricalData:
         yf = _mock_yf_with_ticker(ticker)
         with patch("app.services.data_fetcher._get_yfinance", return_value=yf):
             assert DataFetcher.get_historical_data("BAD") is None
+
+    def test_empty_history_returns_none_and_warns_once(self, caplog):
+        ticker = MagicMock()
+        ticker.history.return_value = pd.DataFrame()
+        yf = _mock_yf_with_ticker(ticker)
+        with patch("app.services.data_fetcher._get_yfinance", return_value=yf), \
+             caplog.at_level("WARNING", logger="app.services.data_fetcher"):
+            first = DataFetcher.get_historical_data("JBSS3.SA")
+            second = DataFetcher.get_historical_data("JBSS3.SA")
+        assert first is None
+        assert second is None
+        warnings = [rec for rec in caplog.records if rec.levelname == "WARNING"]
+        assert len(warnings) == 1
+        assert "JBSS3.SA" in warnings[0].message
+        assert "empty history" in warnings[0].message
+
+
+class TestYFinanceLogFilter:
+    def test_drops_delisted_noise_and_keeps_other_yfinance_errors(self):
+        filt = data_fetcher_mod._YFinanceEmptyDataFilter()
+        dropped = logging.LogRecord(
+            "yfinance", logging.ERROR, __file__, 1,
+            "JBSS3.SA: possibly delisted; no price data found  (1y)", (), None,
+        )
+        kept = logging.LogRecord(
+            "yfinance", logging.ERROR, __file__, 1,
+            "HTTP Error 429: Too Many Requests", (), None,
+        )
+        unrelated = logging.LogRecord(
+            "app.services.data_fetcher", logging.WARNING, __file__, 1,
+            "Skipping JBSS3.SA: no market data", (), None,
+        )
+        assert filt.filter(dropped) is False
+        assert filt.filter(kept) is True
+        assert filt.filter(unrelated) is True
 
 
 class TestGetOptionsChain:

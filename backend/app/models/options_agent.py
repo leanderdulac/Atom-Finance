@@ -33,7 +33,7 @@ class OptionsExpert:
     
     TOP_B3_TICKERS = [
         "PETR4", "VALE3", "ITUB4", "BBDC4", "ABEV3", "BBAS3", "ELET3", "RENT3", "WEGE3", 
-        "LREN3", "CSAN3", "JBSS3", "SUZB3", "RDOR3", "GGBR4", "RAIL3", "PRIO3", "TIMS3",
+        "LREN3", "CSAN3", "JBSS32", "SUZB3", "RDOR3", "GGBR4", "RAIL3", "PRIO3", "TIMS3",
         "VIVT3", "MGLU3", "HAPV3", "SANB11", "ASAI3", "B3SA3", "CPLE6", "EQTL3", "UGPA3"
     ]
 
