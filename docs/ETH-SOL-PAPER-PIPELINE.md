@@ -12,8 +12,8 @@ Par padrão: perpétuos `ETHUSDT` (y) e `SOLUSDT` (x), nomenclatura Binance USDM
 | 2. Sinal | Engle–Granger (ADF / MacKinnon), β de hedge, half-life OU no residual, z rolante causal | p ≤ 0,05; half-life ≤ 48 barras; janela z = 60 |
 | 3. Decisão | Entra se \|z\| > entry; sai se \|z\| < exit. +1 = long spread (long y / short x) | entry 2,0; exit 0,5 |
 | 4. Risco | Teto de posição, teto de drawdown, kill switch que **achata o livro paper antes de qualquer fill seguinte** | \|pos\| ≤ 1; DD ≤ 15% |
-| 5. Execução paper | Compra no ask, venda no bid; taxa taker; inventário nas duas pernas; reconciliação | 4 bps taker; sem OMS |
-| 6. Monitoração | PnL líquido de custos, inventário, drawdown, flags de gap/latência, motivo do kill | curva amostrada |
+| 5. Execução paper | Compra no ask, venda no bid; taxa taker; funding acumulado por perna; inventário; reconciliação | 4 bps taker; sem OMS |
+| 6. Monitoração | PnL líquido, **pnl_price** vs **pnl_funding**, inventário, drawdown, flags de gap/latência, motivo do kill | curva amostrada |
 
 O sinal no fecho `t` usa só informação ≤ `t`. O fill paper é o bid/ask da barra `t+1`. Um furo entre `t` e `t+1` é flag, não um mid inventado; não se abre posição através do buraco.
 
@@ -49,17 +49,20 @@ POST /api/desk/pairs/eth-sol-paper
 {"y_mid": [...], "x_mid": [...], "timestamps": [...]}
 ```
 
-Histórico público de *mark price* (unsigned `fapi/v1/markPriceKlines`, sem chaves):
+Histórico público de *mark price* (unsigned, sem chaves). Default Binance USDM; `venue` pode ser `okx` ou `hyperliquid`:
 
 ```bash
 cd backend
 python -m app.models.stat_arb_paper --fetch --interval 1h --limit 500
+python -m app.models.stat_arb_paper --fetch --venue okx --interval 1h --limit 500
 ```
 
 ```http
 POST /api/desk/pairs/eth-sol-paper
-{"fetch_public": true, "interval": "1h", "limit": 500}
+{"fetch_public": true, "interval": "1h", "limit": 500, "venue": "binance"}
 ```
+
+Funding público (OKX 8h rateado no intervalo; Hyperliquid 1h) entra no PnL paper de cada perna e é reportado em `monitoring.pnl_funding`, separado de `monitoring.pnl_price`. Sem taxa no livro sintético o funding fica 0.
 
 Se a porteira falhar (não cointegrado, ou half-life > 48 barras), a resposta vem com `accepted=false`, `rejection.reason` e **zero fills**. Não é um 500.
 
@@ -67,10 +70,10 @@ Se a porteira falhar (não cointegrado, ou half-life > 48 barras), a resposta ve
 
 ```bash
 cd backend
-ATOM_SKIP_DB=1 pytest tests/test_stat_arb_paper.py -q
+ATOM_SKIP_DB=1 pytest tests/test_stat_arb_paper.py tests/test_perp_feeds.py -q
 ```
 
-Cobrem half-life OU, portas de z, entry/exit, PnL com custo, flatten do kill switch, recusa de NaN e rejeição quando a cointegração / half-life falha. CI não precisa de rede.
+Cobrem half-life OU, portas de z, entry/exit, PnL com custo, flatten do kill switch, recusa de NaN, rejeição quando a cointegração / half-life falha, e os feeds OKX/Hyperliquid (fixtures JSON, sem rede).
 
 ## Relação com o que já existia
 

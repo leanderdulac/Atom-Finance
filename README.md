@@ -34,12 +34,12 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 ### Quant desk papers (`/desk`)
 - **Heston 1993** — CF Europeans, Euler MC, smile calibration (price RMSE; five params on one expiry are unidentified)
 - **Engle–Granger pairs** — residual ADF, expanding z-score, fill at t+1, costs on both legs
-- **ETH/SOL paper stat-arb** (`POST /api/desk/pairs/eth-sol-paper`) — one-pair paper loop: EG gate, OU half-life, rolling z, bid/ask fills, kill-switch flatten. Never sends orders. See [docs/ETH-SOL-PAPER-PIPELINE.md](docs/ETH-SOL-PAPER-PIPELINE.md).
+- **ETH/SOL paper stat-arb** (`POST /api/desk/pairs/eth-sol-paper`) — one-pair paper loop: EG gate, OU half-life, rolling z, bid/ask fills, kill-switch flatten. Public marks from Binance, OKX, or Hyperliquid; paper PnL splits price vs accrued funding. Never sends orders. See [docs/ETH-SOL-PAPER-PIPELINE.md](docs/ETH-SOL-PAPER-PIPELINE.md).
 - **Johansen 1991** — trace test and cointegration rank on a price panel
 - **Avellaneda–Stoikov** — reservation price and inventory-skewed quotes
 - **Fama–French 5** — OLS loadings; caller supplies factor returns
 - **Mean-reversion scanner** — OU half-life, Hurst, ADF
-- **Perp basis** — after-fee calculator plus unsigned Binance USDM / Hyperliquid top-of-book (no orders)
+- **Perp basis** — after-fee calculator plus unsigned Binance USDM / OKX / Hyperliquid top-of-book (no orders)
 - **Insider clusters** — CMP-style bursts; optional Form 4 P/S via EDGAR (`ATOM_SEC_USER_AGENT` required)
 - **Regime classifier** (`/regime`) — live Yahoo+FRED books, 4h job, softmax P(regime), holdout, paper flatten at last mark (no broker)
 - **Winner's curse** (`/winners-curse`) — N zero-edge Sharpes, IS×OOS scatter, Deflated Sharpe (Bailey & López de Prado). The champion of a search is a lottery ticket until DSR says otherwise.

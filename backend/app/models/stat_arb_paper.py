@@ -48,7 +48,8 @@ _MACKINNON_P = ((-3.90, 0.01), (-3.34, 0.05), (-3.04, 0.10))
 
 _WHAT_BROKE = [
     "Engle–Granger gate runs on the warmup prefix only; it is not a rolling live rank test.",
-    "Expanding OLS beta is not a Kalman hedge; funding, lot size and borrow are ignored.",
+    "Expanding OLS beta is not a Kalman hedge; lot size and borrow are ignored. "
+    "Funding is accrued from the venue's public history when a bar carries a rate, else 0.",
     "When the caller omits a book, bid/ask are mid ± half-spread — not a firm quote.",
     "Signal at t fills at t+1; a hole between those bars is flagged, never interpolated.",
     "Kill switch flattens the paper book only. Broker orders sent: always 0.",
@@ -65,6 +66,8 @@ class PairBar:
     y_ask: float
     x_bid: float
     x_ask: float
+    y_funding: float = 0.0
+    x_funding: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -113,6 +116,7 @@ class PaperBook:
     peak_equity: float = 0.0
     shadow_cash: float = 0.0
     costs_paid: float = 0.0
+    funding_pnl: float = 0.0
 
     def mark(self, y_mid: float, x_mid: float) -> float:
         return self.cash + self.y_qty * y_mid + self.x_qty * x_mid
@@ -186,6 +190,8 @@ def bars_from_arrays(
     y_ask: Floats | None = None,
     x_bid: Floats | None = None,
     x_ask: Floats | None = None,
+    y_funding: Floats | None = None,
+    x_funding: Floats | None = None,
     half_spread_bps: float = HALF_SPREAD_BPS,
     expected_interval_ms: int | None = None,
 ) -> tuple[list[PairBar], dict[str, Any]]:
@@ -209,6 +215,7 @@ def bars_from_arrays(
 
     yb, ya = _opt("y_bid", y_bid), _opt("y_ask", y_ask)
     xb, xa = _opt("x_bid", x_bid), _opt("x_ask", x_ask)
+    yf, xf = _opt("y_funding", y_funding), _opt("x_funding", x_funding)
     if (yb is None) ^ (ya is None) or (xb is None) ^ (xa is None):
         raise ValueError("Bid and ask must be supplied together per leg")
 
@@ -224,7 +231,11 @@ def bars_from_arrays(
             x_b, x_a = float(xb[i]), float(xa[i])
         if y_b <= 0 or x_b <= 0 or y_a < y_b or x_a < x_b:
             raise ValueError(f"Invalid book at index {i}")
-        bars.append(PairBar(int(ts[i]), float(y[i]), float(x[i]), y_b, y_a, x_b, x_a))
+        bars.append(PairBar(
+            int(ts[i]), float(y[i]), float(x[i]), y_b, y_a, x_b, x_a,
+            float(yf[i]) if yf is not None else 0.0,
+            float(xf[i]) if xf is not None else 0.0,
+        ))
     return bars, document_gaps(ts, expected_interval_ms)
 
 
@@ -234,6 +245,8 @@ def align_pair_series(
     *,
     half_spread_bps: float = HALF_SPREAD_BPS,
     expected_interval_ms: int | None = None,
+    y_funding: dict[int, float] | None = None,
+    x_funding: dict[int, float] | None = None,
 ) -> tuple[list[PairBar], dict[str, Any]]:
     """Inner-join two (ts, mid) series. Unmatched stamps are gaps, never silent NaNs."""
     y_map: dict[int, float] = {}
@@ -251,10 +264,14 @@ def align_pair_series(
     common = sorted(set(y_map) & set(x_map))
     if len(common) < MIN_BARS:
         raise ValueError(f"Need ≥{MIN_BARS} aligned stamps; got {len(common)}")
+    y_fund = y_funding or {}
+    x_fund = x_funding or {}
     bars, gap_doc = bars_from_arrays(
         common,
         [y_map[t] for t in common],
         [x_map[t] for t in common],
+        y_funding=[float(y_fund.get(t, 0.0)) for t in common],
+        x_funding=[float(x_fund.get(t, 0.0)) for t in common],
         half_spread_bps=half_spread_bps,
         expected_interval_ms=expected_interval_ms,
     )
@@ -398,6 +415,19 @@ def clip_position(target: int, max_position: float) -> int:
 # ── 4–5. Risk + paper execution ──────────────────────────────────────────────
 
 
+def accrue_funding(book: PaperBook, bar: PairBar) -> float:
+    """Longs pay positive funding. Cash delta = −qty · mid · rate per leg; 0 if flat."""
+    y_leg = -book.y_qty * bar.y_mid * bar.y_funding
+    x_leg = -book.x_qty * bar.x_mid * bar.x_funding
+    delta = y_leg + x_leg
+    if not math.isfinite(delta) or abs(delta) < 1e-18:
+        return 0.0
+    book.cash += delta
+    book.shadow_cash += delta
+    book.funding_pnl += delta
+    return delta
+
+
 def fill_leg(delta_qty: float, bid: float, ask: float, fee_bps: float) -> tuple[float, float, float | None]:
     """Positive delta buys at ask; negative delta sells at bid. Returns (cash, fee, px)."""
     if abs(delta_qty) < 1e-15:
@@ -505,6 +535,8 @@ def _rejected(reason: str, *, cfg: PipelineConfig, data: dict, signal: dict, ext
         "monitoring": {
             "pnl_net": 0.0,
             "pnl_gross": 0.0,
+            "pnl_price": 0.0,
+            "pnl_funding": 0.0,
             "drawdown": 0.0,
             "gap_flags": data.get("gaps") or [],
             "latency_flags": [],
@@ -602,6 +634,7 @@ def run_paper_pipeline(
     for t in range(gate_n, n - 1):
         fill_i = t + 1
         fill_bar = bars[fill_i]
+        accrue_funding(book, fill_bar)
         equity = book.mark(fill_bar.y_mid, fill_bar.x_mid)
         dd = _drawdown(equity)
 
@@ -705,10 +738,13 @@ def run_paper_pipeline(
             "costs_paid": round(float(book.costs_paid), 6),
             "taker_fee_bps": cfg.taker_fee_bps,
             "half_spread_bps": cfg.half_spread_bps,
+            "funding_applied": round(float(book.funding_pnl), 6),
         },
         "monitoring": {
             "pnl_net": round(final_eq - cfg.initial_cash, 6),
             "pnl_gross": round(final_gross - cfg.initial_cash, 6),
+            "pnl_price": round(final_eq - cfg.initial_cash - book.funding_pnl, 6),
+            "pnl_funding": round(float(book.funding_pnl), 6),
             "final_equity": round(final_eq, 4),
             "drawdown": round(float(mdd), 6),
             "gap_flags": gap_doc.get("gaps") or [],
@@ -774,6 +810,8 @@ def evaluate(
                 y_ask=float(y_ask_b),
                 x_bid=float(x_bid_b),
                 x_ask=float(x_ask_b),
+                y_funding=float(b.get("y_funding") or 0.0),
+                x_funding=float(b.get("x_funding") or 0.0),
             ))
         gap = document_gaps([b.ts_ms for b in parsed], cfg.expected_interval_ms)
         return run_paper_pipeline(parsed, cfg, source=source, gap_doc=gap)
@@ -801,7 +839,13 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     p.add_argument("--demo", action="store_true", help="Run on a synthetic cointegrated pair (default if no --fetch).")
-    p.add_argument("--fetch", action="store_true", help="Pull unsigned Binance USDM markPriceKlines (public, no keys).")
+    p.add_argument("--fetch", action="store_true", help="Pull unsigned mark candles (public, no keys).")
+    p.add_argument(
+        "--venue",
+        default="binance",
+        choices=["binance", "okx", "hyperliquid"],
+        help="Public mark venue for --fetch (default binance).",
+    )
     p.add_argument("--interval", default="1h", help="Kline interval for --fetch (default 1h).")
     p.add_argument("--limit", type=int, default=500, help="Bars to fetch (80–1500).")
     p.add_argument("--n", type=int, default=400, help="Synthetic length for --demo.")
@@ -829,12 +873,12 @@ def main(argv: list[str] | None = None) -> int:
             async with httpx.AsyncClient() as client:
                 pulled = await fetch_eth_sol_pair(
                     client=client, interval=args.interval, limit=args.limit,
-                    half_spread_bps=HALF_SPREAD_BPS,
+                    half_spread_bps=HALF_SPREAD_BPS, venue=args.venue,
                 )
             return run_paper_pipeline(
                 pulled["bars"],
                 PipelineConfig(**cfg_kw, expected_interval_ms=pulled.get("expected_interval_ms")),
-                source="binance_usdm_mark_klines",
+                source=str(pulled.get("source") or "binance_usdm_mark_klines"),
                 gap_doc=pulled.get("gaps"),
             )
 

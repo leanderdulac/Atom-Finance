@@ -1,0 +1,22 @@
+Third-party notices
+===================
+
+This product includes software derived from:
+
+Hummingbot
+----------
+Portions of backend/app/services/perp_feeds.py are adapted from
+Hummingbot (https://github.com/hummingbot/hummingbot), specifically the
+unsigned REST request shapes in:
+
+  hummingbot/data_feed/candles_feed/okx_perpetual_candles
+  hummingbot/data_feed/candles_feed/hyperliquid_perpetual_candles
+
+Copyright 2023 Hummingbot Foundation
+Licensed under the Apache License, Version 2.0.
+A copy of that license is at third_party/hummingbot/LICENSE.
+
+The hummingbot Python package is NOT a dependency of ATOM (its numpy>=2.2.6
+pin conflicts with ATOM's numpy~=1.26.4). Only a small public REST client
+was reimplemented; WebSocket feeds, connectors, and order placement were
+not ported. ATOM remains paper-trading research only.
