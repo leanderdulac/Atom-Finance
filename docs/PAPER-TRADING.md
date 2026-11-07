@@ -1,6 +1,6 @@
 # Acompanhamento manual de operações simuladas
 
-Há um segundo caminho paper, fechado e automático, só para o par ETH/SOL perpétuo: [ETH-SOL-PAPER-PIPELINE.md](ETH-SOL-PAPER-PIPELINE.md). Também não envia ordens. Este diário continua sendo o acompanhamento **manual** de planos da Mesa de derivativos.
+Há um segundo caminho paper, fechado e automático, só para o par ETH/SOL perpétuo: [ETH-SOL-PAPER-PIPELINE.md](ETH-SOL-PAPER-PIPELINE.md). Também não envia ordens. Marks públicos podem vir de Binance, OKX ou Hyperliquid (`venue`); o funding acumulado de cada perna entra no PnL paper e é reportado à parte do PnL de preço. Este diário continua sendo o acompanhamento **manual** de planos da Mesa de derivativos.
 
 Na Mesa de derivativos, gere um plano e escolha **Acompanhar como operação simulada**. A operação começa aguardando entrada. Informe fonte, horário original com fuso, preço do ativo, bid/ask e quantidades de todas as pernas, além do motivo da observação. Registre entrada, atualizações e encerramento; antes da entrada também é possível cancelar.
 

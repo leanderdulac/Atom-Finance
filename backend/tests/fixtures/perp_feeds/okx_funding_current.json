@@ -1,0 +1,14 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "instType": "SWAP",
+      "instId": "ETH-USDT-SWAP",
+      "fundingRate": "0.0001",
+      "fundingTime": "1700000000000",
+      "nextFundingTime": "1700028800000",
+      "method": "current_period"
+    }
+  ]
+}

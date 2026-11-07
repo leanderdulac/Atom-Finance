@@ -33,6 +33,20 @@ A restrição por usuário permite testar uma assinatura individual sem comparti
 - URLs dos provedores são fixas, redirects desativados, timeout 20 s e resposta limitada a 8 MB. Erros externos não expõem corpo ou credenciais.
 - Snapshots são gravados no Postgres existente e recuperados somente pelo próprio usuário. Não há sincronização agendada, stream contínuo, retenção automática ou garantia operacional de disponibilidade.
 
+## Perp públicos (paper, sem chaves)
+
+Feeds unsigned de mark/candles e funding, só pesquisa. Sem API keys, sem contas, sem ordens.
+
+| Venue | Candles | Funding | Módulo |
+|---|---|---|---|
+| Binance USDM | `GET /fapi/v1/markPriceKlines` | (não no kline feed) | `perp_klines.py` (`venue=binance`, default) |
+| OKX SWAP | `GET /api/v5/market/history-mark-price-candles` (paginado) | `/api/v5/public/funding-rate` e `.../funding-rate-history` | `perp_feeds.py` |
+| Hyperliquid | `POST /info` `candleSnapshot` | `POST /info` `fundingHistory` | `perp_feeds.py` |
+
+Saída normalizada: timestamps UTC em ms, OHLC, funding rate **por intervalo** (taxa 8h da OKX rateada em barras 1h; Hyperliquid 1h entra inteira). Erros HTTP e payloads vazios viram warning + lista vazia — o feed não derruba o processo. O scanner `perp_collector` agora tenta os três livros (Binance, OKX, Hyperliquid); bastam dois para o basis.
+
+REST shapes adaptados de hummingbot/hummingbot (Apache-2.0). O pacote `hummingbot` **não** é dependência (conflito de numpy). Ver `NOTICE` e `third_party/hummingbot/`. Testes em `backend/tests/test_perp_feeds.py` usam fixtures JSON gravadas; CI sem rede.
+
 ## Próximo passo necessário para planos com mercado real
 Homologar OpLab ou Cedro com acesso autorizado: confirmar atraso contratado, timestamps, unidades de quantidades, lote, fator de cotação, origem do spot e estilo de exercício. Depois acrescentar a ponte server-side para o planejador e o calendário oficial de sessões/eventos. Não transformar EOD em cotação atual para contornar esse requisito.
 

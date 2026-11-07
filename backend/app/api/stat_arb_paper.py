@@ -33,6 +33,7 @@ class EthSolPaperBarIn(BaseModel):
 class EthSolPaperRequest(BaseModel):
     demo: bool = False
     fetch_public: bool = False
+    venue: str = Field("binance", min_length=3, max_length=16)
     interval: str = Field("1h", min_length=2, max_length=4)
     limit: int = Field(500, ge=80, le=1500)
     y_symbol: str = Field("ETHUSDT", min_length=3, max_length=20)
@@ -123,6 +124,7 @@ async def eth_sol_paper(request: Request, req: EthSolPaperRequest):
                         interval=req.interval,
                         limit=req.limit,
                         half_spread_bps=req.half_spread_bps,
+                        venue=req.venue,
                     )
             except httpx.HTTPError as exc:
                 raise HTTPException(502, "Public mark klines failed") from exc
@@ -131,7 +133,7 @@ async def eth_sol_paper(request: Request, req: EthSolPaperRequest):
                 run_paper_pipeline,
                 pulled["bars"],
                 PipelineConfig(**cfg),
-                source="binance_usdm_mark_klines",
+                source=str(pulled.get("source") or "binance_usdm_mark_klines"),
                 gap_doc=pulled.get("gaps"),
             )
         raise HTTPException(400, "Supply bars, y_mid+x_mid, demo=true, or fetch_public=true")
