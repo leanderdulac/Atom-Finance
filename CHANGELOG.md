@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — OKX / Hyperliquid public perp feeds (paper)
+
+### Added
+- Keyless mark-candle + funding adapters in `backend/app/services/perp_feeds.py` (OKX `history-mark-price-candles` with pagination, `funding-rate` / `funding-rate-history`; Hyperliquid `candleSnapshot` / `fundingHistory`). Normalized UTC-ms OHLC plus funding rate per interval. HTTP/empty failures log a warning and return `[]`.
+- `venue` on `perp_klines.fetch_mark_klines` / `fetch_eth_sol_pair` (`binance` default, `okx`, `hyperliquid`). Desk `--fetch` / `POST /api/desk/pairs/eth-sol-paper` accept the same flag.
+- Accrued funding in each ETH/SOL paper leg (`monitoring.pnl_funding` vs `pnl_price`). Longs pay a positive rate.
+- OKX top-of-book on `perp_collector` so the live basis scan can cover three venues.
+- Apache-2.0 attribution for the hummingbot REST shapes (`NOTICE`, `third_party/hummingbot/`). The `hummingbot` package is not a dependency.
+- Tests: `backend/tests/test_perp_feeds.py` with recorded JSON fixtures (no network in CI).
+
 ## [Unreleased] — ETH/SOL paper statistical-arbitrage pipeline
 
 ### Added

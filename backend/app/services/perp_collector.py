@@ -1,8 +1,9 @@
 """
 Public (unsigned) perp mid collector.
 
-Binance USDT-M bookTicker + premiumIndex, Hyperliquid L2. No API keys, no
-orders. Quotes are top-of-book snapshots, not firm liquidity.
+Binance USDT-M bookTicker + premiumIndex, OKX SWAP ticker + funding-rate,
+Hyperliquid L2. No API keys, no orders. Quotes are top-of-book snapshots,
+not firm liquidity.
 """
 
 from __future__ import annotations
@@ -13,25 +14,24 @@ from typing import Any
 import httpx
 
 from app.models.perp_arb import scan as perp_scan
+from app.services.perp_feeds import (
+    HYPERLIQUID_INFO,
+    OKX_FUNDING,
+    OKX_REST,
+    OKX_TICKER,
+    to_hyperliquid_coin,
+    to_okx_inst_id,
+)
 
 logger = logging.getLogger(__name__)
 
 BINANCE_FUTURES = "https://fapi.binance.com"
-HYPERLIQUID_INFO = "https://api.hyperliquid.xyz/info"
 
 DEFAULT_FEES = {
     "binance_usdm": 4.0,
+    "okx": 5.0,
     "hyperliquid": 3.5,
 }
-
-
-def _hl_coin(symbol: str) -> str:
-    s = symbol.upper().replace("-", "")
-    if s.endswith("USDT"):
-        return s[:-4]
-    if s.endswith("USD"):
-        return s[:-3]
-    return s
 
 
 async def collect_quotes(
@@ -40,10 +40,12 @@ async def collect_quotes(
     client: httpx.AsyncClient,
     notional: float = 10_000.0,
     binance_fee_bps: float = DEFAULT_FEES["binance_usdm"],
+    okx_fee_bps: float = DEFAULT_FEES["okx"],
     hyperliquid_fee_bps: float = DEFAULT_FEES["hyperliquid"],
 ) -> dict[str, Any]:
     symbol = symbol.upper().strip()
-    coin = _hl_coin(symbol)
+    coin = to_hyperliquid_coin(symbol)
+    inst = to_okx_inst_id(symbol)
     quotes: list[dict] = []
     errors: list[str] = []
 
@@ -72,6 +74,43 @@ async def collect_quotes(
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
         logger.warning("Binance USDM book failed for %s: %s", symbol, exc)
         errors.append(f"binance_usdm: {exc.__class__.__name__}")
+
+    try:
+        tick = await client.get(
+            f"{OKX_REST}{OKX_TICKER}",
+            params={"instId": inst},
+            timeout=8.0,
+        )
+        tick.raise_for_status()
+        payload = tick.json()
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+            raise ValueError("empty OKX ticker")
+        row = rows[0]
+        funding = 0.0
+        try:
+            fr = await client.get(
+                f"{OKX_REST}{OKX_FUNDING}",
+                params={"instId": inst},
+                timeout=8.0,
+            )
+            fr.raise_for_status()
+            fpayload = fr.json()
+            frows = fpayload.get("data") if isinstance(fpayload, dict) else None
+            if isinstance(frows, list) and frows and isinstance(frows[0], dict):
+                funding = float(frows[0].get("fundingRate") or 0.0)
+        except (httpx.HTTPError, ValueError, TypeError, IndexError, KeyError):
+            funding = 0.0
+        quotes.append({
+            "venue": "okx",
+            "bid": float(row["bidPx"]),
+            "ask": float(row["askPx"]),
+            "taker_fee_bps": okx_fee_bps,
+            "funding_8h": funding,
+        })
+    except (httpx.HTTPError, KeyError, TypeError, ValueError, IndexError) as exc:
+        logger.warning("OKX book failed for %s: %s", inst, exc)
+        errors.append(f"okx: {exc.__class__.__name__}")
 
     try:
         hl = await client.post(
@@ -123,9 +162,10 @@ async def collect_quotes(
     result["live_books"] = True
     result["what_broke"] = [
         "Top-of-book on a REST poll is stale before the next block / matching cycle.",
-        "Hyperliquid funding is the latest 8h rate, not the predicted next funding.",
+        "Hyperliquid funding is the latest 1h rate, not the predicted next funding.",
+        "OKX fundingRate is the current 8h snapshot, not the path over the hold.",
         "Default taker fees are schedule snapshots, not your VIP tier.",
-        "No depth: a $10k notional may walk the book on either venue.",
+        "No depth: a $10k notional may walk the book on any venue.",
         "Unsigned public endpoints only — ATOM still does not place orders.",
     ] + result.get("what_broke", [])
     return result

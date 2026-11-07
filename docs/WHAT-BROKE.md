@@ -37,12 +37,12 @@ should read this before the feature list. Nothing below is live-trading eligible
 |---|---|---|
 | Heston 1993 | CF Europeans, Euler MC, **smile calibration** | 5 params on one expiry are unidentified; price RMSE not vega-weighted |
 | Engle–Granger 1987 | OLS hedge, ADF residual, lagged pairs backtest | Full-sample β leaks; ADF low power |
-| ETH/SOL paper stat-arb | EG gate on warmup prefix + OU half-life + rolling z + paper bid/ask book + kill flatten | Prefix gate is still research, not a rolling live rank test; synthesized book is not firm; **no broker** |
+| ETH/SOL paper stat-arb | EG gate on warmup prefix + OU half-life + rolling z + paper bid/ask book + kill flatten; funding accrued when the venue feed supplies a rate | Prefix gate is still research, not a rolling live rank test; synthesized book is not firm; funding history is not the live funding path; **no broker** |
 | Johansen 1991 | Trace test, rank, first β̂ | Asymptotic 5% table; lag p is not AIC-selected |
 | Avellaneda–Stoikov 2008 | Reservation price, optimal spread, Poisson inventory | Constant σ; unidentified A,k; no queue |
 | Fama–French 2015 | Five-factor OLS | You supply factors; no HAC; alpha ≠ tradable residual |
 | Mean-reversion scanner | OU half-life, Hurst, ADF | Ranking on the same sample is selection bias |
-| Perp basis | After-fee calculator **+ live Binance USDM / Hyperliquid books** | Top-of-book is not firm; no orders |
+| Perp basis | After-fee calculator **+ live Binance USDM / OKX / Hyperliquid books** | Top-of-book is not firm; no orders |
 | Insider clusters (CMP 2012) | Windowed bursts **+ Form 4 P/S via EDGAR** | Needs `ATOM_SEC_USER_AGENT`; drops 10b5-1 / awards |
 | Regime classifier | Live Yahoo+FRED books, 4h job, softmax P(regime), holdout, **paper flatten at last mark** | Delayed prints; ^IRX is 13-week not 2y; softmax is not an HMM; **no broker** |
 | Winner's curse / DSR | N iid zero-edge trials, IS×OOS cloud, Bailey–López de Prado deflated Sharpe | Trials modelled as independent; √(2 ln N) is the leading EVT term; DSR is not a tradable edge |

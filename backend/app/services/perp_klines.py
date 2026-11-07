@@ -1,8 +1,11 @@
 """
-Unsigned Binance USDM mark-price klines.
+Unsigned perpetual mark-price klines.
 
 Public REST only — no API keys, no orders, no account endpoints.
 Used by the ETH/SOL paper pipeline when the operator asks for historical marks.
+
+Default venue is Binance USDM ``markPriceKlines``. ``venue=okx|hyperliquid``
+routes to :mod:`app.services.perp_feeds` (keyless OKX / Hyperliquid adapters).
 """
 
 from __future__ import annotations
@@ -26,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 BINANCE_FUTURES = "https://fapi.binance.com"
 
+SUPPORTED_VENUES = ("binance", "okx", "hyperliquid")
+
 INTERVAL_MS = {
     "1m": 60_000,
     "3m": 180_000,
@@ -41,6 +46,19 @@ INTERVAL_MS = {
     "1d": 86_400_000,
 }
 
+_SOURCE = {
+    "binance": "binance_usdm_mark_klines",
+    "okx": "okx_swap_mark_candles",
+    "hyperliquid": "hyperliquid_perp_candles",
+}
+
+
+def _normalize_venue(venue: str) -> str:
+    v = (venue or "binance").lower().strip()
+    if v not in SUPPORTED_VENUES:
+        raise ValueError(f"Unsupported venue {venue!r}; expected one of {SUPPORTED_VENUES}")
+    return v
+
 
 async def fetch_mark_klines(
     symbol: str,
@@ -48,13 +66,26 @@ async def fetch_mark_klines(
     client: httpx.AsyncClient,
     interval: str = "1h",
     limit: int = 500,
+    venue: str = "binance",
 ) -> list[tuple[int, float]]:
-    """Return (open_time_ms, mark_close) from ``/fapi/v1/markPriceKlines``."""
+    """Return (open_time_ms, mark_close). Default: Binance ``/fapi/v1/markPriceKlines``."""
     symbol = symbol.upper().strip()
+    venue = _normalize_venue(venue)
     if interval not in INTERVAL_MS:
         raise ValueError(f"Unsupported interval {interval!r}")
     if not 80 <= limit <= 1500:
         raise ValueError("limit must be between 80 and 1500")
+    if venue != "binance":
+        from app.services.perp_feeds import fetch_perp_candles
+
+        candles = await fetch_perp_candles(
+            venue, symbol, client=client, interval=interval, limit=limit,
+        )
+        out = [c.as_close_row() for c in candles]
+        if not out:
+            raise ValueError(f"Empty mark kline payload for {symbol}")
+        return out
+
     response = await client.get(
         f"{BINANCE_FUTURES}/fapi/v1/markPriceKlines",
         params={"symbol": symbol, "interval": interval, "limit": limit},
@@ -82,14 +113,43 @@ async def fetch_eth_sol_pair(
     interval: str = "1h",
     limit: int = 500,
     half_spread_bps: float = HALF_SPREAD_BPS,
+    venue: str = "binance",
 ) -> dict[str, Any]:
     """Fetch both legs, inner-join on timestamp, synthesize bid/ask from half-spread."""
     y_symbol, x_symbol = require_allowed_pair(y_symbol, x_symbol)
-    y_rows = await fetch_mark_klines(y_symbol, client=client, interval=interval, limit=limit)
-    x_rows = await fetch_mark_klines(x_symbol, client=client, interval=interval, limit=limit)
+    venue = _normalize_venue(venue)
+    if interval not in INTERVAL_MS:
+        raise ValueError(f"Unsupported interval {interval!r}")
     expected = INTERVAL_MS[interval]
+    y_funding: dict[int, float] = {}
+    x_funding: dict[int, float] = {}
+    if venue == "binance":
+        y_rows = await fetch_mark_klines(
+            y_symbol, client=client, interval=interval, limit=limit, venue=venue,
+        )
+        x_rows = await fetch_mark_klines(
+            x_symbol, client=client, interval=interval, limit=limit, venue=venue,
+        )
+    else:
+        from app.services.perp_feeds import fetch_perp_candles
+
+        y_candles = await fetch_perp_candles(
+            venue, y_symbol, client=client, interval=interval, limit=limit,
+        )
+        x_candles = await fetch_perp_candles(
+            venue, x_symbol, client=client, interval=interval, limit=limit,
+        )
+        y_rows = [c.as_close_row() for c in y_candles]
+        x_rows = [c.as_close_row() for c in x_candles]
+        y_funding = {c.ts_ms: c.funding_rate for c in y_candles}
+        x_funding = {c.ts_ms: c.funding_rate for c in x_candles}
     bars, gaps = align_pair_series(
-        y_rows, x_rows, half_spread_bps=half_spread_bps, expected_interval_ms=expected,
+        y_rows,
+        x_rows,
+        half_spread_bps=half_spread_bps,
+        expected_interval_ms=expected,
+        y_funding=y_funding or None,
+        x_funding=x_funding or None,
     )
     if len(bars) < MIN_BARS:
         raise ValueError(f"Aligned ETH/SOL marks shorter than {MIN_BARS}")
@@ -100,10 +160,14 @@ async def fetch_eth_sol_pair(
         "y_symbol": y_symbol.upper(),
         "x_symbol": x_symbol.upper(),
         "interval": interval,
-        "source": "binance_usdm_mark_klines",
+        "venue": venue,
+        "source": _SOURCE[venue],
         "signed": False,
         "broker_orders_sent": 0,
-        "note": "Public markPriceKlines only. ATOM does not sign orders or send API keys.",
+        "note": (
+            "Public mark candles only. ATOM does not sign orders or send API keys. "
+            f"Venue={venue}."
+        ),
     }
 
 
@@ -117,6 +181,8 @@ def bars_as_dicts(bars: list[PairBar]) -> list[dict[str, float | int]]:
             "y_ask": b.y_ask,
             "x_bid": b.x_bid,
             "x_ask": b.x_ask,
+            "y_funding": b.y_funding,
+            "x_funding": b.x_funding,
         }
         for b in bars
     ]

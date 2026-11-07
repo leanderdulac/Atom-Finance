@@ -1,0 +1,15 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "instType": "SWAP",
+      "instId": "ETH-USDT-SWAP",
+      "last": "2001.0",
+      "askPx": "2001.05",
+      "askSz": "10",
+      "bidPx": "2000.95",
+      "bidSz": "12"
+    }
+  ]
+}
