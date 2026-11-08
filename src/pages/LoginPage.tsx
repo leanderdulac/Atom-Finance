@@ -3,7 +3,7 @@ import {
   Box, Card, CardContent, Tabs, Tab, TextField, Button,
   Typography, Alert, CircularProgress, InputAdornment, IconButton,
 } from '@mui/material';
-import { Visibility, VisibilityOff, AutoGraph, Lock, Person, Email } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Lock, Person, Email } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -14,8 +14,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPwd, setShowPwd] = useState(false);
-
-  // Form state
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,54 +28,44 @@ export default function LoginPage() {
       if (tab === 0) await login(username, password);
       else await register(username, email, password);
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'Erro desconhecido.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erro desconhecido.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box sx={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0a0f1e 0%, #0d1929 50%, #0a1628 100%)',
-      p: 2,
-    }}>
-      {/* Decorative glow */}
-      <Box sx={{
-        position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)',
-        width: 600, height: 300,
-        background: 'radial-gradient(ellipse, rgba(99,102,241,0.15) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-
-      <Card sx={{
-        width: '100%', maxWidth: 440,
-        bgcolor: 'rgba(13,25,42,0.95)',
-        border: '1px solid rgba(99,102,241,0.3)',
-        backdropFilter: 'blur(20px)',
-        borderRadius: 3,
-        boxShadow: '0 25px 80px rgba(0,0,0,0.6)',
-      }}>
-        <CardContent sx={{ p: 4 }}>
-          {/* Logo */}
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <Box sx={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 64, height: 64, borderRadius: '50%',
-              background: 'linear-gradient(135deg, #6366f1, #818cf8)',
-              mb: 2, boxShadow: '0 0 30px rgba(99,102,241,0.5)',
-            }}>
-              <AutoGraph sx={{ fontSize: 32, color: '#fff' }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+    <Box
+      id="conteudo-principal"
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        p: 2,
+        backgroundImage: `
+          radial-gradient(ellipse 70% 50% at 50% -10%, var(--atom-accent-muted), transparent 55%),
+          linear-gradient(var(--atom-grid) 1px, transparent 1px),
+          linear-gradient(90deg, var(--atom-grid) 1px, transparent 1px)
+        `,
+        backgroundSize: 'auto, 48px 48px, 48px 48px',
+      }}
+    >
+      <Card sx={{ width: '100%', maxWidth: 440 }}>
+        <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
+          <Box sx={{ textAlign: 'center', mb: 3 }}>
+            <Box
+              component="img"
+              src="/atom.svg"
+              alt=""
+              sx={{ width: 48, height: 48, mb: 1.5, filter: 'drop-shadow(0 0 16px var(--atom-accent-glow))' }}
+            />
+            <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.03em' }}>
               ATOM
             </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Quantitative Finance Platform
+            <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+              Mesa de pesquisa quantitativa
             </Typography>
           </Box>
 
@@ -85,11 +73,7 @@ export default function LoginPage() {
             value={tab}
             onChange={(_, v) => { setTab(v); setError(''); }}
             variant="fullWidth"
-            sx={{
-              mb: 3,
-              '& .MuiTab-root': { fontWeight: 700, fontSize: '0.8rem' },
-              '& .MuiTabs-indicator': { bgcolor: 'primary.main', height: 3, borderRadius: 2 },
-            }}
+            sx={{ mb: 3 }}
           >
             <Tab label="Entrar" id="tab-login" />
             <Tab label="Criar Conta" id="tab-register" />
@@ -104,7 +88,6 @@ export default function LoginPage() {
               onChange={e => setUsername(e.target.value)}
               autoComplete="username"
               autoFocus
-              size="small"
               sx={{ mb: 2 }}
               InputProps={{
                 startAdornment: (
@@ -124,7 +107,6 @@ export default function LoginPage() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 autoComplete="email"
-                size="small"
                 sx={{ mb: 2 }}
                 InputProps={{
                   startAdornment: (
@@ -144,7 +126,6 @@ export default function LoginPage() {
               value={password}
               onChange={e => setPassword(e.target.value)}
               autoComplete={tab === 0 ? 'current-password' : 'new-password'}
-              size="small"
               sx={{ mb: 3 }}
               InputProps={{
                 startAdornment: (
@@ -154,7 +135,12 @@ export default function LoginPage() {
                 ),
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton size="small" onClick={() => setShowPwd(!showPwd)} edge="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => setShowPwd(!showPwd)}
+                      edge="end"
+                      aria-label={showPwd ? 'Ocultar senha' : 'Mostrar senha'}
+                    >
                       {showPwd ? <VisibilityOff sx={{ fontSize: 18 }} /> : <Visibility sx={{ fontSize: 18 }} />}
                     </IconButton>
                   </InputAdornment>
@@ -163,7 +149,7 @@ export default function LoginPage() {
             />
 
             {error && (
-              <Alert severity="error" sx={{ mb: 2, py: 0.5, fontSize: '0.8rem' }}>
+              <Alert severity="error" sx={{ mb: 2 }}>
                 {error}
               </Alert>
             )}
@@ -174,23 +160,27 @@ export default function LoginPage() {
               fullWidth
               variant="contained"
               disabled={loading}
-              sx={{
-                py: 1.5, fontWeight: 800, fontSize: '0.9rem',
-                background: 'linear-gradient(135deg, #6366f1, #818cf8)',
-                boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
-                '&:hover': { boxShadow: '0 6px 30px rgba(99,102,241,0.6)' },
-              }}
+              sx={{ py: 1.25 }}
             >
               {loading
-                ? <CircularProgress size={20} sx={{ color: '#fff' }} />
-                : tab === 0 ? 'Entrar na Plataforma' : 'Criar Conta'}
+                ? <CircularProgress size={20} sx={{ color: 'inherit' }} />
+                : tab === 0 ? 'Entrar na mesa' : 'Criar conta'}
             </Button>
           </Box>
 
-          <Box sx={{ mt: 3, p: 2, bgcolor: 'rgba(99,102,241,0.05)', borderRadius: 2, border: '1px solid rgba(99,102,241,0.2)' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5, display: 'block' }}>
-              ⚠️ <strong>Nota Legal:</strong> ATOM é uma ferramenta de análise quantitativa baseada em IA e modelos estatísticos. 
-              Não constitui recomendação de investimento registrada na CVM ou SEC.
+          <Box
+            sx={{
+              mt: 3,
+              p: 2,
+              borderRadius: 'var(--atom-radius-sm)',
+              border: '1px solid',
+              borderColor: 'divider',
+              bgcolor: 'var(--atom-accent-muted)',
+            }}
+          >
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6, display: 'block' }}>
+              ATOM é um piloto de pesquisa quantitativa. Não constitui recomendação de investimento
+              registrada na CVM ou SEC e não executa operações na corretora.
             </Typography>
           </Box>
         </CardContent>

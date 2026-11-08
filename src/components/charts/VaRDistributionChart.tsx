@@ -1,6 +1,7 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { Box, Typography } from '@mui/material';
+import { chartTheme, chartTooltipStyle } from '../../theme/chartTheme';
 
 interface VaRDistributionChartProps {
   returns: number[];
@@ -33,21 +34,21 @@ export default function VaRDistributionChart({ returns, varThreshold, confidence
       </Typography>
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={bins} margin={{ top: 4, right: 8, bottom: 4, left: 8 }} barCategoryGap={0}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-          <XAxis dataKey="pct" tick={{ fill: '#9ca3af', fontSize: 10 }}
+          <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
+          <XAxis dataKey="pct" tick={{ fill: chartTheme.tick, fontSize: 10, fontFamily: 'var(--atom-font-mono)' }}
             tickFormatter={(v) => `${v}%`} interval={9} />
-          <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
+          <YAxis tick={{ fill: chartTheme.tick, fontSize: 11, fontFamily: 'var(--atom-font-mono)' }} />
           <Tooltip
-            contentStyle={{ background: '#1e1e2e', border: '1px solid #374151', borderRadius: 8 }}
-            labelStyle={{ color: '#9ca3af' }}
-            formatter={(v: any) => [v, 'Observations']}
+            contentStyle={chartTooltipStyle}
+            labelStyle={{ color: 'var(--atom-text-muted)' }}
+            formatter={(v) => [v, 'Observations']}
             labelFormatter={(l) => `Return ≈ ${l}%`}
           />
-          <ReferenceLine x={(varThreshold * 100).toFixed(2)} stroke="#ef4444" strokeWidth={2}
-            label={{ value: `VaR`, position: 'insideTopRight', fill: '#ef4444', fontSize: 11 }} />
+          <ReferenceLine x={(varThreshold * 100).toFixed(2)} stroke={chartTheme.danger} strokeWidth={2}
+            label={{ value: `VaR`, position: 'insideTopRight', fill: chartTheme.danger, fontSize: 11 }} />
           <Bar dataKey="count" isAnimationActive={false} radius={[1, 1, 0, 0]}>
             {bins.map((b, i) => (
-              <Cell key={i} fill={b.x <= varThreshold ? '#ef444480' : '#6366f180'} />
+              <Cell key={i} fill={b.x <= varThreshold ? chartTheme.dangerFill : chartTheme.mutedFill} />
             ))}
           </Bar>
         </BarChart>

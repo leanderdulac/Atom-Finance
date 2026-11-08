@@ -17,7 +17,7 @@ describe('App routing', () => {
   it('renders the landing page at the root path', async () => {
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByText(/pesquisa quantitativa/i)).toBeInTheDocument()
+      expect(screen.getAllByText(/pesquisa quantitativa/i).length).toBeGreaterThan(0)
     );
   });
 

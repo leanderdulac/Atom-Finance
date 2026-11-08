@@ -4,12 +4,12 @@ import {
   Typography, Chip, IconButton, Slide,
 } from '@mui/material';
 import { TransitionProps } from '@mui/material/transitions';
-import { Warning, Close, Shield, TrendingUp } from '@mui/icons-material';
+import { Warning, Close, Shield } from '@mui/icons-material';
 
 const SESSION_KEY = 'atom_disclaimer_accepted';
 
 const Transition = React.forwardRef(function Transition(
-  props: TransitionProps & { children: React.ReactElement<any, any> },
+  props: TransitionProps & { children: React.ReactElement },
   ref: React.Ref<unknown>,
 ) {
   return <Slide direction="up" ref={ref} {...props} />;
@@ -24,9 +24,8 @@ export default function DisclaimerBanner() {
     if (!accepted) {
       const t = setTimeout(() => setOpen(true), 800);
       return () => clearTimeout(t);
-    } else {
-      setBannerVisible(true);
     }
+    setBannerVisible(true);
   }, []);
 
   const handleAccept = () => {
@@ -37,7 +36,6 @@ export default function DisclaimerBanner() {
 
   return (
     <>
-      {/* ─── First-visit modal ─── */}
       <Dialog
         open={open}
         TransitionComponent={Transition}
@@ -46,25 +44,33 @@ export default function DisclaimerBanner() {
         fullWidth
         PaperProps={{
           sx: {
-            bgcolor: 'rgba(10, 15, 30, 0.98)',
-            border: '1px solid rgba(251, 191, 36, 0.4)',
-            borderRadius: 3,
-            backdropFilter: 'blur(20px)',
+            bgcolor: 'background.paper',
+            border: '1px solid',
+            borderColor: 'divider',
+            backgroundImage: 'none',
           },
         }}
       >
         <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Box sx={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 40, height: 40, borderRadius: '50%',
-            bgcolor: 'rgba(251, 191, 36, 0.15)',
-            border: '1px solid rgba(251, 191, 36, 0.4)',
-          }}>
-            <Warning sx={{ color: '#fbbf24', fontSize: 22 }} />
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 40,
+              height: 40,
+              borderRadius: '10px',
+              bgcolor: 'var(--atom-accent-muted)',
+              border: '1px solid',
+              borderColor: 'divider',
+              color: 'warning.main',
+            }}
+          >
+            <Warning sx={{ fontSize: 22 }} />
           </Box>
           <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1 }}>
-              Aviso Importante — ATOM Platform
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+              Aviso — ATOM Research
             </Typography>
             <Typography variant="caption" color="text.secondary">
               Leia antes de continuar
@@ -74,24 +80,20 @@ export default function DisclaimerBanner() {
 
         <DialogContent sx={{ pt: 0 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box sx={{ p: 2, bgcolor: 'rgba(251,191,36,0.05)', borderRadius: 2, border: '1px solid rgba(251,191,36,0.2)' }}>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-                O <strong>ATOM</strong> é um piloto de pesquisa quantitativa. Sinais, preços e “recomendações”
-                são cenários teóricos: <strong>não autorizam execução</strong>, não são assessoria e não passam pelo
-                protocolo de evidência do Laboratório Quant.
-              </Typography>
-            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+              O <strong>ATOM</strong> é um piloto de pesquisa quantitativa. Sinais, preços e “recomendações”
+              são cenários teóricos: <strong>não autorizam execução</strong>, não são assessoria e não passam pelo
+              protocolo de evidência do Laboratório Quant.
+            </Typography>
 
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              <Chip icon={<Shield sx={{ fontSize: 14 }} />} label="Ferramenta Educacional" size="small" sx={{ bgcolor: 'rgba(99,102,241,0.15)', color: '#818cf8' }} />
-              <Chip icon={<TrendingUp sx={{ fontSize: 14 }} />} label="Modelos Estatísticos" size="small" sx={{ bgcolor: 'rgba(34,197,94,0.15)', color: '#4ade80' }} />
-              <Chip icon={<Warning sx={{ fontSize: 14 }} />} label="Não Regulamentado CVM" size="small" sx={{ bgcolor: 'rgba(251,191,36,0.15)', color: '#fbbf24' }} />
+              <Chip icon={<Shield sx={{ fontSize: 14 }} />} label="Pesquisa, não execução" size="small" />
+              <Chip icon={<Warning sx={{ fontSize: 14 }} />} label="Sem corretora" size="small" />
             </Box>
 
             <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-              Resultados passados não garantem resultados futuros. Opções e derivativos envolvem alto risco de perda.
-              Utilize as análises como suporte à sua própria decisão, sempre consultando um profissional certificado (AAI/CFP) para
-              estratégias de investimento personalizado.
+              Resultados de pesquisa não demonstram rentabilidade futura. Opções e derivativos envolvem risco de perda.
+              Use as análises como suporte à sua própria decisão.
             </Typography>
 
             <Button
@@ -99,38 +101,39 @@ export default function DisclaimerBanner() {
               fullWidth
               variant="contained"
               onClick={handleAccept}
-              sx={{
-                py: 1.5, fontWeight: 800,
-                background: 'linear-gradient(135deg, #6366f1, #818cf8)',
-                boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
-                mt: 1,
-              }}
+              sx={{ py: 1.25, mt: 1 }}
             >
-              Li e Entendi — Acessar Plataforma
+              Li e entendi — continuar
             </Button>
           </Box>
         </DialogContent>
       </Dialog>
 
-      {/* ─── Sticky mini-banner after acceptance ─── */}
       {bannerVisible && (
-        <Box sx={{
-          position: 'fixed',
-          bottom: 0, left: 0, right: 0,
-          zIndex: 9999,
-          bgcolor: 'rgba(10, 15, 30, 0.95)',
-          borderTop: '1px solid rgba(251, 191, 36, 0.25)',
-          px: 2, py: 0.75,
-          display: 'flex', alignItems: 'center', gap: 1,
-          backdropFilter: 'blur(10px)',
-        }}>
-          <Warning sx={{ fontSize: 14, color: '#fbbf24', flexShrink: 0 }} />
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            bgcolor: 'color-mix(in srgb, var(--atom-bg-elevated) 92%, transparent)',
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            px: 2,
+            py: 0.75,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <Warning sx={{ fontSize: 14, color: 'warning.main', flexShrink: 0 }} />
           <Typography variant="caption" color="text.secondary" sx={{ flexGrow: 1 }}>
-            <strong style={{ color: '#fbbf24' }}>Aviso:</strong>{' '}
-            ATOM é uma ferramenta de análise quantitativa baseada em IA. Não constitui recomendação de investimento registrada (CVM/SEC).
-            Use com responsabilidade.
+            <strong>Aviso:</strong> ATOM é pesquisa quantitativa. Não constitui recomendação de investimento
+            (CVM/SEC) e não executa operações na corretora.
           </Typography>
-          <IconButton size="small" onClick={() => setBannerVisible(false)} sx={{ color: 'text.disabled' }}>
+          <IconButton size="small" onClick={() => setBannerVisible(false)} aria-label="Fechar aviso" sx={{ color: 'text.secondary' }}>
             <Close sx={{ fontSize: 14 }} />
           </IconButton>
         </Box>
