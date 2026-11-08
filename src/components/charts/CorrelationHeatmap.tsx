@@ -10,17 +10,16 @@ interface CorrelationHeatmapProps {
 function corrColor(v: number): string {
   if (v >= 0) {
     const t = v;
-    const r = Math.round(99 * (1 - t) + 239 * t);
-    const g = Math.round(102 * (1 - t) + 68 * t);
-    const b = Math.round(241 * (1 - t) + 68 * t);
-    return `rgb(${r},${g},${b})`;
-  } else {
-    const t = -v;
-    const r = Math.round(99 * (1 - t) + 16 * t);
-    const g = Math.round(102 * (1 - t) + 185 * t);
-    const b = Math.round(241 * (1 - t) + 129 * t);
+    const r = Math.round(62 * (1 - t) + 62 * t);
+    const g = Math.round(70 * (1 - t) + 224 * t);
+    const b = Math.round(80 * (1 - t) + 197 * t);
     return `rgb(${r},${g},${b})`;
   }
+  const t = -v;
+  const r = Math.round(62 * (1 - t) + 240 * t);
+  const g = Math.round(70 * (1 - t) + 113 * t);
+  const b = Math.round(80 * (1 - t) + 120 * t);
+  return `rgb(${r},${g},${b})`;
 }
 
 export default function CorrelationHeatmap({ matrix, labels, size = 52 }: CorrelationHeatmapProps) {
@@ -39,7 +38,7 @@ export default function CorrelationHeatmap({ matrix, labels, size = 52 }: Correl
         {/* Column labels */}
         {labels.map((lbl, j) => (
           <text key={j} x={labelPad + j * size + size / 2} y={labelPad - 6}
-            textAnchor="middle" fontSize={11} fill="#9ca3af"
+            textAnchor="middle" fontSize={11} fill="var(--atom-text-muted)"
             transform={`rotate(-35, ${labelPad + j * size + size / 2}, ${labelPad - 6})`}>
             {lbl}
           </text>
@@ -47,7 +46,7 @@ export default function CorrelationHeatmap({ matrix, labels, size = 52 }: Correl
         {/* Row labels */}
         {labels.map((lbl, i) => (
           <text key={i} x={labelPad - 6} y={labelPad + i * size + size / 2 + 4}
-            textAnchor="end" fontSize={11} fill="#9ca3af">
+            textAnchor="end" fontSize={11} fill="var(--atom-text-muted)">
             {lbl}
           </text>
         ))}
@@ -64,7 +63,7 @@ export default function CorrelationHeatmap({ matrix, labels, size = 52 }: Correl
                 x={labelPad + j * size + size / 2}
                 y={labelPad + i * size + size / 2 + 4}
                 textAnchor="middle" fontSize={10}
-                fill={Math.abs(val) > 0.4 ? '#fff' : '#374151'}
+                fill={Math.abs(val) > 0.4 ? 'var(--atom-text)' : 'var(--atom-text-muted)'}
                 fontWeight={i === j ? 700 : 400}
               >
                 {val.toFixed(2)}
