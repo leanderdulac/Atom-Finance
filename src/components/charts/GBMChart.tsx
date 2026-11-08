@@ -1,6 +1,7 @@
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Box, Typography } from '@mui/material';
+import { chartTheme, chartTooltipStyle } from '../../theme/chartTheme';
 
 interface GBMChartProps {
   data: {
@@ -43,16 +44,16 @@ export default function GBMChart({ data, height = 320 }: GBMChartProps) {
       </Typography>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-          <XAxis dataKey="t" tick={{ fill: '#9ca3af', fontSize: 11 }} label={{ value: 'Days', position: 'insideBottom', fill: '#6b7280', fontSize: 11 }} />
-          <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} tickFormatter={(v) => `$${v.toFixed(0)}`} />
+          <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
+          <XAxis dataKey="t" tick={{ fill: chartTheme.tick, fontSize: 11, fontFamily: 'var(--atom-font-mono)' }} label={{ value: 'Days', position: 'insideBottom', fill: chartTheme.axis, fontSize: 11 }} />
+          <YAxis tick={{ fill: chartTheme.tick, fontSize: 11, fontFamily: 'var(--atom-font-mono)' }} tickFormatter={(v) => `$${v.toFixed(0)}`} />
           <Tooltip
-            contentStyle={{ background: '#1e1e2e', border: '1px solid #374151', borderRadius: 8 }}
-            labelStyle={{ color: '#9ca3af' }}
-            formatter={(v: any) => [`$${Number(v).toFixed(2)}`]}
+            contentStyle={chartTooltipStyle}
+            labelStyle={{ color: 'var(--atom-text-muted)' }}
+            formatter={(v) => [`$${Number(v).toFixed(2)}`]}
             labelFormatter={(l) => `Day ${l}`}
           />
-          <ReferenceLine y={data.S0} stroke="#6b7280" strokeDasharray="4 4" />
+          <ReferenceLine y={data.S0} stroke={chartTheme.axis} strokeDasharray="4 4" />
 
           {/* Sample paths — thin and semi-transparent */}
           {Array.from({ length: nSamples }, (_, j) => (
@@ -61,13 +62,13 @@ export default function GBMChart({ data, height = 320 }: GBMChartProps) {
           ))}
 
           {/* Confidence bands */}
-          <Line type="monotone" dataKey="p95" dot={false} stroke="#3b82f6" strokeWidth={1.5}
+          <Line type="monotone" dataKey="p95" dot={false} stroke={chartTheme.band} strokeWidth={1.5}
             strokeDasharray="4 2" strokeOpacity={0.7} isAnimationActive={false} />
-          <Line type="monotone" dataKey="p5" dot={false} stroke="#3b82f6" strokeWidth={1.5}
+          <Line type="monotone" dataKey="p5" dot={false} stroke={chartTheme.band} strokeWidth={1.5}
             strokeDasharray="4 2" strokeOpacity={0.7} isAnimationActive={false} />
 
           {/* Mean path — prominent */}
-          <Line type="monotone" dataKey="mean" dot={false} stroke="#f8fafc"
+          <Line type="monotone" dataKey="mean" dot={false} stroke={chartTheme.mean}
             strokeWidth={2.5} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>

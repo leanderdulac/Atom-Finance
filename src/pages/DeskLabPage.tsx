@@ -3,6 +3,8 @@ import {
   Alert, Box, Button, Card, CardContent, Chip, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
 import { api } from '../services/api';
+import PageHeader from '../components/PageHeader';
+import LoadingState from '../components/LoadingState';
 
 function seeded(n: number, drift = 0.0003, vol = 0.012, seed = 7): number[] {
   const out = [100];
@@ -111,12 +113,17 @@ export default function DeskLabPage() {
 
   return (
     <Box sx={{ maxWidth: 960, mx: 'auto' }}>
-      <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>Mesa de papers</Typography>
-      <Typography color="text.secondary" sx={{ mb: 2 }}>
-        Implementações from-scratch. Cada resposta inclui a conta em inglês simples e
-        <strong> what broke</strong>. Nada aqui é elegível para execução.
-      </Typography>
-      <Tabs value={tab} onChange={(_, v) => { setTab(v); setResult(null); setError(''); }} sx={{ mb: 2 }} variant="scrollable">
+      <PageHeader
+        kicker="Papers · from-scratch"
+        title="Mesa de papers"
+        description={
+          <>
+            Implementações from-scratch. Cada resposta inclui a conta em inglês simples e
+            <strong> what broke</strong>. Nada aqui é elegível para execução.
+          </>
+        }
+      />
+      <Tabs value={tab} onChange={(_, v) => { setTab(v); setResult(null); setError(''); }} sx={{ my: 2 }} variant="scrollable">
         {actions.map((a, i) => <Tab key={a.label} label={a.label} value={i} />)}
       </Tabs>
       <Card>
@@ -144,6 +151,7 @@ export default function DeskLabPage() {
           <Button variant="contained" onClick={actions[tab].run} disabled={loading}>
             {loading ? 'Calculando…' : liveish ? 'Consultar livros / EDGAR' : 'Rodar demonstração'}
           </Button>
+          {loading && !result && <LoadingState label="Calculando a demonstração…" />}
           {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
           {result && (
             <Box sx={{ mt: 2 }}>
@@ -156,9 +164,23 @@ export default function DeskLabPage() {
                   </ul>
                 </Alert>
               )}
-              <pre style={{ overflow: 'auto', fontSize: 12, maxHeight: 420 }}>
+              <Box
+                component="pre"
+                sx={{
+                  overflow: 'auto',
+                  fontSize: 12,
+                  maxHeight: 420,
+                  fontFamily: 'var(--atom-font-mono)',
+                  p: 2,
+                  borderRadius: 'var(--atom-radius-sm)',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: 'var(--atom-bg)',
+                  color: 'text.secondary',
+                }}
+              >
                 {JSON.stringify(result, null, 2)}
-              </pre>
+              </Box>
             </Box>
           )}
         </CardContent>

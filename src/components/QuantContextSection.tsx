@@ -30,7 +30,7 @@ export default function QuantContextSection({
             <Grid container spacing={2}>
               {concepts.map((item) => (
                 <Grid key={item.title} size={{ xs: 12, sm: 4 }}>
-                  <Box sx={{ p: 2, border: 1, borderColor: 'divider', borderRadius: 2, height: '100%' }}>
+                  <Box sx={{ p: 2, border: 1, borderColor: 'divider', borderRadius: 'var(--atom-radius-md)', height: '100%', background: 'var(--atom-bg-elevated)' }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
                       {item.title}
                     </Typography>
