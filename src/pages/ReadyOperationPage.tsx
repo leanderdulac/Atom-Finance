@@ -7,7 +7,7 @@ import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider,
   Stack, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
-import { formatPricePtBr } from '../lib/moneyPtBr';
+import { formatDatePtBr, formatPricePtBr } from '../lib/moneyPtBr';
 import { api } from '../services/api';
 import { useClientConfig, type ClientAsset } from '../contexts/ClientModeContext';
 import {
@@ -32,10 +32,13 @@ type ReadyBody = {
   invalidation?: number;
   target?: number;
   quantity?: number;
+  quote_currency?: 'BRL' | 'USD';
+  fx_usd_brl?: { rate: number; source?: string; stale?: boolean };
   suggested_size?: {
     quantity: number;
     risk_budget_brl: number;
-    notional_brl?: number;
+    notional_brl?: number | null;
+    notional_usd?: number | null;
     can_register_paper: boolean;
     paper_block?: string | null;
   };
@@ -47,7 +50,8 @@ type ReadyBody = {
   eligible_for_live_trading?: boolean;
 };
 
-const money = (n: number) => `R$ ${formatPricePtBr(n)}`;
+const money = (n: number, ccy: 'BRL' | 'USD' = 'BRL') =>
+  `${ccy === 'USD' ? 'US$' : 'R$'} ${formatPricePtBr(n)}`;
 const num = (n: number) => formatPricePtBr(n, 8).replace(/0+$/, '').replace(/,$/, '');
 const pct = (n: number) => `${(n * 100).toFixed(1).replace('.', ',')}%`;
 
@@ -368,10 +372,10 @@ export default function ReadyOperationPage() {
             <Typography sx={{ mt: 1 }}>{result.why}</Typography>
             <Divider sx={{ my: 2 }} />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2 }}>
-              <Metric label="Preço agora" value={result.spot != null ? formatPricePtBr(result.spot) : '—'} />
-              <Metric label="Entrada / gatilho" value={result.entry != null ? formatPricePtBr(result.entry) : '—'} />
-              <Metric label="Invalidação (stop)" value={result.invalidation != null ? formatPricePtBr(result.invalidation) : '—'} />
-              <Metric label="Alvo" value={result.target != null ? formatPricePtBr(result.target) : '—'} />
+              <Metric label="Preço agora" value={result.spot != null ? money(result.spot, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
+              <Metric label="Entrada / gatilho" value={result.entry != null ? money(result.entry, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
+              <Metric label="Invalidação (stop)" value={result.invalidation != null ? money(result.invalidation, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
+              <Metric label="Alvo" value={result.target != null ? money(result.target, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{result.invalidation_reason}</Typography>
             {result.suggested_size && (
@@ -379,8 +383,22 @@ export default function ReadyOperationPage() {
                 Tamanho sugerido: <strong>{num(result.suggested_size.quantity)}</strong>
                 {' · risco máximo de '}
                 {money(result.suggested_size.risk_budget_brl)}
-                {notionalBrl != null ? ` · nocional da posição ${money(notionalBrl)}` : ''}
-                {result.structure?.expiry ? ` · prazo até ${result.structure.expiry}` : null}
+                {notionalBrl != null ? ` · nocional da posição ${money(notionalBrl)}` : (
+                  result.suggested_size.notional_usd != null
+                    ? ` · nocional da posição ${money(result.suggested_size.notional_usd, 'USD')}`
+                    : ''
+                )}
+                {result.fx_usd_brl?.rate
+                  ? ` · câmbio USD/BRL ${formatPricePtBr(result.fx_usd_brl.rate, 4)}`
+                  : ''}
+                {result.structure?.expiry ? (
+                  <>
+                    {' · prazo até '}
+                    <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+                      {formatDatePtBr(result.structure.expiry)}
+                    </Box>
+                  </>
+                ) : null}
               </Typography>
             )}
             {result.structure?.legs?.length ? (

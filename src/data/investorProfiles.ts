@@ -67,7 +67,7 @@ export const SLEEVES: { id: Sleeve; label: string; hint: string }[] = [
 ];
 
 const EQUITY = {
-  ABEV3: { ticker: 'ABEV3', S0: 14.0, mu: 0.07, sigma: 0.20 },
+  WEGE3: { ticker: 'WEGE3', S0: 45.0, mu: 0.10, sigma: 0.28 },
   ITUB4: { ticker: 'ITUB4', S0: 35.0, mu: 0.09, sigma: 0.24 },
   VALE3: { ticker: 'VALE3', S0: 65.0, mu: 0.08, sigma: 0.26 },
   PETR4: { ticker: 'PETR4', S0: 40.0, mu: 0.11, sigma: 0.36 },
@@ -86,8 +86,8 @@ function w(base: { ticker: string; S0: number; mu: number; sigma: number }, weig
 
 const SLEEVE_WEIGHTS: Record<Sleeve, Record<ProfileId, AssetAlloc[]>> = {
   equities: {
-    conservador: [w(EQUITY.ABEV3, 0.40), w(EQUITY.ITUB4, 0.35), w(EQUITY.VALE3, 0.25)],
-    moderado: [w(EQUITY.ITUB4, 0.30), w(EQUITY.PETR4, 0.25), w(EQUITY.VALE3, 0.25), w(EQUITY.ABEV3, 0.20)],
+    conservador: [w(EQUITY.WEGE3, 0.40), w(EQUITY.ITUB4, 0.35), w(EQUITY.VALE3, 0.25)],
+    moderado: [w(EQUITY.ITUB4, 0.30), w(EQUITY.PETR4, 0.25), w(EQUITY.VALE3, 0.25), w(EQUITY.WEGE3, 0.20)],
     arrojado: [w(EQUITY.PETR4, 0.40), w(EQUITY.VALE3, 0.35), w(EQUITY.BBDC4, 0.25)],
   },
   crypto: {
@@ -96,7 +96,7 @@ const SLEEVE_WEIGHTS: Record<Sleeve, Record<ProfileId, AssetAlloc[]>> = {
     arrojado: [w(CRYPTO.SOL, 0.40), w(CRYPTO.ETH, 0.35), w(CRYPTO.BTC, 0.25)],
   },
   mixed: {
-    conservador: [w(EQUITY.ITUB4, 0.40), w(EQUITY.ABEV3, 0.30), w(CRYPTO.BTC, 0.30)],
+    conservador: [w(EQUITY.ITUB4, 0.40), w(EQUITY.WEGE3, 0.30), w(CRYPTO.BTC, 0.30)],
     moderado: [w(EQUITY.ITUB4, 0.25), w(EQUITY.PETR4, 0.20), w(CRYPTO.BTC, 0.30), w(CRYPTO.ETH, 0.25)],
     arrojado: [w(EQUITY.PETR4, 0.25), w(EQUITY.VALE3, 0.20), w(CRYPTO.BTC, 0.25), w(CRYPTO.ETH, 0.15), w(CRYPTO.SOL, 0.15)],
   },
@@ -163,7 +163,7 @@ export function sleeveOfTicker(ticker: string): Sleeve {
 
 export function tickersForSleeve(sleeve: Sleeve): string[] {
   if (sleeve === 'crypto') return ['BTC', 'ETH', 'SOL'];
-  if (sleeve === 'equities') return ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'WEGE3', 'ABEV3'];
+  if (sleeve === 'equities') return ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'WEGE3'];
   return ['PETR4', 'VALE3', 'ITUB4', 'BTC', 'ETH', 'SOL'];
 }
 

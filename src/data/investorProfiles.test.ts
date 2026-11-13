@@ -58,7 +58,8 @@ describe('scoreProfile', () => {
 describe('profileFor sleeve', () => {
   it('keeps B3 names on the equities sleeve', () => {
     const tickers = profileFor('moderado', 'equities').assets.map((row) => row.ticker);
-    expect(tickers).toEqual(['ITUB4', 'PETR4', 'VALE3', 'ABEV3']);
+    expect(tickers).toEqual(['ITUB4', 'PETR4', 'VALE3', 'WEGE3']);
+    expect(tickers).not.toContain('ABEV3');
   });
 
   it('uses BTC/ETH/SOL when the client asked for crypto', () => {
@@ -72,6 +73,15 @@ describe('profileFor sleeve', () => {
     expect(tickers).toContain('PETR4');
     expect(tickers).toContain('BTC');
     expect(tickers).toContain('SOL');
+  });
+
+  it('never cites ABEV3 on a B3 mix — it is not in the client universe', () => {
+    const universe = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'WEGE3'];
+    for (const id of IDS) {
+      const tickers = profileFor(id, 'equities').assets.map((row) => row.ticker);
+      expect(tickers.every((ticker) => universe.includes(ticker))).toBe(true);
+      expect(tickers).not.toContain('ABEV3');
+    }
   });
 
   it('maps Leandro’s print answers to Arrojado in crypto', () => {

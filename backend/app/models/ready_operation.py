@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from math import floor, isfinite
 from typing import Any, Literal
 
@@ -63,6 +63,8 @@ _CLIENT_JARGON = (
     "hurst", "kill_switch", "horizon_vol", "trade", "pontos",
 )
 _SCI_RE = re.compile(r"(?<![A-Za-z])\d+\.?\d*[eE][+-]?\d+")
+_ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+_FX_MIN, _FX_MAX = 3.0, 10.0
 _REGIME_PT = {
     "trending": "em tendência",
     "mean_reverting": "em oscilação",
@@ -78,6 +80,7 @@ class MarketView:
     chain: list[dict[str, Any]] | None = None
     chain_source: str | None = None
     regime: dict[str, Any] | None = None
+    fx_usd_brl: dict[str, Any] | None = None
     contributions: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -105,6 +108,40 @@ def format_price_ptbr(value: float, decimals: int = 2) -> str:
     sign = "-" if n < 0 else ""
     grouped = f"{abs(n):,.{decimals}f}"
     return sign + grouped.replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def format_money_ptbr(value: float, currency: str = "BRL") -> str:
+    prefix = "US$ " if currency == "USD" else "R$ "
+    return prefix + format_price_ptbr(value)
+
+
+def format_date_ptbr(value: date | datetime | str | None) -> str:
+    """Client dates: 04/12/2026 — never ISO, so the line cannot wrap on the hyphen."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        d = value.date()
+    elif isinstance(value, date):
+        d = value
+    else:
+        raw = str(value).strip()
+        try:
+            d = date.fromisoformat(raw[:10])
+        except ValueError:
+            return raw
+    return d.strftime("%d/%m/%Y")
+
+
+def _fx_rate(row: dict[str, Any] | None) -> float | None:
+    if not isinstance(row, dict):
+        return None
+    try:
+        rate = float(row.get("rate") or 0)
+    except (TypeError, ValueError):
+        return None
+    if not isfinite(rate) or rate < _FX_MIN or rate > _FX_MAX:
+        return None
+    return rate
 
 
 def _mark(contributions: list[dict[str, Any]], part: str, used: bool, note: str) -> None:
@@ -190,11 +227,29 @@ def _levels(spot: float, direction: str, horizon_vol: float) -> tuple[float, flo
     return entry, float(invalidation), float(target)
 
 
-def _size(capital: float, risk_pct: float, entry: float, invalidation: float, lot: float = 1.0) -> tuple[float, float, bool, str | None]:
+def _size(
+    capital: float,
+    risk_pct: float,
+    entry: float,
+    invalidation: float,
+    lot: float = 1.0,
+    *,
+    quote_currency: str = "BRL",
+    fx_usd_brl: float | None = None,
+) -> tuple[float, float, bool, str | None]:
     budget = capital * risk_pct / 100.0
-    per_unit = abs(entry - invalidation)
-    if per_unit <= 1e-12:
+    per_unit_quote = abs(entry - invalidation)
+    if per_unit_quote <= 1e-12:
         return 0.0, budget, False, "Distância até a invalidação nula."
+    if quote_currency == "USD":
+        if fx_usd_brl is None or fx_usd_brl <= 0:
+            return 0.0, budget, False, (
+                "O arsenal não tem câmbio USD/BRL agora. "
+                "Sem converter o dólar, não dimensionamos o risco em reais sobre um preço em dólar."
+            )
+        per_unit = per_unit_quote * fx_usd_brl
+    else:
+        per_unit = per_unit_quote
     lot = lot if lot > 0 else 1.0
     raw = budget / per_unit
     qty = floor(raw / lot + 1e-12) * lot
@@ -206,8 +261,16 @@ def _size(capital: float, risk_pct: float, entry: float, invalidation: float, lo
     return float(round(qty, 8)), budget, True, None
 
 
-def _notional_brl(instrument: str, qty: float, entry: float, paper_plan: dict | None) -> float:
-    """Gross position value (qty × entry), or option premium outlay when that is the book."""
+def _notional_brl(
+    instrument: str,
+    qty: float,
+    entry: float,
+    paper_plan: dict | None,
+    *,
+    quote_currency: str = "BRL",
+    fx_usd_brl: float | None = None,
+) -> float | None:
+    """Gross position value in BRL. Crypto needs USD/BRL; without it we do not pretend USD is R$."""
     if instrument == "option" and isinstance(paper_plan, dict):
         prem = paper_plan.get("premium_outlay_brl")
         if prem is not None:
@@ -216,9 +279,14 @@ def _notional_brl(instrument: str, qty: float, entry: float, paper_plan: dict | 
             except (TypeError, ValueError):
                 pass
     try:
-        return round(abs(float(qty or 0) * float(entry or 0)), 2)
+        raw = abs(float(qty or 0) * float(entry or 0))
     except (TypeError, ValueError):
         return 0.0
+    if quote_currency == "USD":
+        if fx_usd_brl is None or fx_usd_brl <= 0:
+            return None
+        return round(raw * fx_usd_brl, 2)
+    return round(raw, 2)
 
 
 def client_facing_why(text: str | None, fallback: str) -> str:
@@ -228,6 +296,7 @@ def client_facing_why(text: str | None, fallback: str) -> str:
         not text
         or any(token in lowered for token in _CLIENT_JARGON)
         or _SCI_RE.search(text)
+        or _ISO_DATE_RE.search(text)
     ):
         return fallback
     return text
@@ -244,10 +313,21 @@ def _why_fallback(payload: dict[str, Any]) -> str:
     local = _REGIME_PT.get((payload.get("regime") or {}).get("local", ""), "no mercado recente")
     conf = payload.get("confidence", "baixa")
     invalid = payload.get("invalidation_reason") or ""
+    ccy = payload.get("quote_currency") or "BRL"
+    spot = payload.get("spot")
+    entry = payload.get("entry")
+    levels = ""
+    if spot is not None and entry is not None:
+        levels = (
+            f"A cotação agora é {format_money_ptbr(float(spot), ccy)}; "
+            f"o gatilho de entrada é {format_money_ptbr(float(entry), ccy)} — não é o preço atual. "
+        )
+    expiry = (payload.get("structure") or {}).get("expiry")
+    prazo = f"Prazo até {format_date_ptbr(expiry)}. " if expiry else ""
     return (
         f"O movimento recente de {label} ({local}) levou o arsenal a montar um cenário de {direction} "
         f"no horizonte {payload['horizon_label']}, com confiança {conf}. "
-        f"{invalid} Isto é simulação paper, não uma recomendação, e nenhuma ordem vai à corretora."
+        f"{levels}{prazo}{invalid} Isto é simulação paper, não uma recomendação, e nenhuma ordem vai à corretora."
     )
 
 
@@ -268,13 +348,18 @@ def _spot_plan(
     risk_pct: float,
     now: datetime,
     lot: float = 1.0,
+    quote_currency: str = "BRL",
+    fx_usd_brl: float | None = None,
 ) -> dict[str, Any]:
     qty = float(quantity) if quantity and quantity > 0 else 0.0
     close_by = (now.date() + timedelta(days=holding_days)).isoformat()
     side = "buy" if direction == "bullish" else "sell"
     debit = abs(entry)  # per unit; shorts are handled as credit on open
     sized = qty if qty > 0 else lot
-    risk = abs(entry - invalidation) * sized
+    brl_per_quote = 1.0
+    if quote_currency == "USD":
+        brl_per_quote = float(fx_usd_brl) if fx_usd_brl and fx_usd_brl > 0 else 0.0
+    risk = abs(entry - invalidation) * sized * brl_per_quote
     return {
         "ticker": ticker,
         "direction": "long_bias" if direction == "bullish" else "short_bias",
@@ -307,8 +392,8 @@ def _spot_plan(
         "exit": {
             "underlying_invalidation": round(invalidation, 6),
             "underlying_target": round(target, 6),
-            "take_profit_net_brl": round(qty * abs(target - entry), 2) if qty else None,
-            "stop_loss_net_brl": round(qty * abs(entry - invalidation), 2) if qty else round(risk, 2),
+            "take_profit_net_brl": round(qty * abs(target - entry) * brl_per_quote, 2) if qty else None,
+            "stop_loss_net_brl": round(qty * abs(entry - invalidation) * brl_per_quote, 2) if qty else round(risk, 2),
             "instruction": (
                 "Encerrar no primeiro evento: invalidação, alvo ou data-limite. "
                 "Limiares não garantem preço de saída."
@@ -317,10 +402,10 @@ def _spot_plan(
         "quantity_per_leg": sized if qty > 0 else 0,
         "multiplier": 1,
         "lot_size": lot,
-        "premium_outlay_brl": round(qty * entry, 2) if side == "buy" and qty else 0,
+        "premium_outlay_brl": round(qty * entry * brl_per_quote, 2) if side == "buy" and qty else 0,
         "fees_reserved_brl": 0,
-        "modeled_max_loss_brl": round(qty * abs(entry - invalidation), 2) if qty else round(risk, 2),
-        "modeled_max_profit_brl": round(qty * abs(target - entry), 2) if qty else None,
+        "modeled_max_loss_brl": round(qty * abs(entry - invalidation) * brl_per_quote, 2) if qty else round(risk, 2),
+        "modeled_max_profit_brl": round(qty * abs(target - entry) * brl_per_quote, 2) if qty else None,
         "target_scenario_reward_risk": round(abs(target - entry) / abs(entry - invalidation), 3),
         "breakeven_at_expiry": round(entry, 6),
         "eligible_for_live_trading": False,
@@ -537,9 +622,22 @@ def assemble(
     strength = abs(mom) / max(horizon_vol, 1e-9)
     confidence = _confidence(strength, desk_regime)
     lot = float(asset.get("lot_size") or 1.0)
-    qty, budget, can_lot, size_note = _size(capital, risk_pct, entry, invalidation, lot=lot)
+    quote_ccy = "USD" if asset.get("asset_class") == "crypto" else "BRL"
+    fx_rate = _fx_rate(market.fx_usd_brl if market else None)
+    if quote_ccy == "USD":
+        _mark(
+            contributions, "câmbio USD/BRL", bool(fx_rate),
+            (
+                f"{(market.fx_usd_brl or {}).get('source', 'feed')} {fx_rate:.4f}"
+                + (" (cache)" if (market.fx_usd_brl or {}).get("stale") else "")
+            ) if fx_rate else "sem cotação — não dimensionamos R$ sobre preço em dólar",
+        )
+    qty, budget, can_lot, size_note = _size(
+        capital, risk_pct, entry, invalidation, lot=lot,
+        quote_currency=quote_ccy, fx_usd_brl=fx_rate,
+    )
     invalidation_reason = (
-        f"A tese cai se o preço cruzar {format_price_ptbr(invalidation)} "
+        f"A tese cai se o preço cruzar {format_money_ptbr(invalidation, quote_ccy)} "
         f"({('abaixo' if direction == 'bullish' else 'acima')} do gatilho) "
         f"ou se o regime da mesa virar crise."
     )
@@ -650,6 +748,7 @@ def assemble(
             spot=spot, entry=entry, invalidation=invalidation, target=target,
             holding_days=holding_days, quantity=qty, rationale=rationale,
             capital=capital, risk_pct=risk_pct, now=now, lot=lot,
+            quote_currency=quote_ccy, fx_usd_brl=fx_rate,
         )
         structure = {"strategy": strategy, "legs": paper_plan["legs"], "expiry": paper_plan["expiry"]}
         if not can_paper:
@@ -670,13 +769,21 @@ def assemble(
         "invalidation": round(invalidation, 6),
         "target": round(target, 6),
         "quantity": qty,
+        "quote_currency": quote_ccy,
+        "fx_usd_brl": None if not fx_rate else {
+            "rate": fx_rate,
+            "source": (market.fx_usd_brl or {}).get("source"),
+            "stale": bool((market.fx_usd_brl or {}).get("stale")),
+        },
         "suggested_size": {
             "quantity": qty,
             "capital_brl": capital,
             "risk_budget_brl": round(budget, 2),
             "notional_brl": _notional_brl(
                 instrument, qty, entry, paper_plan if isinstance(paper_plan, dict) else None,
+                quote_currency=quote_ccy, fx_usd_brl=fx_rate,
             ),
+            "notional_usd": round(abs(float(qty or 0) * float(entry or 0)), 2) if quote_ccy == "USD" else None,
             "risk_per_trade_pct": risk_pct,
             "can_register_paper": bool(can_paper),
             "paper_block": paper_block,
@@ -726,20 +833,38 @@ def facts_for_llm(payload: dict[str, Any]) -> str:
         )
     direction = "alta" if payload.get("direction") == "bullish" else "baixa"
     local = _REGIME_PT.get((payload.get("regime") or {}).get("local", ""), "no mercado recente")
+    ccy = payload.get("quote_currency") or "BRL"
+    expiry = (payload.get("structure") or {}).get("expiry")
+    fx = payload.get("fx_usd_brl") or {}
+    fx_line = ""
+    if ccy == "USD" and fx.get("rate"):
+        fx_line = f"Câmbio USD/BRL: {format_price_ptbr(float(fx['rate']), 4)} ({fx.get('source') or 'feed'})\n"
+    size = payload.get("suggested_size") or {}
+    notional = size.get("notional_brl")
+    notional_line = (
+        f"Nocional: {format_money_ptbr(float(notional), 'BRL')}\n" if notional is not None
+        else ""
+    )
     return (
         f"Ativo: {payload.get('label') or payload.get('ticker')}\n"
         f"Direção: {direction}\n"
         f"Instrumento: {payload.get('instrument')}\n"
         f"Horizonte: {payload.get('horizon_label')}\n"
-        f"Preço agora: {format_price_ptbr(float(payload.get('spot') or 0))}\n"
-        f"Entrada: {format_price_ptbr(float(payload.get('entry') or 0))}\n"
-        f"Invalidação (stop): {format_price_ptbr(float(payload.get('invalidation') or 0))}\n"
-        f"Alvo: {format_price_ptbr(float(payload.get('target') or 0))}\n"
+        f"Preço agora (cotação atual, NÃO é o gatilho): {format_money_ptbr(float(payload.get('spot') or 0), ccy)}\n"
+        f"Gatilho de entrada (só entra se o preço chegar neste nível): {format_money_ptbr(float(payload.get('entry') or 0), ccy)}\n"
+        f"Invalidação (stop): {format_money_ptbr(float(payload.get('invalidation') or 0), ccy)}\n"
+        f"Alvo: {format_money_ptbr(float(payload.get('target') or 0), ccy)}\n"
+        f"Risco máximo: {format_money_ptbr(float(size.get('risk_budget_brl') or 0), 'BRL')}\n"
+        f"{notional_line}"
+        f"{fx_line}"
+        f"Prazo até: {format_date_ptbr(expiry)}\n"
         f"Confiança: {payload.get('confidence')}\n"
         f"Leitura de mercado: {local}\n"
         f"Por que a tese cai: {payload.get('invalidation_reason')}\n"
-        "Redija em português simples. Copie os preços exatamente como estão "
-        "(formato pt-BR, sem notação científica). Proibido citar nomes técnicos "
+        "Redija em português simples. Copie os preços e a data exatamente como estão "
+        "(pt-BR, dd/mm/aaaa, sem ISO aaaa-mm-dd, sem notação científica). "
+        "Não trate o preço agora como o gatilho de entrada — são dois números. "
+        "Proibido citar nomes técnicos "
         "(z_score, EWMA, GARCH, Hurst, eligible_for_live_trading) e as palavras "
-        "trade e pontos. Fale em reais, dólares ou %."
+        "trade e pontos. Preços de cripto em dólares (US$); risco e nocional em reais (R$)."
     )

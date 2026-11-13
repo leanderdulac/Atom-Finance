@@ -29,6 +29,11 @@ CACHE_PREFIX = "client:arsenal:"
 CACHE_TTL = int(os.getenv("ATOM_CLIENT_CACHE_TTL", "900"))
 FETCH_TIMEOUT = float(os.getenv("ATOM_CLIENT_FETCH_TIMEOUT", "12"))
 BINANCE_SPOT = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
+FX_CACHE_KEY = "client:fx:usdbrl"
+FX_LAST_KEY = "client:fx:usdbrl:last"
+FX_TTL = CACHE_TTL
+FX_LAST_TTL = 7 * 24 * 3600
+_FX_MIN, _FX_MAX = 3.0, 10.0
 
 
 def job_enabled() -> bool:
@@ -63,6 +68,79 @@ def _run_timeout(fn, seconds: float = FETCH_TIMEOUT):
         except Exception:
             logger.exception("Client arsenal fetch failed")
             return None
+
+
+def _fx_sane(rate: float) -> bool:
+    return _FX_MIN <= rate <= _FX_MAX
+
+
+def _rate_of(row: Any) -> float | None:
+    if not isinstance(row, dict):
+        return None
+    try:
+        rate = float(row.get("rate") or 0)
+    except (TypeError, ValueError):
+        return None
+    return rate if _fx_sane(rate) else None
+
+
+def _fx_row(rate: float, source: str, *, stale: bool = False) -> dict[str, Any]:
+    return {
+        "rate": round(float(rate), 4),
+        "source": source,
+        "as_of": datetime.now(UTC).isoformat(),
+        "stale": stale,
+    }
+
+
+def _fetch_usd_brl_binance() -> dict[str, Any] | None:
+    """USDTBRL on public Binance — same feed already used for BTC/ETH/SOL."""
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            res = client.get(f"{BINANCE_SPOT}/api/v3/ticker/price", params={"symbol": "USDTBRL"})
+            res.raise_for_status()
+            rate = float(res.json()["price"])
+        if not _fx_sane(rate):
+            return None
+        return _fx_row(rate, "binance:USDTBRL")
+    except Exception:
+        logger.info("Binance USDTBRL fetch failed")
+        return None
+
+
+def _fetch_usd_brl_yahoo() -> dict[str, Any] | None:
+    try:
+        from app.services.data_fetcher import DataFetcher
+        quote = _run_timeout(lambda: DataFetcher.get_quote("BRL=X", use_cache=True))
+        rate = float((quote or {}).get("price") or 0)
+        if not _fx_sane(rate):
+            return None
+        return _fx_row(rate, "yahoo:BRL=X")
+    except Exception:
+        logger.info("Yahoo BRL=X fetch failed")
+        return None
+
+
+def resolve_usd_brl(*, allow_network: bool | None = None) -> dict[str, Any] | None:
+    """USD/BRL: live quote, then fresh cache, then last-known (stale) cache. Never invents a rate."""
+    if allow_network is None:
+        allow_network = os.getenv("ATOM_ENV") != "test"
+    cached = Cache.get(FX_CACHE_KEY)
+    fresh = _rate_of(cached)
+    if fresh is not None and isinstance(cached, dict):
+        return {**cached, "rate": fresh, "stale": False}
+    live = None
+    if allow_network:
+        live = _fetch_usd_brl_binance() or _fetch_usd_brl_yahoo()
+    if live:
+        Cache.set(FX_CACHE_KEY, live, ex=FX_TTL)
+        Cache.set(FX_LAST_KEY, live, ex=FX_LAST_TTL)
+        return live
+    last = Cache.get(FX_LAST_KEY)
+    last_rate = _rate_of(last)
+    if last_rate is not None and isinstance(last, dict):
+        return {**last, "rate": last_rate, "stale": True}
+    return None
 
 
 def fetch_binance_crypto(asset: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -218,6 +296,19 @@ def load_market(ticker: str) -> MarketView | None:
         return None
     cached = Cache.get(cache_key(asset["id"]))
     contributions: list[dict[str, Any]] = []
+    fx = resolve_usd_brl() if asset.get("asset_class") == "crypto" else None
+    if fx:
+        contributions.append({
+            "part": "câmbio USD/BRL",
+            "used": True,
+            "note": f"{fx.get('source')} {fx.get('rate')}" + (" (cache)" if fx.get("stale") else ""),
+        })
+    elif asset.get("asset_class") == "crypto":
+        contributions.append({
+            "part": "câmbio USD/BRL",
+            "used": False,
+            "note": "sem cotação — nocional não vira R$ sem câmbio",
+        })
     if cached and cached.get("quote") and cached.get("history"):
         contributions.append({"part": "cache Redis/memória", "used": True, "note": f"snapshot {cached.get('as_of')}"})
         return MarketView(
@@ -226,6 +317,7 @@ def load_market(ticker: str) -> MarketView | None:
             chain=cached.get("chain"),
             chain_source=cached.get("chain_source"),
             regime=last_snapshot(),
+            fx_usd_brl=fx,
             contributions=contributions,
         )
     contributions.append({"part": "cache Redis/memória", "used": False, "note": "frio — buscando feeds agora"})
@@ -238,6 +330,7 @@ def load_market(ticker: str) -> MarketView | None:
         chain=snapshot.get("chain"),
         chain_source=snapshot.get("chain_source"),
         regime=last_snapshot(),
+        fx_usd_brl=fx,
         contributions=contributions,
     )
 
@@ -254,6 +347,10 @@ def tick() -> dict[str, Any]:
         warmed = warm_universe()
     except Exception:
         logger.exception("Client arsenal: universe warm failed")
+    try:
+        resolve_usd_brl()
+    except Exception:
+        logger.exception("Client arsenal: USD/BRL warm failed")
     ok = sum(1 for row in warmed if row.get("quote") and row.get("history"))
     return {
         "regime": (regime or {}).get("regime") if isinstance(regime, dict) else None,

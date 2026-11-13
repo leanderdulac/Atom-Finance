@@ -24,7 +24,9 @@ _WHY_SYSTEM = (
     "Proibido citar nomes de variáveis ou jargão interno "
     "(z_score, EWMA, GARCH, Hurst, eligible_for_live_trading, kill_switch). "
     "Não use as palavras trade nem pontos. Fale em reais, dólares ou %. "
-    "Preços no formato pt-BR (77.640,12), sem notação científica."
+    "Preços no formato pt-BR (77.640,12), sem notação científica. "
+    "Datas em dd/mm/aaaa, nunca aaaa-mm-dd. "
+    "Não trate o preço agora (cotação) como o gatilho de entrada — são dois números."
 )
 
 
