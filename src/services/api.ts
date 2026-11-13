@@ -1,4 +1,4 @@
-import type { PaperRecord, PaperSummary, SourceCheck, SourceSnapshotSummary } from '../types/paperTrading';
+import type { OperationsState, PaperRecord, PaperSummary, SourceCheck, SourceSnapshotSummary } from '../types/paperTrading';
 const API_BASE = '/api';
 
 // The access token is short-lived and kept ONLY in memory. It is never written
@@ -98,6 +98,7 @@ export const api = {
   sourceSelic: () => request<{value:number;observed_date:string;annualized_252_pct:number;note:string}>('/sources/selic'),
   sourceCvm: (kind:string) => request<{dataset:string;note:string;resources:{name:string;url:string;format:string}[]}>(`/sources/cvm?kind=${kind}`),
   paperTrack: (plan_id:string,plan_index:number) => request<PaperRecord>('/paper-trades', {method:'POST',body:JSON.stringify({plan_id,plan_index})}),
+  paperOperations: () => request<OperationsState>('/paper-trades/operations'),
   paperHistory: () => request<PaperSummary[]>('/paper-trades'),
   paperRecord: (id:string) => request<PaperRecord>(`/paper-trades/${encodeURIComponent(id)}`),
   paperEvent: (id:string,data:object) => request<PaperRecord>(`/paper-trades/${encodeURIComponent(id)}/events`, {method:'POST',body:JSON.stringify(data)}),

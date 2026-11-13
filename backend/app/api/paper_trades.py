@@ -121,6 +121,79 @@ async def history(owner: str = Depends(get_current_user)):
     return [dict(row) for row in rows]
 
 
+@router.get('/operations')
+async def operations(owner: str = Depends(get_current_user)):
+    """One-shot operator state: plan bands, entry fill, last mark and reserved risk.
+
+    Read-only cockpit feed. LATERAL joins keep it a single round trip instead
+    of N+1 detail fetches; the journal (/{trade_id}) remains the immutable
+    record and the only writer. Each trade keeps its own plan-time risk
+    context — the aggregate shows reserved risk only, never a cross-trade
+    'remaining budget', because budgets were defined per plan at open time.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT t.id, t.status, t.created_at, t.plan, t.context, "
+        "open_e.result AS open_result, last_e.kind AS last_kind, "
+        "last_e.payload AS last_payload, last_e.result AS last_result "
+        "FROM paper_trades t "
+        "LEFT JOIN LATERAL (SELECT result FROM paper_events e "
+        "                   WHERE e.trade_id=t.id AND e.kind='open' ORDER BY e.seq LIMIT 1) open_e ON true "
+        "LEFT JOIN LATERAL (SELECT kind, payload, result FROM paper_events e "
+        "                   WHERE e.trade_id=t.id ORDER BY e.seq DESC LIMIT 1) last_e ON true "
+        "WHERE t.owner=$1 ORDER BY t.created_at DESC LIMIT 100",
+        owner,
+    )
+    trades, reserved_total = [], D(0)
+    for row in rows:
+        plan, context = row['plan'], row['context']
+        open_result = row['open_result']
+        is_open = row['status'] == 'open' and open_result is not None
+        reserved = D(0)
+        if is_open and open_result is not None:
+            reserved = D(open_result['reserved_risk_brl'])
+        reserved_total += reserved
+        last = None
+        if row['last_kind'] is not None:
+            last_payload, last_result = row['last_payload'], row['last_result']
+            last = {
+                'kind': row['last_kind'],
+                'as_of': last_payload.get('as_of'),
+                'underlying': last_payload.get('underlying'),
+                'net_pnl_brl': last_result.get('net_pnl_brl'),
+                'pnl_kind': last_result.get('pnl_kind'),
+                'alerts': last_result.get('alerts', []),
+            }
+        trades.append({
+            'id': row['id'], 'status': row['status'], 'created_at': row['created_at'].isoformat(),
+            'ticker': plan['ticker'], 'strategy': plan['strategy'], 'direction': plan['direction'],
+            'quantity_per_leg': plan['quantity_per_leg'],
+            'legs': [f"{l['side']} {l['quantity']} {l['symbol']} K={l['strike']}" for l in plan['legs']],
+            'expiry': plan['expiry'], 'close_by': plan['close_by'],
+            'entry': {'trigger': plan['entry']['underlying_trigger'], 'comparison': plan['entry']['comparison'],
+                      'quote_valid_until': plan['entry']['quote_valid_until'],
+                      'filled': bool(open_result),
+                      'debit_brl': open_result.get('entry_debit_brl') if open_result else None},
+            'exit': {'invalidation': plan['exit']['underlying_invalidation'], 'target': plan['exit']['underlying_target'],
+                     'stop_loss_net_brl': plan['exit']['stop_loss_net_brl'], 'take_profit_net_brl': plan['exit']['take_profit_net_brl']},
+            'modeled_max_loss_brl': plan['modeled_max_loss_brl'],
+            'risk_budget_brl': money(D(context['capital']) * D(context['total_risk_pct']) / 100 - D(context['existing_risk_brl'])),
+            'reserved_risk_brl': money(reserved) if is_open else None,
+            'provenance': context['provenance'],
+            'last': last,
+            'eligible_for_live_trading': False,
+        })
+    return {
+        'trades': trades,
+        'aggregate': {
+            'open_count': sum(1 for t in trades if t['status'] == 'open'),
+            'watching_count': sum(1 for t in trades if t['status'] == 'watching'),
+            'reserved_risk_brl': money(reserved_total),
+        },
+        'eligible_for_live_trading': False,
+    }
+
+
 @router.get('/{trade_id}')
 async def detail(trade_id: UUID, owner: str = Depends(get_current_user)):
     pool = await get_pool()

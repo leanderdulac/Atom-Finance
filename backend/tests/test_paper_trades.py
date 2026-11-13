@@ -149,3 +149,47 @@ def test_regime_kill_flattens_open_paper(client):
     rec = client.get(f"/paper/{trade['id']}").json()
     assert rec['status'] == 'closed'
     assert rec['events'][-1]['result']['flatten'] == 'regime_kill'
+
+
+def test_operations_state_tracks_bands_fill_alerts_and_budget(client):
+    trade = tracked(client)
+    snap = client.get('/paper/operations').json()
+    assert snap['aggregate'] == {'open_count': 0, 'watching_count': 1, 'reserved_risk_brl': 0.0}
+    row = snap['trades'][0]
+    assert row['id'] == trade['id'] and row['status'] == 'watching'
+    assert row['ticker'] == 'DEMO' and row['direction'] == 'long_bias'
+    assert row['entry']['trigger'] == 101 and row['entry']['comparison'] == '>='
+    assert row['exit']['invalidation'] == 95 and row['exit']['target'] == 115
+    assert row['last'] is None and row['reserved_risk_brl'] is None
+    assert row['eligible_for_live_trading'] is False
+
+    opened: dict = send(client, trade, event()).json()
+    snap = client.get('/paper/operations').json()
+    assert snap['aggregate']['open_count'] == 1 and snap['aggregate']['watching_count'] == 0
+    assert snap['aggregate']['reserved_risk_brl'] == opened['events'][0]['result']['reserved_risk_brl']
+    row = next(r for r in snap['trades'] if r['id'] == trade['id'])
+    assert row['entry']['filled'] is True
+    assert row['entry']['debit_brl'] == opened['events'][0]['result']['entry_debit_brl']
+    assert row['reserved_risk_brl'] == opened['events'][0]['result']['reserved_risk_brl']
+    assert row['last']['kind'] == 'open' and row['last']['underlying'] == 101
+    assert row['risk_budget_brl'] == 300.0  # capital 10000 × total_risk 3% (helper do branch)
+
+    mark: dict = event('mark')
+    mark['quotes'][0].update(bid=6, ask=6.1)
+    mark['quotes'][1].update(bid=3.9, ask=4)
+    marked: dict = send(client, trade, mark).json()
+    snap = client.get('/paper/operations').json()
+    row = next(r for r in snap['trades'] if r['id'] == trade['id'])
+    assert row['last']['kind'] == 'mark'
+    assert row['last']['net_pnl_brl'] == marked['events'][-1]['result']['net_pnl_brl']
+    # invalidação abaixo do gatilho de alta dispara o alerta da tese
+    invalidated = send(client, trade, event('mark', underlying=94, request_id=str(uuid4())))
+    assert invalidated.status_code == 200
+    row = next(r for r in client.get('/paper/operations').json()['trades'] if r['id'] == trade['id'])
+    assert any('invalidada' in a for a in row['last']['alerts'])
+
+    # fronteira de usuário: bob não vê nada de alice
+    client.app.dependency_overrides[get_current_user] = lambda: 'bob'
+    assert client.get('/paper/operations').json()['trades'] == []
+    client.app.dependency_overrides[get_current_user] = lambda: 'alice'
+    assert client.get('/paper/operations').status_code == 200
