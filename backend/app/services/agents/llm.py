@@ -140,11 +140,18 @@ def get_agent_llm() -> LLMProvider | None:
     """Ollama unless ATOM_AGENT_LLM names a cloud provider that has a key.
 
     No key → None (deterministic path). Never calls a paid API by accident.
+    xAI for the news agent is `get_news` via XAI_API_KEY (see agents.xai);
+    this helper remains the Ollama/cloud complete() path.
     """
     kind = agent_llm_kind()
     if kind in {"ollama", "local", ""}:
         if ollama_configured():
             return OllamaProvider()
+        return None
+    if kind in {"grok", "xai"}:
+        from app.services.agents.xai import XAIProvider, xai_configured
+        if xai_configured():
+            return XAIProvider()
         return None
     mapping = CLOUD_KEYS.get(kind)
     if not mapping:
@@ -157,6 +164,19 @@ def get_agent_llm() -> LLMProvider | None:
     from app.core.ai_factory import AIFactory
     inner = AIFactory().get_provider(factory_name)
     return inner
+
+
+def get_risk_llm() -> LLMProvider | None:
+    """Devil's advocate: Ollama by default. ATOM_RISK_PROVIDER=xai uses Grok chat."""
+    kind = (os.getenv("ATOM_RISK_PROVIDER") or "ollama").strip().lower() or "ollama"
+    if kind in {"xai", "grok"}:
+        from app.services.agents.xai import XAIProvider, xai_configured
+        if xai_configured():
+            return XAIProvider()
+        logger.info("ATOM_RISK_PROVIDER=xai but XAI_API_KEY empty — Ollama fallback")
+    if ollama_configured():
+        return OllamaProvider()
+    return None
 
 
 def parse_json_object(text: str) -> dict[str, Any] | None:

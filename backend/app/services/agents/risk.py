@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.services.agents.llm import get_agent_llm, parse_json_object
+from app.services.agents.llm import get_risk_llm, parse_json_object
 from app.services.agents.schemas import NewsBrief, RiskBrief
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ def risk_from_rules(payload: dict[str, Any], news: NewsBrief | None) -> RiskBrie
 
 async def run_risk_agent(payload: dict[str, Any], news: NewsBrief | None) -> RiskBrief:
     fallback = risk_from_rules(payload, news)
-    llm = get_agent_llm()
+    llm = get_risk_llm()
     if llm is None:
         return fallback
     facts = {

@@ -52,6 +52,10 @@ cd backend && alembic upgrade head
 #    OLLAMA_MODEL=llama3.2:3b
 #    OLLAMA_AGENT_MODEL=gpt-oss:20b
 #    ATOM_AGENT_LLM=ollama          # padrão; cloud só com chave (ver abaixo)
+#    XAI_API_KEY=                   # já no .env local; NÃO commitar. Liga Grok na busca
+#    XAI_MODEL=grok-4.3             # ou grok-4.20-0309-reasoning
+#    ATOM_XAI_MAX_CALLS_PER_HOUR=60
+#    ATOM_RISK_PROVIDER=ollama
 #    SEARXNG_URL=                   # vazio = sem busca web; ver «Contexto»
 #    BRAVE_API_KEY=
 #    TAVILY_API_KEY=
@@ -132,15 +136,20 @@ RSS (Google News pt-BR/en, CoinDesk, BBC Business), calendário (Copom BCB + FOM
 
 ### LLM dos agentes
 
+Ordem do **agente de notícias**: xAI (se `XAI_API_KEY` no `.env` local) → Ollama → pacote determinístico (RSS/calendário). Sem citações/URLs da API, o JSON do Grok é descartado.
+
+O **agente de risco** (advogado do diabo) é Ollama por omissão (`ATOM_RISK_PROVIDER=ollama`). `ATOM_RISK_PROVIDER=xai` usa chat completions na xAI, **sem** web/X search.
+
 | Ligar | Como |
 | --- | --- |
-| Ollama (padrão) | `ATOM_AGENT_LLM=ollama` (ou omita). `OLLAMA_ENABLED=1`, `OLLAMA_HOST=http://127.0.0.1:11434`, `OLLAMA_AGENT_MODEL=gpt-oss:20b` (tool calling). `OLLAMA_MODEL` continua no texto do «por quê». |
-| xAI / Grok | `ATOM_AGENT_LLM=grok` **e** `XAI_API_KEY=…` |
+| xAI / Grok (busca+resumo) | `XAI_API_KEY` no `.env` local (**não commitar**). `POST https://api.x.ai/v1/responses` com tools `web_search` e `x_search` ([docs](https://docs.x.ai/developers/tools/overview)). `XAI_MODEL=grok-4.3` (padrão) ou `grok-4.20-0309-reasoning`. Teto: `ATOM_XAI_MAX_CALLS_PER_HOUR=60`. Cache Redis por ativo+horizonte: `ATOM_XAI_CACHE_TTL=900` (15 min). Timeout: `ATOM_XAI_TIMEOUT=45`. |
+| Ollama (fallback notícias + risco) | `OLLAMA_ENABLED=1`, `OLLAMA_HOST=http://127.0.0.1:11434`, `OLLAMA_AGENT_MODEL=gpt-oss:20b`. `OLLAMA_MODEL` continua no texto do «por quê». |
+| Risco via Grok | `ATOM_RISK_PROVIDER=xai` **e** `XAI_API_KEY` (chat `/v1/chat/completions`, sem search). |
 | Anthropic | `ATOM_AGENT_LLM=anthropic` **e** `ANTHROPIC_API_KEY=…` |
 | OpenAI | `ATOM_AGENT_LLM=openai` **e** `OPENAI_API_KEY=…` |
 | Perplexity | `ATOM_AGENT_LLM=perplexity` **e** `PERPLEXITY_API_KEY=…` |
 
-Sem a chave, o stub recusa a chamada. JSON inválido ou notícia sem `fontes` é descartado. O cliente vê o resultado e as fontes; objeções ficam no diário (`GET /api/desk/context-audits`, modo operador).
+Sem a chave, nenhuma chamada sai. JSON inválido ou notícia sem `fontes` é descartado. Teste pago: `ATOM_XAI_LIVE=1 pytest -m xai` (pula sem chave). O cliente vê o resultado e as fontes; objeções ficam no diário (`GET /api/desk/context-audits`, modo operador).
 
 ## Desinstalar
 

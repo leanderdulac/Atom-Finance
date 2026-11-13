@@ -10,11 +10,12 @@ Camada de busca + agentes Ollama ao lado do arsenal. O LLM **não** escolhe pre�
 - `backend/app/services/context/`: SearXNG (se `SEARXNG_URL`), Brave/Tavily opcionais, RSS pt-BR/en, calendário Copom/FOMC/CPI/payroll, funding/OI Binance/OKX e mempool.space no BTC. Cache Redis, timeout curto, degradação silenciosa.
 - Agente de notícias (`gpt-oss:20b` com tools) → JSON `{eventos_proximos, sentimento, riscos, fontes}`; Pydantic descarta sem fontes. Advogado do diabo → `{objecoes, severidade, recomendacao}`. Regras do arsenal reduzem tamanho/confiança ou recusam; **nunca** movem entrada/stop/alvo.
 - Redator cita fontes (título, data, link) no texto do cliente. Diário operador: `GET /api/desk/context-audits` (Redis + `experiments` se admin/operator).
-- `LLMProvider` Ollama padrão; stubs xAI/Anthropic/OpenAI/Perplexity só com `ATOM_AGENT_LLM` + chave.
+- `LLMProvider` Ollama + xAI de verdade (`/v1/responses` com `web_search`/`x_search`, citações obrigatórias). Stubs Anthropic/OpenAI/Perplexity só com `ATOM_AGENT_LLM` + chave.
 - Worker pré-aquece PETR4/VALE3/ITUB4/BTC/ETH. `docker-compose.searxng.yml` e launchd opcional (`ATOM_SEARXNG=1`).
+- Teto `ATOM_XAI_MAX_CALLS_PER_HOUR=60`, cache Redis 15 min por ativo+horizonte. Risco padrão Ollama (`ATOM_RISK_PROVIDER`).
 
 ### Not
-- Paper only. Sem fonte = sem contexto. Nenhuma chamada cloud sem chave. Teste `@pytest.mark.ollama` é opcional.
+- Paper only. Sem fonte = sem contexto. Nenhuma chamada cloud sem chave. Testes `@pytest.mark.ollama` / `@pytest.mark.xai` são opcionais (xAI live exige `ATOM_XAI_LIVE=1`).
 
 ## [Unreleased] — round 22: tela única do cliente + perfil/carteira/níveis
 
