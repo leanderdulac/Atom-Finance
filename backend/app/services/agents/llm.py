@@ -153,6 +153,11 @@ def get_agent_llm() -> LLMProvider | None:
         if xai_configured():
             return XAIProvider()
         return None
+    if kind in {"openai", "gpt"}:
+        from app.services.agents.openai_news import OpenAIProvider, openai_configured
+        if openai_configured():
+            return OpenAIProvider()
+        return None
     mapping = CLOUD_KEYS.get(kind)
     if not mapping:
         logger.info("ATOM_AGENT_LLM=%s unknown — no agent LLM", kind)
@@ -167,9 +172,20 @@ def get_agent_llm() -> LLMProvider | None:
 
 
 def get_risk_llm() -> LLMProvider | None:
-    """Devil's advocate: Ollama by default. ATOM_RISK_PROVIDER=xai uses Grok chat."""
-    kind = (os.getenv("ATOM_RISK_PROVIDER") or "ollama").strip().lower() or "ollama"
-    if kind in {"xai", "grok"}:
+    """Devil's advocate. Default: OpenAI when the key exists, else Ollama.
+
+    ATOM_RISK_PROVIDER=openai|xai|ollama. Missing key → Ollama fallback.
+    """
+    kind = (os.getenv("ATOM_RISK_PROVIDER") or "").strip().lower()
+    if not kind:
+        from app.services.agents.openai_news import openai_configured
+        kind = "openai" if openai_configured() else "ollama"
+    if kind in {"openai", "gpt"}:
+        from app.services.agents.openai_news import OpenAIProvider, openai_configured
+        if openai_configured():
+            return OpenAIProvider()
+        logger.info("ATOM_RISK_PROVIDER=openai but OPENAI_API_KEY empty — Ollama fallback")
+    elif kind in {"xai", "grok"}:
         from app.services.agents.xai import XAIProvider, xai_configured
         if xai_configured():
             return XAIProvider()

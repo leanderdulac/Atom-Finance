@@ -9,6 +9,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.services.agents.llm import OllamaProvider, get_agent_llm, parse_json_object
+from app.services.agents.openai_news import news_brief as openai_news_brief
+from app.services.agents.openai_news import openai_configured
 from app.services.agents.schemas import EventoProximo, NewsBrief, SourceRef
 from app.services.agents.xai import news_brief as xai_news_brief
 from app.services.agents.xai import xai_configured
@@ -107,6 +109,69 @@ def news_from_bundle(bundle: dict[str, Any]) -> NewsBrief | None:
     )
 
 
+# Equal share when both independent sources print. Gap + opposite sign → desacordo.
+_XAI_SHARE = 0.5
+_OPENAI_SHARE = 0.5
+_DIVERGE_GAP = 0.5
+
+
+def merge_news_briefs(
+    xai: NewsBrief | None,
+    openai: NewsBrief | None,
+) -> NewsBrief | None:
+    """Weighted consensus. Grok = X/trends+web; OpenAI = web/notícias."""
+    if xai is None and openai is None:
+        return None
+    if xai is not None and openai is None:
+        return xai.model_copy(update={
+            "xai_sentimento": xai.sentimento,
+            "openai_sentimento": None,
+            "source_disagreement": False,
+            "providers": ["xai"],
+        })
+    if openai is not None and xai is None:
+        return openai.model_copy(update={
+            "xai_sentimento": None,
+            "openai_sentimento": openai.sentimento,
+            "source_disagreement": False,
+            "providers": ["openai"],
+        })
+    assert xai is not None and openai is not None
+    xs, os_ = float(xai.sentimento), float(openai.sentimento)
+    score = float(_XAI_SHARE * xs + _OPENAI_SHARE * os_)
+    disagree = (xs * os_) < 0 and abs(xs - os_) >= _DIVERGE_GAP
+    fontes = list(xai.fontes)
+    seen = {s.url for s in fontes}
+    for src in openai.fontes:
+        if src.url not in seen:
+            fontes.append(src)
+            seen.add(src.url)
+    eventos = list(xai.eventos_proximos)
+    ev_keys = {(e.nome, e.data) for e in eventos}
+    for event in openai.eventos_proximos:
+        key = (event.nome, event.data)
+        if key not in ev_keys:
+            eventos.append(event)
+            ev_keys.add(key)
+    riscos: list[str] = []
+    for item in list(xai.riscos) + list(openai.riscos):
+        if item and item not in riscos:
+            riscos.append(item)
+    try:
+        return NewsBrief(
+            eventos_proximos=eventos,
+            sentimento=max(-1.0, min(1.0, score)),
+            riscos=riscos[:8],
+            fontes=fontes,
+            xai_sentimento=xs,
+            openai_sentimento=os_,
+            source_disagreement=disagree,
+            providers=["xai", "openai"],
+        )
+    except ValidationError:
+        return xai
+
+
 def _validate_brief(raw: dict[str, Any] | None) -> NewsBrief | None:
     if not raw:
         return None
@@ -123,14 +188,23 @@ async def run_news_agent(ticker: str, horizon: str, *, asset_class: str = "equit
     bundle = await asyncio.to_thread(
         gather.gather_context, ticker, horizon, asset_class=asset_class,
     )
+    xai_brief = None
+    openai_brief = None
     if xai_configured():
         try:
-            brief = await xai_news_brief(ticker, horizon, bundle)
+            xai_brief = await xai_news_brief(ticker, horizon, bundle)
         except Exception as exc:
             logger.info("xAI news agent failed (%s)", type(exc).__name__)
-            brief = None
-        if brief:
-            return brief
+            xai_brief = None
+    if openai_configured():
+        try:
+            openai_brief = await openai_news_brief(ticker, horizon, bundle)
+        except Exception as exc:
+            logger.info("OpenAI news agent failed (%s)", type(exc).__name__)
+            openai_brief = None
+    merged = merge_news_briefs(xai_brief, openai_brief)
+    if merged:
+        return merged
     llm = get_agent_llm()
     if isinstance(llm, OllamaProvider):
         days = HORIZON_DAYS.get(horizon, 21)

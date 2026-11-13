@@ -55,7 +55,10 @@ cd backend && alembic upgrade head
 #    XAI_API_KEY=                   # já no .env local; NÃO commitar. Liga Grok na busca
 #    XAI_MODEL=grok-4.3             # ou grok-4.20-0309-reasoning
 #    ATOM_XAI_MAX_CALLS_PER_HOUR=60
-#    ATOM_RISK_PROVIDER=ollama
+#    OPENAI_API_KEY=                # já no .env local; NÃO commitar. Segunda fonte (web/notícias)
+#    OPENAI_MODEL=gpt-5-mini
+#    ATOM_OPENAI_MAX_CALLS_PER_HOUR=60
+#    ATOM_RISK_PROVIDER=            # vazio = OpenAI se houver chave, senão Ollama
 #    ATOM_SENTIMENT_WEIGHT=0.2      # termômetro; só subir com evidência
 #    SEARXNG_URL=                   # vazio = sem busca web; ver «Contexto»
 #    BRAVE_API_KEY=
@@ -137,24 +140,24 @@ RSS (Google News pt-BR/en, CoinDesk, BBC Business), calendário (Copom BCB + FOM
 
 ### LLM dos agentes
 
-Ordem do **agente de notícias**: xAI (se `XAI_API_KEY` no `.env` local) → Ollama → pacote determinístico (RSS/calendário). Sem citações/URLs da API, o JSON do Grok é descartado.
+Ordem do **agente de notícias**: xAI (X + web, se `XAI_API_KEY`) **e** OpenAI (web/notícias, se `OPENAI_API_KEY`) em paralelo → consenso ponderado → Ollama → pacote determinístico (RSS/calendário). Sem citações/URLs da API, o JSON é descartado. Se Grok e OpenAI divergem forte, a confiança cai.
 
-O **agente de risco** (advogado do diabo) é Ollama por omissão (`ATOM_RISK_PROVIDER=ollama`). `ATOM_RISK_PROVIDER=xai` usa chat completions na xAI, **sem** web/X search.
+O **agente de risco** (advogado do diabo) usa **OpenAI** quando a chave existe (padrão). `ATOM_RISK_PROVIDER=openai|xai|ollama`. Sem chave, cai no Ollama. xAI no risco é chat `/v1/chat/completions`, **sem** search.
 
 | Ligar | Como |
 | --- | --- |
-| xAI / Grok (busca+resumo) | `XAI_API_KEY` no `.env` local (**não commitar**). `POST https://api.x.ai/v1/responses` com tools `web_search` e `x_search` ([docs](https://docs.x.ai/developers/tools/overview)). `XAI_MODEL=grok-4.3` (padrão) ou `grok-4.20-0309-reasoning`. Teto: `ATOM_XAI_MAX_CALLS_PER_HOUR=60`. Cache Redis por ativo+horizonte: `ATOM_XAI_CACHE_TTL=900` (15 min). Timeout: `ATOM_XAI_TIMEOUT=45`. |
+| xAI / Grok (X+web) | `XAI_API_KEY` no `.env` local (**não commitar**). `POST https://api.x.ai/v1/responses` com tools `web_search` e `x_search` ([docs](https://docs.x.ai/developers/tools/overview)). `XAI_MODEL=grok-4.3` (padrão) ou `grok-4.20-0309-reasoning`. Teto: `ATOM_XAI_MAX_CALLS_PER_HOUR=60`. Cache Redis 15 min: `ATOM_XAI_CACHE_TTL=900`. |
+| OpenAI (web/notícias + risco) | `OPENAI_API_KEY` no `.env` local (**não commitar**). `POST https://api.openai.com/v1/responses` com tool `web_search`. `OPENAI_MODEL=gpt-5-mini` (padrão). Teto: `ATOM_OPENAI_MAX_CALLS_PER_HOUR=60`. Cache Redis 15 min: `ATOM_OPENAI_CACHE_TTL=900`. Custo estimado: `GET /api/desk/openai-costs`. Teste pago: `ATOM_OPENAI_LIVE=1 pytest -m openai`. |
 | Ollama (fallback notícias + risco) | `OLLAMA_ENABLED=1`, `OLLAMA_HOST=http://127.0.0.1:11434`, `OLLAMA_AGENT_MODEL=gpt-oss:20b`. `OLLAMA_MODEL` continua no texto do «por quê». |
 | Risco via Grok | `ATOM_RISK_PROVIDER=xai` **e** `XAI_API_KEY` (chat `/v1/chat/completions`, sem search). |
 | Anthropic | `ATOM_AGENT_LLM=anthropic` **e** `ANTHROPIC_API_KEY=…` |
-| OpenAI | `ATOM_AGENT_LLM=openai` **e** `OPENAI_API_KEY=…` |
 | Perplexity | `ATOM_AGENT_LLM=perplexity` **e** `PERPLEXITY_API_KEY=…` |
 
-Sem a chave, nenhuma chamada sai. JSON inválido ou notícia sem `fontes` é descartado. Teste pago: `ATOM_XAI_LIVE=1 pytest -m xai` (pula sem chave). O cliente vê o resultado, o **termômetro** («Clima do mercado para BTC: otimista») e as fontes; objeções ficam no diário (`GET /api/desk/context-audits`, modo operador).
+Sem a chave, nenhuma chamada sai. JSON inválido ou notícia sem `fontes` é descartado. Teste pago xAI: `ATOM_XAI_LIVE=1 pytest -m xai` (pula sem chave). O cliente vê o resultado, o **termômetro** («Clima do mercado para BTC: otimista») e as fontes; objeções e o custo estimado OpenAI ficam no diário (`GET /api/desk/context-audits`, `GET /api/desk/openai-costs`, modo operador).
 
 ### Termômetro (direção, não só risco)
 
-O clima (X search + notícias) entra na direção e na confiança com peso `ATOM_SENTIMENT_WEIGHT` (padrão **0.2**). Concordância com o arsenal sobe a confiança; desacordo forte recusa o paper. **Entrada, stop e alvo continuam só do arsenal.** O worker grava a série em Postgres (`sentiment_snapshots`). Relatório honesto: `GET /api/desk/sentiment-skill?ticker=BTC&horizon=weeks` (acerto e correlação vs retorno futuro). `POST` no mesmo caminho escreve no diário de pesquisa. CLI: `python -m app.services.sentiment_eval --ticker BTC --horizon weeks`. O peso **não sobe sozinho** — só com evidência neste relatório.
+O clima (X search do Grok + notícias da OpenAI) entra na direção e na confiança com peso `ATOM_SENTIMENT_WEIGHT` (padrão **0.2**). O sinal final é o **consenso ponderado** das duas fontes. Concordância com o arsenal sobe a confiança; desacordo forte entre Grok e OpenAI (ou com o quant) a derruba ou recusa o paper. **Entrada, stop e alvo continuam só do arsenal.** O worker grava a série em Postgres (`sentiment_snapshots`). Relatório honesto: `GET /api/desk/sentiment-skill?ticker=BTC&horizon=weeks` (acerto e correlação vs retorno futuro). `POST` no mesmo caminho escreve no diário de pesquisa. CLI: `python -m app.services.sentiment_eval --ticker BTC --horizon weeks`. O peso **não sobe sozinho** — só com evidência neste relatório.
 
 ## Desinstalar
 

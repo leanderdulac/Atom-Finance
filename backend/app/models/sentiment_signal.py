@@ -117,6 +117,10 @@ def build_signal(
         "sources": sources,
         "climate": tone,
         "label": climate_label(ticker, score),
+        "xai_sentimento": news.xai_sentimento,
+        "openai_sentimento": news.openai_sentimento,
+        "source_disagreement": bool(news.source_disagreement),
+        "providers": list(news.providers or []),
         "eligible_for_live_trading": False,
     }
 

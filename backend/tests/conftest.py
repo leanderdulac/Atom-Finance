@@ -22,10 +22,13 @@ os.environ.setdefault("ATOM_AGENT_LLM", "ollama")
 os.environ.setdefault("SEARXNG_URL", "")
 os.environ.setdefault("BRAVE_API_KEY", "")
 os.environ.setdefault("TAVILY_API_KEY", "")
-# Unit tests never see a real xAI key. @pytest.mark.xai restores it for the live test.
+# Unit tests never see a real xAI/OpenAI key. Live markers restore them.
 _XAI_KEY_FROM_ENV = os.environ.get("XAI_API_KEY", "")
+_OPENAI_KEY_FROM_ENV = os.environ.get("OPENAI_API_KEY", "")
 os.environ["XAI_API_KEY"] = ""
+os.environ["OPENAI_API_KEY"] = ""
 os.environ.setdefault("ATOM_XAI_LIVE", "0")
+os.environ.setdefault("ATOM_OPENAI_LIVE", "0")
 os.environ.setdefault("ATOM_RISK_PROVIDER", "ollama")
 
 @pytest.fixture(autouse=True)
@@ -39,9 +42,23 @@ def _xai_key_for_live_marker(monkeypatch, request):
 
 
 @pytest.fixture(autouse=True)
+def _openai_key_for_live_marker(monkeypatch, request):
+    """Blank OpenAI in unit tests; restore only for @pytest.mark.openai."""
+    if request.node.get_closest_marker("openai"):
+        monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY_FROM_ENV)
+    else:
+        monkeypatch.setenv("OPENAI_API_KEY", "")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _silence_context_http(monkeypatch, request):
     """Unit tests never hit SearXNG/Brave/exchanges. Live Ollama tests opt out."""
-    if request.node.get_closest_marker("ollama"):
+    if (
+        request.node.get_closest_marker("ollama")
+        or request.node.get_closest_marker("xai")
+        or request.node.get_closest_marker("openai")
+    ):
         yield
         return
 

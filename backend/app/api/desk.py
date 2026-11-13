@@ -40,8 +40,24 @@ async def desk_doctrine():
 async def context_audits(limit: int = Query(50, ge=1, le=200), _owner: str = Depends(get_current_user)):
     """Operator diary of context overlays. Client never hits this route."""
     from app.services.agents.audit import list_audits
+    from app.services.agents.openai_news import recent_costs
     return {
         "items": list_audits(limit),
+        "openai_costs": recent_costs(limit=20),
+        "eligible_for_live_trading": False,
+    }
+
+
+@router.get("/openai-costs")
+async def openai_costs(limit: int = Query(50, ge=1, le=200), _owner: str = Depends(get_current_user)):
+    """Estimated USD per OpenAI Responses call. Paper diary; not a bill."""
+    from app.services.agents.openai_news import recent_costs
+    rows = recent_costs(limit)
+    total = round(sum(float(r.get("estimated_usd") or 0) for r in rows), 6)
+    return {
+        "items": rows,
+        "estimated_usd_sum": total,
+        "note": "Estimativa a partir de tokens + web_search; não é a fatura da OpenAI.",
         "eligible_for_live_trading": False,
     }
 
