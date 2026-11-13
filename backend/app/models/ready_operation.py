@@ -229,9 +229,11 @@ def _why_fallback(payload: dict[str, Any]) -> str:
     local = _REGIME_PT.get((payload.get("regime") or {}).get("local", ""), "no mercado recente")
     conf = payload.get("confidence", "baixa")
     invalid = payload.get("invalidation_reason") or ""
+    climate = (payload.get("thermometer") or {}).get("label")
+    climate_bit = f" {climate}." if climate else ""
     return (
         f"O movimento recente de {label} ({local}) levou o arsenal a montar um cenário de {direction} "
-        f"no horizonte {payload['horizon_label']}, com confiança {conf}. "
+        f"no horizonte {payload['horizon_label']}, com confiança {conf}.{climate_bit} "
         f"{invalid} Isto é simulação paper, não uma recomendação, e nenhuma ordem vai à corretora."
     )
 
@@ -390,6 +392,8 @@ def assemble(
     now: datetime | None = None,
     capital: float | None = None,
     risk_pct: float | None = None,
+    sentiment: dict[str, Any] | None = None,
+    sentiment_weight: float | None = None,
 ) -> dict[str, Any]:
     """Pure orchestrator. Pass `market` in tests; production loads it separately."""
     import os
@@ -490,35 +494,92 @@ def assemble(
             contributions,
         )
 
-    if local == "mean_reverting":
-        if z_score > 0.5:
-            direction: str | None = "bearish"
-        elif z_score < -0.5:
-            direction = "bullish"
-        else:
-            direction = None
+    from app.models.sentiment_signal import (
+        adjust_confidence,
+        blend_direction,
+        effective_weight,
+        quant_score,
+        thermometer_view,
+    )
+
+    q = quant_score(local, z_score, mom, horizon_vol)
+    sent_score = float((sentiment or {}).get("score") or 0) if sentiment else 0.0
+    weight = effective_weight(None) if sentiment_weight is None else float(sentiment_weight)
+    use_climate = bool(sentiment) and abs(sent_score) >= 0.15
+    direction: str | None = None
+    relation = "neutro"
+    combined = q
+    if use_climate:
+        direction, relation, combined = blend_direction(q, sent_score, weight)
+        _mark(
+            contributions, "termômetro (clima)", True,
+            f"score {sent_score:+.2f} peso {weight:.2f} → {relation}; LLM não escolhe nível",
+        )
+        extra = {"thermometer": thermometer_view(sentiment)}
         if direction is None:
+            if relation == "desacordo":
+                return _insufficient(
+                    "O clima do mercado aponta para o lado oposto do movimento recente. "
+                    "O arsenal não monta o cenário neste estado.",
+                    contributions, extra=extra,
+                )
             return _insufficient(
-                "Regime de reversão sem desvio claro do preço: o arsenal não inventa direção.",
-                contributions,
+                "Preço e clima juntos ficam no meio: o arsenal não inventa direção.",
+                contributions, extra=extra,
             )
     else:
-        if abs(mom) < 0.15 * max(horizon_vol, 1e-9):
-            return _insufficient(
-                "Variação do horizonte está dentro do ruído da volatilidade: sem evidência para uma direção.",
-                contributions,
+        if sentiment:
+            _mark(
+                contributions, "termômetro (clima)", True,
+                "clima neutro — direção fica com o arsenal quant; LLM não escolhe nível",
             )
-        direction = "bullish" if mom > 0 else "bearish"
+        if local == "mean_reverting":
+            if z_score > 0.5:
+                direction = "bearish"
+            elif z_score < -0.5:
+                direction = "bullish"
+            else:
+                direction = None
+            if direction is None:
+                return _insufficient(
+                    "Regime de reversão sem desvio claro do preço: o arsenal não inventa direção.",
+                    contributions,
+                    extra={"thermometer": thermometer_view(sentiment)} if sentiment else None,
+                )
+        else:
+            if abs(mom) < 0.15 * max(horizon_vol, 1e-9):
+                return _insufficient(
+                    "Variação do horizonte está dentro do ruído da volatilidade: sem evidência para uma direção.",
+                    contributions,
+                    extra={"thermometer": thermometer_view(sentiment)} if sentiment else None,
+                )
+            direction = "bullish" if mom > 0 else "bearish"
 
-    if local == "high_vol" and abs(mom) < 0.5 * max(horizon_vol, 1e-9):
+    if local == "high_vol" and abs(mom) < 0.5 * max(horizon_vol, 1e-9) and not use_climate:
         return _insufficient(
             "Volatilidade alta e sinal fraco: o arsenal não monta operação neste estado.",
             contributions,
         )
 
+    if direction not in {"bullish", "bearish"}:
+        return _insufficient(
+            "Sem direção honesta após preço e clima: o arsenal não inventa operação.",
+            contributions,
+            extra={"thermometer": thermometer_view(sentiment) if sentiment else None},
+        )
     entry, invalidation, target = _levels(spot, direction, horizon_vol)
     strength = abs(mom) / max(horizon_vol, 1e-9)
+    if use_climate:
+        strength = max(strength, abs(combined))
     confidence = _confidence(strength, desk_regime)
+    if use_climate:
+        confidence = adjust_confidence(confidence, relation)
+    if sentiment and sentiment.get("source_disagreement"):
+        confidence = "baixa"
+        _mark(
+            contributions, "termômetro (fontes)", True,
+            "As fontes do clima divergem — confiança reduzida; níveis do arsenal intactos",
+        )
     lot = float(asset.get("lot_size") or 1.0)
     qty, budget, can_lot, size_note = _size(capital, risk_pct, entry, invalidation, lot=lot)
     invalidation_reason = (
@@ -669,6 +730,13 @@ def assemble(
             "eligible_for_live_trading": False,
         },
         "confidence": confidence,
+        "thermometer": thermometer_view(sentiment) if sentiment else None,
+        "sentiment": {
+            "score": sent_score if sentiment else None,
+            "weight": weight if sentiment else 0,
+            "relation": relation if sentiment else None,
+            "eligible_for_live_trading": False,
+        } if sentiment else None,
         "invalidation_reason": invalidation_reason,
         "regime": {"local": local, "desk": desk_regime, "hurst": hurst, "z_score": round(z_score, 3), "momentum": round(mom, 4)},
         "volatility": {"ewma": ewma_vol, "garch": garch_vol, "horizon": horizon_vol, "used": vol},
@@ -717,6 +785,7 @@ def facts_for_llm(payload: dict[str, Any]) -> str:
         f"Alvo: {format_price_ptbr(float(payload.get('target') or 0))}\n"
         f"Confiança: {payload.get('confidence')}\n"
         f"Leitura de mercado: {local}\n"
+        f"Clima: {(payload.get('thermometer') or {}).get('label') or 'sem termômetro'}\n"
         f"Por que a tese cai: {payload.get('invalidation_reason')}\n"
         "Redija em português simples. Copie os preços exatamente como estão "
         "(formato pt-BR, sem notação científica). Proibido citar nomes técnicos "

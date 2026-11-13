@@ -16,6 +16,86 @@ os.environ.setdefault("ATOM_DATABASE_URL", "postgresql+asyncpg://atom:atom_dev@l
 os.environ.setdefault("OLLAMA_ENABLED", "0")
 os.environ.setdefault("ATOM_CLIENT_MODE", "false")
 os.environ.setdefault("ATOM_CLIENT_JOB", "0")
+os.environ.setdefault("ATOM_CONTEXT_JOB", "0")
+os.environ.setdefault("ATOM_WORKER_CONTEXT", "0")
+os.environ.setdefault("ATOM_AGENT_LLM", "ollama")
+os.environ.setdefault("SEARXNG_URL", "")
+os.environ.setdefault("BRAVE_API_KEY", "")
+os.environ.setdefault("TAVILY_API_KEY", "")
+# Unit tests never see a real xAI/OpenAI key. Live markers restore them.
+_XAI_KEY_FROM_ENV = os.environ.get("XAI_API_KEY", "")
+_OPENAI_KEY_FROM_ENV = os.environ.get("OPENAI_API_KEY", "")
+_GEMINI_KEY_FROM_ENV = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
+os.environ["XAI_API_KEY"] = ""
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["GEMINI_API_KEY"] = ""
+os.environ["GOOGLE_API_KEY"] = ""
+os.environ.setdefault("ATOM_XAI_LIVE", "0")
+os.environ.setdefault("ATOM_OPENAI_LIVE", "0")
+os.environ.setdefault("ATOM_GEMINI_LIVE", "0")
+os.environ.setdefault("ATOM_RISK_PROVIDER", "ollama")
+
+@pytest.fixture(autouse=True)
+def _xai_key_for_live_marker(monkeypatch, request):
+    """Blank xAI in unit tests; restore only for @pytest.mark.xai."""
+    if request.node.get_closest_marker("xai"):
+        monkeypatch.setenv("XAI_API_KEY", _XAI_KEY_FROM_ENV)
+    else:
+        monkeypatch.setenv("XAI_API_KEY", "")
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _openai_key_for_live_marker(monkeypatch, request):
+    """Blank OpenAI in unit tests; restore only for @pytest.mark.openai."""
+    if request.node.get_closest_marker("openai"):
+        monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY_FROM_ENV)
+    else:
+        monkeypatch.setenv("OPENAI_API_KEY", "")
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _gemini_key_for_live_marker(monkeypatch, request):
+    """Blank Gemini in unit tests; restore only for @pytest.mark.gemini."""
+    if request.node.get_closest_marker("gemini"):
+        monkeypatch.setenv("GEMINI_API_KEY", _GEMINI_KEY_FROM_ENV)
+    else:
+        monkeypatch.setenv("GEMINI_API_KEY", "")
+        monkeypatch.setenv("GOOGLE_API_KEY", "")
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _silence_context_http(monkeypatch, request):
+    """Unit tests never hit SearXNG/Brave/exchanges. Live Ollama tests opt out."""
+    if (
+        request.node.get_closest_marker("ollama")
+        or request.node.get_closest_marker("xai")
+        or request.node.get_closest_marker("openai")
+        or request.node.get_closest_marker("gemini")
+    ):
+        yield
+        return
+
+    def _none(*_a, **_k):
+        return None
+
+    import importlib
+
+    for mod_name in (
+        "app.services.context.http",
+        "app.services.context.search",
+        "app.services.context.rss",
+        "app.services.context.calendar",
+        "app.services.context.crypto",
+    ):
+        mod = importlib.import_module(mod_name)
+        for attr in ("cached_get_json", "cached_get_text", "cached_post_json"):
+            if hasattr(mod, attr):
+                monkeypatch.setattr(mod, attr, _none)
+    yield
+
 
 def _redacted_database_url() -> str:
     """Connection target without the password — this string reaches CI logs."""
@@ -35,6 +115,7 @@ def _redacted_database_url() -> str:
 _TABLES = (
     "reports", "users", "experiments", "experiment_reviews",
     "derivative_plans", "source_snapshots", "paper_trades", "paper_events",
+    "sentiment_snapshots",
 )
 
 

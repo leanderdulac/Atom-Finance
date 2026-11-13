@@ -105,6 +105,12 @@ describe('ReadyOperationPage', () => {
       why: 'Cenário de alta em PETR4 montado com cotação e volatilidade. Simulação, não recomendação.',
       disclaimer: 'Cenário/simulação. Não é recomendação.',
       eligible_for_live_trading: false,
+      sources: [{ title: 'Comunicado Copom', url: 'https://www.bcb.gov.br/copom', date: '2026-11-12' }],
+      thermometer: {
+        label: 'Clima do mercado para PETR4: otimista',
+        tone: 'otimista',
+        headlines: [{ title: 'Petrobras sobe com recorde', url: 'https://www.bcb.gov.br/noticia', date: '2026-11-12' }],
+      },
     });
     clientReadyPaper.mockResolvedValue({
       message: 'Registrada como operação paper, aguardando gatilho. O diário é o único escritor.',
@@ -115,6 +121,15 @@ describe('ReadyOperationPage', () => {
     await user.click(screen.getByRole('button', { name: /montar operação/i }));
     expect(clientReadyOperation).toHaveBeenCalledWith({ ticker: 'PETR4', instrument: 'spot', horizon: 'weeks' });
     expect((await screen.findAllByText(/compra à vista/i)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: /comunicado copom/i })).toHaveAttribute(
+      'href',
+      'https://www.bcb.gov.br/copom',
+    );
+    expect(screen.getByText(/clima do mercado para petr4: otimista/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /petrobras sobe com recorde/i })).toHaveAttribute(
+      'href',
+      'https://www.bcb.gov.br/noticia',
+    );
     expect(screen.getAllByText(/aguardando gatilho/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/eligible_for_live_trading/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /registrar como operação paper/i }));

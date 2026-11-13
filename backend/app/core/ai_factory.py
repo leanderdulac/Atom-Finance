@@ -30,6 +30,12 @@ class CreditException(LLMException):
     pass
 
 class LLMProvider(ABC):
+    """Cloud implementations below are key-gated. Agent default is Ollama:
+
+    `app.services.agents.llm.get_agent_llm()` — no paid call without
+    ATOM_AGENT_LLM + the matching API key.
+    """
+
     @abstractmethod
     async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         pass
@@ -114,9 +120,9 @@ class GeminiProvider(LLMProvider):
 
 class GrokProvider(LLMProvider):
     def __init__(self, api_key: str):
-        # xAI is OpenAI compatible
+        # xAI is OpenAI-compatible at https://api.x.ai/v1
         self.client = openai.AsyncOpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
-        self.model = "grok-3"
+        self.model = os.getenv("XAI_MODEL", "grok-4.3").strip() or "grok-4.3"
 
     async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         try:

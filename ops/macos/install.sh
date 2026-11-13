@@ -58,6 +58,24 @@ if [[ -z "$CLOUDFLARED" || ! -x "$CLOUDFLARED" ]]; then
   exit 1
 fi
 
+DOCKER="$(command -v docker || true)"
+if [[ -z "$DOCKER" ]]; then
+  for candidate in /opt/homebrew/bin/docker /usr/local/bin/docker; do
+    if [[ -x "$candidate" ]]; then
+      DOCKER="$candidate"
+      break
+    fi
+  done
+fi
+if [[ "${ATOM_SEARXNG:-}" == "1" ]]; then
+  if [[ -z "$DOCKER" || ! -x "$DOCKER" ]]; then
+    echo "ATOM_SEARXNG=1 mas docker não encontrado — SearXNG não será instalado." >&2
+  else
+    LABELS+=(com.atom.searxng)
+    atom_upsert_env "$ENV_FILE" SEARXNG_URL "http://127.0.0.1:8888"
+  fi
+fi
+
 render() {
   local src="$1" dest="$2"
   sed -e "s|__ATOM_HOME__|$ROOT|g" \
@@ -65,6 +83,7 @@ render() {
       -e "s|__ATOM_ENV_FILE__|$ENV_FILE|g" \
       -e "s|__ATOM_VENV__|$VENV|g" \
       -e "s|__CLOUDFLARED__|$CLOUDFLARED|g" \
+      -e "s|__DOCKER__|${DOCKER:-docker}|g" \
       "$src" > "$dest"
 }
 

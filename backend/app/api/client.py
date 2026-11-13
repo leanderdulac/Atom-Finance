@@ -25,8 +25,14 @@ from app.models.ready_operation import (
     assemble,
     client_facing_why,
     facts_for_llm,
+    resolve_asset,
     universe_public,
 )
+from app.services.agents.apply import apply_context_risk
+from app.services.agents.audit import record_audit
+from app.services.agents.news import run_news_agent
+from app.services.agents.risk import run_risk_agent
+from app.services.agents.writer import cite_sources
 from app.services.client_arsenal import load_market
 from app.services.ollama import draft_why, ollama_configured
 
@@ -108,18 +114,118 @@ async def _decorate_why(payload: dict) -> dict:
     return payload
 
 
-async def build_ready_operation(req: ReadyRequest) -> dict:
+def _client_view(payload: dict) -> dict:
+    """Client sees the result and sources — not the devil's-advocate brief."""
+    out = dict(payload)
+    out.pop("risk_brief", None)
+    out.pop("news_brief", None)
+    out["eligible_for_live_trading"] = False
+    return out
+
+
+async def _load_sentiment(ticker: str, horizon: Horizon, news, market) -> tuple[dict | None, float]:
+    from app.models.sentiment_signal import build_signal, effective_weight
+    from app.services.sentiment_eval import evaluate_pairs
+
+    history: list = []
+    skill = None
+    try:
+        from app.db.sentiment import list_snapshots
+        history = await list_snapshots(ticker, horizon, limit=200)
+        skill = evaluate_pairs(history)
+    except Exception:
+        history = []
+    holding = int(HORIZONS[horizon]["holding_days"])
+    price = None
+    price_mom = None
+    if market and market.quote:
+        try:
+            price = float(market.quote.get("price") or market.quote.get("current_price") or 0) or None
+        except (TypeError, ValueError):
+            price = None
+    closes = (market.history or {}).get("close") or [] if market else []
+    if len(closes) > holding:
+        try:
+            price_mom = float(closes[-1] / closes[-1 - holding] - 1.0)
+        except (TypeError, ValueError, ZeroDivisionError):
+            price_mom = None
+    signal = build_signal(
+        ticker, horizon, news=news, history=history, price=price,
+        price_mom=price_mom, holding_days=holding,
+    )
+    return signal, effective_weight(skill)
+
+
+async def _persist_signal(signal: dict | None) -> None:
+    if not signal:
+        return
+    try:
+        from datetime import UTC, datetime
+
+        from app.db.sentiment import insert_snapshot, latest_snapshot
+        latest = await latest_snapshot(signal["ticker"], signal["horizon"])
+        if latest and latest.get("created_at"):
+            created = latest["created_at"]
+            if getattr(created, "tzinfo", None) is None:
+                created = created.replace(tzinfo=UTC)
+            age = datetime.now(UTC) - created
+            if age.total_seconds() < 180:
+                return
+        await insert_snapshot({
+            **signal,
+            "payload": {
+                "label": signal.get("label"),
+                "climate": signal.get("climate"),
+                "providers": signal.get("providers") or [],
+                "source_disagreement": bool(signal.get("source_disagreement")),
+            },
+        })
+    except Exception:
+        return
+
+
+async def build_ready_operation(
+    req: ReadyRequest,
+    *,
+    owner: str | None = None,
+    role: str | None = None,
+) -> dict:
     market = await asyncio.to_thread(load_market, req.ticker)
+    asset = resolve_asset(req.ticker)
+    asset_class = str((asset or {}).get("asset_class") or "equity_br")
+    news = await run_news_agent(req.ticker, req.horizon, asset_class=asset_class)
+    signal, weight = await _load_sentiment(req.ticker, req.horizon, news, market)
     payload = await asyncio.to_thread(
         assemble, req.ticker, req.instrument, req.horizon, market=market,
+        sentiment=signal, sentiment_weight=weight,
     )
-    return await _decorate_why(payload)
+    payload = await _decorate_why(payload)
+    risk = await run_risk_agent(payload, news)
+    payload = apply_context_risk(payload, news, risk)
+    payload["why"] = cite_sources(str(payload.get("why") or ""), news)
+    if payload.get("thermometer") is None and signal:
+        from app.models.sentiment_signal import thermometer_view
+        payload["thermometer"] = thermometer_view(signal)
+    payload.setdefault("arsenal", []).append({
+        "part": "Contexto (notícias/macro)",
+        "used": bool(news),
+        "note": "fontes públicas em cache; LLM não escolhe preço nem nível" if news
+        else "sem fonte pública — nenhum contexto inventado",
+    })
+    await _persist_signal(signal)
+    await record_audit(
+        owner=owner, role=role, ticker=req.ticker, horizon=req.horizon,
+        payload=payload, news=news, risk=risk,
+    )
+    return _client_view(payload)
 
 
 @router.post("/ready-operation")
 @limiter.limit("20/minute")
 async def ready_operation(request: Request, req: ReadyRequest, owner: str = Depends(get_current_user)):
-    return await build_ready_operation(req)
+    from app.db.database import get_user_by_username
+    user = await get_user_by_username(owner)
+    return await build_ready_operation(req, owner=owner, role=(user or {}).get("role"))
 
 
 async def _persist_watching(owner: str, assembled: dict) -> dict:
@@ -188,7 +294,9 @@ async def _persist_watching(owner: str, assembled: dict) -> dict:
 @router.post("/ready-operation/paper", status_code=201)
 @limiter.limit("10/minute")
 async def register_paper(request: Request, req: ReadyRequest, owner: str = Depends(get_current_user)):
-    assembled = await build_ready_operation(req)
+    from app.db.database import get_user_by_username
+    user = await get_user_by_username(owner)
+    assembled = await build_ready_operation(req, owner=owner, role=(user or {}).get("role"))
     if assembled.get("status") != "ready":
         raise HTTPException(409, assembled.get("reason") or "Sem operação para registrar.")
     if not assembled.get("suggested_size", {}).get("can_register_paper"):

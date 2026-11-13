@@ -297,6 +297,11 @@ async def test_api_ready_and_paper(monkeypatch):
     monkeypatch.setattr("app.api.client.load_market", fake_load)
     monkeypatch.setattr("app.services.client_arsenal.load_market", fake_load)
 
+    async def _no_news(*_a, **_k):
+        return None
+
+    monkeypatch.setattr("app.api.client.run_news_agent", _no_news)
+
     from app.api.client import router as client_router
     from app.api.paper_trades import router as paper_router
 
@@ -349,6 +354,11 @@ async def test_api_option_paper(monkeypatch):
     )
     monkeypatch.setattr("app.api.client.load_market", lambda ticker: view)
 
+    async def _no_news(*_a, **_k):
+        return None
+
+    monkeypatch.setattr("app.api.client.run_news_agent", _no_news)
+
     from app.api.client import router as client_router
 
     limiter.reset()
@@ -367,3 +377,46 @@ async def test_api_option_paper(monkeypatch):
     )
     assert tracked.status_code == 201, tracked.text
     assert tracked.json()["trade"]["status"] == "watching"
+
+
+@pytest.mark.asyncio
+async def test_api_ready_includes_thermometer(monkeypatch):
+    await database.create_user("alice", "alice@example.test", hash_password("a-secure-test-password"))
+    hist = _history(start=40, daily=0.005)
+    spot = hist["close"][-1]
+    view = MarketView(quote=_quote(spot), history=hist, regime={"regime": "trending", "kill_switch": {"armed": False}})
+    monkeypatch.setattr("app.api.client.load_market", lambda ticker: view)
+
+    from app.services.agents.schemas import NewsBrief
+
+    async def _news(*_a, **_k):
+        return NewsBrief.model_validate({
+            "eventos_proximos": [],
+            "sentimento": 0.7,
+            "riscos": [],
+            "fontes": [{
+                "titulo": "Petrobras sobe com recorde de produção",
+                "url": "https://www.bcb.gov.br/noticia",
+                "data": "2026-11-13",
+            }],
+        })
+
+    monkeypatch.setattr("app.api.client.run_news_agent", _news)
+
+    from app.api.client import router as client_router
+
+    limiter.reset()
+    app = FastAPI()
+    app.state.limiter = limiter
+    app.include_router(client_router, prefix="/api/client")
+    app.dependency_overrides[get_current_user] = lambda: "alice"
+    client = TestClient(app)
+    ready = client.post("/api/client/ready-operation", json={"ticker": "PETR4", "instrument": "spot", "horizon": "days"})
+    assert ready.status_code == 200, ready.text
+    body = ready.json()
+    assert body["thermometer"]["tone"] == "otimista"
+    assert "Clima do mercado para PETR4" in body["thermometer"]["label"]
+    assert body["thermometer"]["headlines"][0]["url"].startswith("https://")
+    assert body["eligible_for_live_trading"] is False
+    if body["status"] == "ready":
+        assert body["direction"] == "bullish"

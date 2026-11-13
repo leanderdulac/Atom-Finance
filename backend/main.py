@@ -86,6 +86,11 @@ async def lifespan(_app: FastAPI):
         if client_job_enabled():
             job_tasks.append(asyncio.create_task(client_arsenal_loop(), name="client-arsenal"))
             logger.info("Client arsenal cache job started")
+        from app.services.context_job import job_enabled as context_job_enabled
+        from app.services.context_job import loop as context_job_loop
+        if context_job_enabled():
+            job_tasks.append(asyncio.create_task(context_job_loop(), name="context-prewarm"))
+            logger.info("Context prewarm job started")
         try:
             yield
         finally:
@@ -277,8 +282,14 @@ def _health_payload() -> dict:
             "brapi": {"configured": _credential_configured("BRAPI_TOKEN")},
         },
         "ai_configuration": {
-            provider: _credential_configured(env_name)
-            for provider, env_name in _AI_PROVIDER_ENV
+            **{
+                provider: _credential_configured(env_name)
+                for provider, env_name in _AI_PROVIDER_ENV
+            },
+            "gemini": (
+                _credential_configured("GEMINI_API_KEY")
+                or _credential_configured("GOOGLE_API_KEY")
+            ),
         },
         "client_mode": os.getenv("ATOM_CLIENT_MODE", "").strip().lower() in {"1", "true", "yes", "on"},
     }
