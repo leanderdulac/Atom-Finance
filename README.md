@@ -239,11 +239,12 @@ Key environment variables:
 - `ATOM_SEC_USER_AGENT` — SEC fair-access header for Form 4 pulls; must include a contact email (e.g. `ATOM Research desk@yourdomain.com`)
 
 **Context / thermometer (paper only).** Keys live in the local `.env` — never commit them.
-- `XAI_API_KEY` + `XAI_MODEL` (default `grok-4.3`) — Grok Responses API with `web_search` and `x_search` (X/trends + web). Cap: `ATOM_XAI_MAX_CALLS_PER_HOUR=60`. Cache: `ATOM_XAI_CACHE_TTL=900`.
-- `OPENAI_API_KEY` + `OPENAI_MODEL` (default `gpt-5-mini`) — OpenAI Responses API with `web_search` (web/news). Cap: `ATOM_OPENAI_MAX_CALLS_PER_HOUR=60`. Cache: `ATOM_OPENAI_CACHE_TTL=900`. Estimated USD per call: `GET /api/desk/openai-costs`. Live test: `ATOM_OPENAI_LIVE=1 pytest -m openai` (skipped without the key).
-- The thermometer score is the **weighted consensus** of Grok and OpenAI. Strong disagreement between them lowers confidence. `ATOM_SENTIMENT_WEIGHT=0.2` (does not rise without the skill report).
-- Devil's advocate: `ATOM_RISK_PROVIDER` empty → OpenAI when the key exists, otherwise Ollama. Force `openai`, `xai`, or `ollama`.
-- The LLM never picks entry, stop, or target.
+- `XAI_API_KEY` + `XAI_MODEL` (default `grok-4.3`) — Grok Responses API with `web_search` and `x_search` (X/trends + web). Cap: `ATOM_XAI_MAX_CALLS_PER_HOUR=60`.
+- `OPENAI_API_KEY` + `OPENAI_MODEL` (default `gpt-5-mini`) — OpenAI Responses API with `web_search` (web/news). Cap: `ATOM_OPENAI_MAX_CALLS_PER_HOUR=60`. Live test: `ATOM_OPENAI_LIVE=1 pytest -m openai`.
+- `GEMINI_API_KEY` + `GEMINI_MODEL` (default `gemini-2.5-flash`; optional `gemini-2.5-pro` or `gemini-3.1-pro-preview`) — Gemini v1beta / `google-genai` with Google Search grounding (Google News, pt-BR for B3). Cap: `ATOM_GEMINI_MAX_CALLS_PER_HOUR=60`. Live test: `ATOM_GEMINI_LIVE=1 pytest -m gemini`.
+- All three are optional and independent: if one fails, consensus uses the rest. The thermometer score is the **weighted consensus**; high dispersion lowers confidence. Cache 15 min Redis. Estimated USD: `GET /api/desk/llm-costs`. `ATOM_SENTIMENT_WEIGHT=0.2`.
+- Devil's advocate: `ATOM_RISK_PROVIDER` empty → OpenAI when the key exists, otherwise Ollama. Force `openai`, `xai`, `gemini`, or `ollama`.
+- The LLM never picks entry, stop, or target. Never commit API keys.
 
 See [.env.example](.env.example) for the full list, including AI provider keys and market data providers. Mac tunnel: [ops/macos/README.md](ops/macos/README.md).
 

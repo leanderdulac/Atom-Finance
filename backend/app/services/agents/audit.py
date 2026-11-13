@@ -17,9 +17,9 @@ AUDIT_TTL = 7 * 24 * 3600
 AUDIT_MAX = 200
 
 
-def _openai_costs() -> list[dict[str, Any]]:
+def _llm_costs() -> list[dict[str, Any]]:
     try:
-        from app.services.agents.openai_news import recent_costs
+        from app.services.agents.cost_log import recent_costs
         return recent_costs(limit=8)
     except Exception:
         return []
@@ -60,7 +60,8 @@ def record_audit_sync(
         "sources": _public_sources(news),
         "providers": list((news.providers if news else None) or []),
         "source_disagreement": bool(news.source_disagreement) if news else False,
-        "openai_costs": _openai_costs(),
+        "llm_costs": _llm_costs(),
+        "openai_costs": _llm_costs(),
         "eligible_for_live_trading": False,
     }
     rows = Cache.get(AUDIT_KEY)

@@ -119,6 +119,8 @@ def build_signal(
         "label": climate_label(ticker, score),
         "xai_sentimento": news.xai_sentimento,
         "openai_sentimento": news.openai_sentimento,
+        "gemini_sentimento": news.gemini_sentimento,
+        "dispersion": news.dispersion,
         "source_disagreement": bool(news.source_disagreement),
         "providers": list(news.providers or []),
         "eligible_for_live_trading": False,

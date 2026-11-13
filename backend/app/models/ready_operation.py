@@ -562,7 +562,7 @@ def assemble(
         confidence = "baixa"
         _mark(
             contributions, "termômetro (fontes)", True,
-            "Grok e OpenAI divergem no clima — confiança reduzida; níveis do arsenal intactos",
+            "As fontes do clima divergem — confiança reduzida; níveis do arsenal intactos",
         )
     lot = float(asset.get("lot_size") or 1.0)
     qty, budget, can_lot, size_note = _size(capital, risk_pct, entry, invalidation, lot=lot)

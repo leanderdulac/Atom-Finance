@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from app.core.ai_factory import LLMException, LLMProvider
 from app.core.cache import Cache
 from app.core.quant_doctrine import compose_system
+from app.services.agents.cost_log import log_cost
 from app.services.agents.llm import parse_json_object
 from app.services.agents.schemas import NewsBrief
 from app.services.agents.xai import brief_from_xai as brief_from_citations
@@ -28,9 +29,6 @@ OPENAI_BASE = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-5-mini"
 CACHE_TTL_DEFAULT = 900
 CALLS_PER_HOUR_DEFAULT = 60
-COST_KEY = "atom:openai:costs"
-COST_TTL = 7 * 24 * 3600
-COST_MAX = 200
 # Published list prices change; these are estimates labelled as such in the diary.
 USD_PER_MTOK_IN = 0.25
 USD_PER_MTOK_OUT = 2.00
@@ -119,33 +117,12 @@ def _web_search_calls(payload: dict[str, Any]) -> int:
     return n
 
 
-def log_cost(entry: dict[str, Any]) -> dict[str, Any]:
-    row = {
-        **entry,
-        "at": datetime.now(UTC).isoformat(),
-        "eligible_for_live_trading": False,
-        "estimate": True,
-    }
-    rows = Cache.get(COST_KEY)
-    if not isinstance(rows, list):
-        rows = []
-    rows.insert(0, row)
-    Cache.set(COST_KEY, rows[:COST_MAX], ex=COST_TTL)
-    return row
-
-
-def recent_costs(limit: int = 50) -> list[dict[str, Any]]:
-    rows = Cache.get(COST_KEY)
-    if not isinstance(rows, list):
-        return []
-    return rows[: max(1, min(limit, COST_MAX))]
-
-
 def _record_call_cost(payload: dict[str, Any], *, kind: str, ticker: str | None = None) -> dict[str, Any]:
     inn, out = _usage_tokens(payload)
     searches = _web_search_calls(payload)
     usd = estimate_usd(input_tokens=inn, output_tokens=out, web_search_calls=searches)
     return log_cost({
+        "provider": "openai",
         "kind": kind,
         "model": openai_model(),
         "input_tokens": inn,

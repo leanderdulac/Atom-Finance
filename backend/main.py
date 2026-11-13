@@ -282,8 +282,14 @@ def _health_payload() -> dict:
             "brapi": {"configured": _credential_configured("BRAPI_TOKEN")},
         },
         "ai_configuration": {
-            provider: _credential_configured(env_name)
-            for provider, env_name in _AI_PROVIDER_ENV
+            **{
+                provider: _credential_configured(env_name)
+                for provider, env_name in _AI_PROVIDER_ENV
+            },
+            "gemini": (
+                _credential_configured("GEMINI_API_KEY")
+                or _credential_configured("GOOGLE_API_KEY")
+            ),
         },
         "client_mode": os.getenv("ATOM_CLIENT_MODE", "").strip().lower() in {"1", "true", "yes", "on"},
     }

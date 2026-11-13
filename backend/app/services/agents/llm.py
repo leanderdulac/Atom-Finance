@@ -158,6 +158,11 @@ def get_agent_llm() -> LLMProvider | None:
         if openai_configured():
             return OpenAIProvider()
         return None
+    if kind in {"gemini", "google"}:
+        from app.services.agents.gemini_news import GeminiNewsProvider, gemini_configured
+        if gemini_configured():
+            return GeminiNewsProvider()
+        return None
     mapping = CLOUD_KEYS.get(kind)
     if not mapping:
         logger.info("ATOM_AGENT_LLM=%s unknown — no agent LLM", kind)
@@ -174,7 +179,7 @@ def get_agent_llm() -> LLMProvider | None:
 def get_risk_llm() -> LLMProvider | None:
     """Devil's advocate. Default: OpenAI when the key exists, else Ollama.
 
-    ATOM_RISK_PROVIDER=openai|xai|ollama. Missing key → Ollama fallback.
+    ATOM_RISK_PROVIDER=openai|xai|gemini|ollama. Missing key → Ollama fallback.
     """
     kind = (os.getenv("ATOM_RISK_PROVIDER") or "").strip().lower()
     if not kind:
@@ -190,6 +195,11 @@ def get_risk_llm() -> LLMProvider | None:
         if xai_configured():
             return XAIProvider()
         logger.info("ATOM_RISK_PROVIDER=xai but XAI_API_KEY empty — Ollama fallback")
+    elif kind in {"gemini", "google"}:
+        from app.services.agents.gemini_news import GeminiNewsProvider, gemini_configured
+        if gemini_configured():
+            return GeminiNewsProvider()
+        logger.info("ATOM_RISK_PROVIDER=gemini but GEMINI_API_KEY empty — Ollama fallback")
     if ollama_configured():
         return OllamaProvider()
     return None
