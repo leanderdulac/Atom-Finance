@@ -50,14 +50,15 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.lock
 
-      # Pinned to 16 to match the postgres:16 service above. The apt
-      # "postgresql-client" meta-package rolled to v18 on the runner image
-      # (2026-11-12): a v18 pg_restore emitted `SET transaction_timeout` (a
-      # PG18-only parameter) against the PG16 service and the
-      # backup/restore test failed with "unrecognized configuration
-      # parameter". Server and client must come from the same major.
+      # Server image and apt client must share the major: the runner image
+      # rolled to Ubuntu 26.04 (2026-11-12) — 'resolute' apt has no
+      # postgresql-client-16 anymore, and a client newer than the service
+      # emits service-only parameters (pg_restore v18 `SET
+      # transaction_timeout` crashed against PG16's backup/restore test).
+      # The service here tracks the distro's client major (18 today);
+      # bump this tag together with the runner image in the future.
       - name: Install postgresql-client (pg_dump/pg_restore for the backup/restore test)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client-16
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
       - name: Install dependencies
         run: pip install -r requirements.lock
