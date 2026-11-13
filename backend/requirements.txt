@@ -5,7 +5,7 @@ pydantic~=2.9.2
 
 # Authentication
 PyJWT[crypto]>=2.15.0,<3
-bcrypt~=4.2.0
+bcrypt~=5.0.0
 python-multipart~=0.0.12
 
 # Quantitative Finance
