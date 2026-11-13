@@ -1,5 +1,5 @@
 # Core Framework
-fastapi>=0.135.0,<1
+fastapi>=0.162.2,<1
 uvicorn[standard]~=0.30.6
 pydantic~=2.9.2
 
