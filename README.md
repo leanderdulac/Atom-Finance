@@ -1,5 +1,7 @@
 > Produção: consulte [o runbook do piloto privado](docs/PRODUCTION.md) antes de implantar. Planejamento condicional não autoriza negociação real.
 
+> **Mac público (túnel Cloudflare):** o cliente vê só [Operação pronta](/cliente) e [Meu plano](/cliente/plano). Um túnel para a porta da UI basta (`/api` é proxy na mesma origem). Portas, `ATOM_VENV`, quick tunnel e `SECRET_KEY` automático: [ops/macos/README.md](ops/macos/README.md). Paper only — sem ordens reais.
+
 > **Produto atual: ATOM Research — piloto local.** A jornada principal é hipótese → avaliação temporal → diário → decisão de pesquisa. Veja [escopo, limites e critérios do piloto](docs/PRODUCT-PILOT.md). Descrições legadas abaixo não representam validação institucional nem autorização de negociação.
 
 # ATOM - Advanced Trading & Options Modeler

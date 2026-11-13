@@ -127,6 +127,14 @@ export const api = {
   refresh: () => refreshAccessToken(),
   logout: () => request<{ message: string }>('/auth/logout', { method: 'POST', body: '{}' }),
   me: () => request<{ username: string; email?: string; role?: string }>('/auth/me'),
+  clientConfig: () => request<{
+    client_mode: boolean; universe: unknown[]; instruments: unknown[];
+    horizons: unknown[]; disclaimer: string; eligible_for_live_trading: boolean;
+  }>('/client/config'),
+  clientReadyOperation: (data: { ticker: string; instrument: string; horizon: string }) =>
+    request<unknown>('/client/ready-operation', { method: 'POST', body: JSON.stringify(data) }),
+  clientReadyPaper: (data: { ticker: string; instrument: string; horizon: string }) =>
+    request<unknown>('/client/ready-operation/paper', { method: 'POST', body: JSON.stringify(data) }),
 
   // Pricing
   blackScholes: (data: any) => request('/pricing/black-scholes', { method: 'POST', body: JSON.stringify(data) }),

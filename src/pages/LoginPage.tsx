@@ -29,7 +29,8 @@ export default function LoginPage() {
     try {
       if (tab === 0) await login(username, password);
       else await register(username, email, password);
-      navigate('/dashboard');
+      try { localStorage.removeItem('atom.operatorMode'); } catch { /* ignore */ }
+      navigate('/cliente');
     } catch (err: any) {
       setError(err.message || 'Erro desconhecido.');
     } finally {

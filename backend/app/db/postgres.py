@@ -57,10 +57,12 @@ async def get_pool() -> asyncpg.Pool:
         logger.warning("Event loop changed since the pool was created — discarding the stale pool.")
         _pool = None
     if _pool is None:
+        from app.core.compute import db_pool_max, db_pool_min
+
         _pool = await asyncpg.create_pool(
             _database_url(),
-            min_size=1,
-            max_size=10,
+            min_size=db_pool_min(),
+            max_size=db_pool_max(),
             init=_init_connection,
         )
         _pool_loop = current_loop

@@ -36,7 +36,7 @@ async def test_all_business_routes_require_auth(isolated):
     client = TestClient(app)
     checked = 0
     for path, operations in app.openapi()['paths'].items():
-        if path in {'/api/health', '/api/live', '/api/auth/login', '/api/auth/register'}:
+        if path in {'/api/health', '/api/live', '/api/auth/login', '/api/auth/register', '/api/client/config'}:
             continue
         path = re.sub(r"\{[^}]+\}", "1", path)
         for method in operations:
