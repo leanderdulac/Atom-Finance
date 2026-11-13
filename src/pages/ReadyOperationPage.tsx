@@ -1,15 +1,22 @@
 /**
- * Operação pronta — o cliente escolhe ativo, instrumento e horizonte.
- * O arsenal monta o restante. Sem ordem real, sem promessa de retorno.
+ * Tela única do cliente: ativo(s), horizonte, retorno desejado e tipo de operação.
+ * Meu plano (perfil + carteira) vive aqui. Sem menu de mesa.
  */
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider,
   Stack, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import { api } from '../services/api';
 import { useClientConfig, type ClientAsset } from '../contexts/ClientModeContext';
+import {
+  PROFILE_QUESTIONS,
+  SLEEVES,
+  profileFor,
+  recommendedProfile,
+  type ProfileAnswers,
+  type Sleeve,
+} from '../data/investorProfiles';
 
 type ReadyBody = {
   status: 'ready' | 'insufficient';
@@ -25,18 +32,17 @@ type ReadyBody = {
   target?: number;
   quantity?: number;
   suggested_size?: { quantity: number; risk_budget_brl: number; can_register_paper: boolean; paper_block?: string | null };
-  greeks?: { delta: number; gamma: number; theta: number; vega: number; price: number } | null;
   confidence?: string;
   invalidation_reason?: string;
   why?: string;
   reason?: string;
   disclaimer?: string;
-  arsenal?: { part: string; used: boolean; note: string }[];
   eligible_for_live_trading?: boolean;
 };
 
 const money = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 });
 const num = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const pct = (n: number) => `${(n * 100).toFixed(1).replace('.', ',')}%`;
 
 const directionLabel: Record<string, string> = { bullish: 'Alta', bearish: 'Baixa' };
 const strategyLabel: Record<string, string> = {
@@ -56,19 +62,43 @@ export default function ReadyOperationPage() {
   const instruments = cfg.instruments.length ? cfg.instruments : FALLBACK_INSTRUMENTS;
   const horizons = cfg.horizons.length ? cfg.horizons : FALLBACK_HORIZONS;
 
+  const [sleeve, setSleeve] = useState<Sleeve>('equities');
   const [ticker, setTicker] = useState('PETR4');
   const [instrument, setInstrument] = useState('spot');
   const [horizon, setHorizon] = useState('weeks');
+  const [answers, setAnswers] = useState<ProfileAnswers>({ horizon: null, drop: null, goal: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<ReadyBody | null>(null);
   const [paperMsg, setPaperMsg] = useState('');
+  const skipAuto = useRef(true);
+
+  const visibleAssets = useMemo(() => {
+    if (sleeve === 'crypto') return universe.filter((row) => row.asset_class === 'crypto');
+    if (sleeve === 'equities') return universe.filter((row) => row.asset_class !== 'crypto');
+    return universe;
+  }, [universe, sleeve]);
 
   const asset = useMemo(
     () => universe.find((row) => row.id === ticker) as ClientAsset | undefined,
     [universe, ticker],
   );
   const allowed = asset?.instruments ?? ['spot'];
+  const answered = answers.horizon !== null && answers.drop !== null && answers.goal !== null;
+  const profile = answered ? recommendedProfile(answers, sleeve) : profileFor('moderado', sleeve);
+
+  useEffect(() => {
+    if (!visibleAssets.length) return;
+    if (!visibleAssets.some((row) => row.id === ticker)) {
+      setTicker(visibleAssets[0].id);
+    }
+  }, [visibleAssets, ticker]);
+
+  useEffect(() => {
+    if (asset && !asset.instruments.includes(instrument)) {
+      setInstrument(asset.instruments[0] || 'spot');
+    }
+  }, [asset, instrument]);
 
   async function assemble() {
     setBusy(true); setError(''); setPaperMsg(''); setResult(null);
@@ -79,6 +109,16 @@ export default function ReadyOperationPage() {
       setError(e instanceof Error ? e.message : 'Não foi possível montar a operação.');
     } finally { setBusy(false); }
   }
+
+  useEffect(() => {
+    if (skipAuto.current) {
+      skipAuto.current = false;
+      return;
+    }
+    void assemble();
+    // assemble when the vehicle changes — the Mac bug was "troquei para BTC e não carregou"
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, instrument, horizon]);
 
   async function registerPaper() {
     setBusy(true); setError(''); setPaperMsg('');
@@ -95,12 +135,11 @@ export default function ReadyOperationPage() {
       <Box>
         <Chip label="Cliente · simulação paper · sem ordens reais" size="small" />
         <Typography variant="h4" component="h1" sx={{ mt: 2, fontWeight: 750, letterSpacing: '-0.03em' }}>
-          Três escolhas. A operação vem pronta.
+          Escolha o ativo, o tempo, o retorno e o tipo. A operação vem pronta.
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 1 }}>
-          Você escolhe o ativo, se a operação é à vista, opção ou futuro, e por quanto tempo.
-          O arsenal da mesa monta o resto — ou diz, com honestidade, que não tem dado nem sinal suficiente.
-          Isto é cenário, não recomendação, e não promete retorno.
+          Quatro escolhas. O arsenal monta entrada, stop, alvo e tamanho — ou diz, com honestidade,
+          que não tem dado nem sinal suficiente. Isto é cenário, não recomendação, e não promete retorno.
         </Typography>
       </Box>
 
@@ -111,20 +150,31 @@ export default function ReadyOperationPage() {
 
       <Card>
         <CardContent>
-          <Typography variant="overline" color="text.secondary">1 · O ativo</Typography>
+          <Typography variant="overline" color="text.secondary">1 · Os ativos</Typography>
           <ToggleButtonGroup
             exclusive
-            value={ticker}
-            onChange={(_, v) => {
+            value={sleeve}
+            onChange={(_, v: Sleeve | null) => {
               if (!v) return;
-              setTicker(v);
+              setSleeve(v);
               setResult(null);
-              const next = universe.find((row) => row.id === v);
-              if (next && !next.instruments.includes(instrument)) setInstrument('spot');
             }}
             sx={{ flexWrap: 'wrap', gap: 1, mt: 1 }}
           >
-            {universe.map((row) => (
+            {SLEEVES.map((row) => (
+              <ToggleButton key={row.id} value={row.id} aria-label={row.label}>{row.label}</ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.5 }}>
+            {SLEEVES.find((row) => row.id === sleeve)?.hint}
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            value={ticker}
+            onChange={(_, v) => { if (v) { setTicker(v); setResult(null); } }}
+            sx={{ flexWrap: 'wrap', gap: 1, mt: 2 }}
+          >
+            {visibleAssets.map((row) => (
               <ToggleButton key={row.id} value={row.id} aria-label={row.label}>{row.label}</ToggleButton>
             ))}
           </ToggleButtonGroup>
@@ -133,10 +183,82 @@ export default function ReadyOperationPage() {
 
       <Card>
         <CardContent>
-          <Typography variant="overline" color="text.secondary">2 · O instrumento da operação</Typography>
+          <Typography variant="overline" color="text.secondary">2 · O tempo</Typography>
+          <ToggleButtonGroup
+            exclusive
+            value={horizon}
+            onChange={(_, v) => { if (v) { setHorizon(v); setResult(null); } }}
+            sx={{ flexWrap: 'wrap', gap: 1, mt: 1 }}
+          >
+            {horizons.map((row) => (
+              <ToggleButton key={row.id} value={row.id} aria-label={row.label}>{row.label}</ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Typography variant="overline" color="text.secondary">3 · O retorno desejado</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Não é um segundo ticker: é <em>como</em> operar o ativo acima
-            (à vista, opção ou futuro/perpétuo — só o que o arsenal realmente cobre).
+            Três perguntas curtas. Elas definem o perfil (conservador, moderado ou arrojado) e a carteira sugerida na classe que você escolheu.
+          </Typography>
+          {PROFILE_QUESTIONS.map((q) => (
+            <Box key={q.id} sx={{ mt: 2 }}>
+              <Typography variant="body2" fontWeight={600}>{q.question}</Typography>
+              <ToggleButtonGroup
+                exclusive
+                value={answers[q.id]}
+                onChange={(_, v: number | null) => {
+                  if (v === null) return;
+                  setAnswers((prev) => ({ ...prev, [q.id]: v }));
+                }}
+                sx={{ flexWrap: 'wrap', gap: 1, mt: 1 }}
+              >
+                {q.options.map((option) => (
+                  <ToggleButton key={option.label} value={option.value} aria-label={option.label}>
+                    {option.label}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+            </Box>
+          ))}
+          {answered && (
+            <Chip
+              label={`Perfil sugerido: ${profile.label}`}
+              sx={{ mt: 2, bgcolor: profile.bgColor, color: profile.color, fontWeight: 600 }}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card sx={{ border: '1px solid', borderColor: answered ? 'warning.main' : 'divider' }}>
+        <CardContent>
+          <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {profile.label}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            {profile.description} Carteira na classe {SLEEVES.find((row) => row.id === sleeve)?.label.toLowerCase()}.
+          </Typography>
+          <Stack spacing={1} sx={{ mt: 2 }}>
+            {profile.assets.map((row) => (
+              <Box key={row.ticker} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                <Typography>{row.ticker}</Typography>
+                <Typography fontWeight={700}>{pct(row.weight)}</Typography>
+              </Box>
+            ))}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
+            Mix ilustrativo para este perfil, não uma ordem. Os pesos não prometem retorno.
+          </Typography>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Typography variant="overline" color="text.secondary">4 · O tipo de operação</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Como operar o ativo acima (à vista, opção ou futuro/perpétuo — só o que o arsenal realmente cobre).
           </Typography>
           <ToggleButtonGroup
             exclusive
@@ -161,22 +283,6 @@ export default function ReadyOperationPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent>
-          <Typography variant="overline" color="text.secondary">3 · O tempo</Typography>
-          <ToggleButtonGroup
-            exclusive
-            value={horizon}
-            onChange={(_, v) => { if (v) { setHorizon(v); setResult(null); } }}
-            sx={{ flexWrap: 'wrap', gap: 1, mt: 1 }}
-          >
-            {horizons.map((row) => (
-              <ToggleButton key={row.id} value={row.id} aria-label={row.label}>{row.label}</ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-        </CardContent>
-      </Card>
-
       <Box>
         <Button
           size="large"
@@ -187,7 +293,6 @@ export default function ReadyOperationPage() {
         >
           Montar operação
         </Button>
-        <Button component={Link} to="/cliente/plano" sx={{ ml: 2 }}>Ver meu plano de investimento</Button>
       </Box>
 
       {error && <Alert severity="error">{error}</Alert>}
@@ -232,17 +337,13 @@ export default function ReadyOperationPage() {
                 {result.structure?.expiry ? ` · prazo até ${result.structure.expiry}` : null}
               </Typography>
             )}
-            {result.greeks && (
-              <Typography variant="body2" sx={{ mt: 1 }}>
-                Gregas da perna comprada (Black–Scholes, σ do arsenal):
-                delta {num(result.greeks.delta)}, gamma {num(result.greeks.gamma)},
-                theta {num(result.greeks.theta)}, vega {num(result.greeks.vega)}.
-              </Typography>
-            )}
             {result.structure?.legs?.length ? (
               <Typography variant="body2" sx={{ mt: 1 }}>
                 Estrutura:{' '}
-                {result.structure.legs.map((leg) => `${leg.side} ${leg.quantity} ${leg.symbol} K=${leg.strike}`).join(' · ')}
+                {result.structure.legs.map((leg) => {
+                  const side = leg.side === 'buy' ? 'compra' : 'venda';
+                  return `${side} de ${num(leg.quantity)} ${leg.symbol}`;
+                }).join(' · ')}
               </Typography>
             ) : null}
             <Stack direction="row" spacing={2} sx={{ mt: 3 }} flexWrap="wrap" useFlexGap>
@@ -260,7 +361,7 @@ export default function ReadyOperationPage() {
               )}
             </Stack>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
-              {result.disclaimer} eligible_for_live_trading={String(result.eligible_for_live_trading)}.
+              {result.disclaimer}
             </Typography>
           </CardContent>
         </Card>
@@ -286,11 +387,12 @@ const FALLBACK_UNIVERSE: ClientAsset[] = [
   { id: 'WEGE3', label: 'WEG (WEGE3)', asset_class: 'equity_br', instruments: ['spot', 'option'] },
   { id: 'BTC', label: 'Bitcoin', asset_class: 'crypto', instruments: ['spot', 'future'] },
   { id: 'ETH', label: 'Ethereum', asset_class: 'crypto', instruments: ['spot', 'future'] },
+  { id: 'SOL', label: 'Solana', asset_class: 'crypto', instruments: ['spot', 'future'] },
 ];
 const FALLBACK_INSTRUMENTS = [
   { id: 'spot', label: 'À vista (ação ou cripto)', hint: 'Compra ou venda simulada do próprio ativo.' },
   { id: 'option', label: 'Opção', hint: 'Estrutura condicional se o arsenal tiver livro com bid, ask e quantidade.' },
-  { id: 'future', label: 'Futuro / perpétuo', hint: 'Só BTC e ETH, via feed público da Binance.' },
+  { id: 'future', label: 'Futuro / perpétuo', hint: 'Só BTC, ETH e SOL, via feed público da Binance.' },
 ];
 const FALLBACK_HORIZONS = [
   { id: 'days', label: 'Alguns dias', holding_days: 5 },

@@ -33,6 +33,7 @@ export default function LoginPage() {
     try {
       if (tab === 0) await login(username, password);
       else await register(username, email, password);
+      try { localStorage.removeItem('atom.operatorMode'); } catch { /* ignore */ }
       navigate(clientCfg.client_mode ? '/cliente' : (from.startsWith('/') && !from.startsWith('//') ? from : '/dashboard'), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido.');

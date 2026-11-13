@@ -46,14 +46,26 @@ UNIVERSE: list[dict[str, Any]] = [
      "quote_symbol": "WEGE3", "yahoo": "WEGE3.SA", "instruments": ["spot", "option"]},
     {"id": "BTC", "label": "Bitcoin", "asset_class": "crypto",
      "quote_symbol": "BTC-USD", "yahoo": "BTC-USD", "binance": "BTCUSDT",
-     "instruments": ["spot", "future"]},
+     "instruments": ["spot", "future"], "lot_size": 0.0001},
     {"id": "ETH", "label": "Ethereum", "asset_class": "crypto",
      "quote_symbol": "ETH-USD", "yahoo": "ETH-USD", "binance": "ETHUSDT",
-     "instruments": ["spot", "future"]},
+     "instruments": ["spot", "future"], "lot_size": 0.001},
+    {"id": "SOL", "label": "Solana", "asset_class": "crypto",
+     "quote_symbol": "SOL-USD", "yahoo": "SOL-USD", "binance": "SOLUSDT",
+     "instruments": ["spot", "future"], "lot_size": 0.01},
 ]
 UNIVERSE_BY_ID = {row["id"]: row for row in UNIVERSE}
 
 MIN_HISTORY = 60
+_CLIENT_JARGON = (
+    "z_score", "z-score", "eligible_for_live_trading", "ewma", "garch",
+    "hurst", "kill_switch", "horizon_vol",
+)
+_REGIME_PT = {
+    "trending": "em tendência",
+    "mean_reverting": "em oscilação",
+    "high_vol": "com volatilidade alta",
+}
 
 
 @dataclass
@@ -76,7 +88,10 @@ def universe_public() -> list[dict[str, Any]]:
 
 def resolve_asset(ticker: str) -> dict[str, Any] | None:
     key = ticker.strip().upper()
-    aliases = {"BTC-USD": "BTC", "ETH-USD": "ETH", "BTCUSDT": "BTC", "ETHUSDT": "ETH"}
+    aliases = {
+        "BTC-USD": "BTC", "ETH-USD": "ETH", "SOL-USD": "SOL",
+        "BTCUSDT": "BTC", "ETHUSDT": "ETH", "SOLUSDT": "SOL",
+    }
     return UNIVERSE_BY_ID.get(aliases.get(key, key))
 
 
@@ -149,8 +164,9 @@ def _garch_vol(returns: np.ndarray) -> tuple[float | None, dict | None]:
 
 
 def _levels(spot: float, direction: str, horizon_vol: float) -> tuple[float, float, float]:
-    width_stop = 1.5 * horizon_vol
-    width_tgt = 2.0 * horizon_vol
+    """Stop/target as 1× / 1.6× of horizon vol, clipped so crypto months stay sane."""
+    width_stop = float(np.clip(horizon_vol, 0.02, 0.12))
+    width_tgt = width_stop * 1.6
     if direction == "bullish":
         entry = round(spot * 1.002, 6)
         invalidation = max(spot * (1 - width_stop), spot * 0.05)
@@ -167,14 +183,23 @@ def _size(capital: float, risk_pct: float, entry: float, invalidation: float, lo
     per_unit = abs(entry - invalidation)
     if per_unit <= 1e-12:
         return 0.0, budget, False, "Distância até a invalidação nula."
+    lot = lot if lot > 0 else 1.0
     raw = budget / per_unit
-    qty = floor(raw / lot) * lot
+    qty = floor(raw / lot + 1e-12) * lot
     if qty < lot:
-        return round(raw, 6), budget, False, (
-            "O capital paper padrão não cabe um lote inteiro com este stop. "
-            "A operação aparece como cenário; o diário não registra fração abaixo do lote."
+        return round(raw, 8), budget, False, (
+            "O orçamento paper deste cenário não cabe o lote mínimo deste ativo. "
+            "A tela mostra o tamanho fracionário; o diário só registra a partir do lote."
         )
-    return float(qty), budget, True, None
+    return float(round(qty, 8)), budget, True, None
+
+
+def client_facing_why(text: str | None, fallback: str) -> str:
+    """Drop model-variable names if the LLM (or a template) leaked them."""
+    lowered = (text or "").lower()
+    if not text or any(token in lowered for token in _CLIENT_JARGON):
+        return fallback
+    return text
 
 
 def _why_fallback(payload: dict[str, Any]) -> str:
@@ -184,12 +209,14 @@ def _why_fallback(payload: dict[str, Any]) -> str:
             "Nenhuma ordem foi enviada."
         )
     direction = "alta" if payload["direction"] == "bullish" else "baixa"
+    label = payload.get("label") or payload.get("ticker")
+    local = _REGIME_PT.get((payload.get("regime") or {}).get("local", ""), "no mercado recente")
     conf = payload.get("confidence", "baixa")
-    invalid = payload.get("invalidation_reason")
+    invalid = payload.get("invalidation_reason") or ""
     return (
-        f"Cenário {direction} em {payload['ticker']} no horizonte {payload['horizon_label']}, "
-        f"com confiança {conf}. O arsenal usou cotação, volatilidade e regime — "
-        f"não uma previsão de lucro. {invalid} Simulação paper; eligible_for_live_trading é sempre falso."
+        f"O movimento recente de {label} ({local}) levou o arsenal a montar um cenário de {direction} "
+        f"no horizonte {payload['horizon_label']}, com confiança {conf}. "
+        f"{invalid} Isto é simulação paper, não uma recomendação, e nenhuma ordem vai à corretora."
     )
 
 
@@ -209,12 +236,14 @@ def _spot_plan(
     capital: float,
     risk_pct: float,
     now: datetime,
+    lot: float = 1.0,
 ) -> dict[str, Any]:
-    qty = int(quantity) if quantity >= 1 else 0
+    qty = float(quantity) if quantity and quantity > 0 else 0.0
     close_by = (now.date() + timedelta(days=holding_days)).isoformat()
     side = "buy" if direction == "bullish" else "sell"
     debit = abs(entry)  # per unit; shorts are handled as credit on open
-    risk = abs(entry - invalidation) * max(qty, 1)
+    sized = qty if qty > 0 else lot
+    risk = abs(entry - invalidation) * sized
     return {
         "ticker": ticker,
         "direction": "long_bias" if direction == "bullish" else "short_bias",
@@ -227,7 +256,7 @@ def _spot_plan(
             "kind": "spot" if instrument == "spot" else "future",
             "strike": round(spot, 4),
             "limit_reference": round(entry, 6),
-            "quantity": max(qty, 1),
+            "quantity": sized,
             "exercise": "european",
         }],
         "expiry": close_by,
@@ -254,9 +283,9 @@ def _spot_plan(
                 "Limiares não garantem preço de saída."
             ),
         },
-        "quantity_per_leg": max(qty, 1),
+        "quantity_per_leg": sized if qty > 0 else 0,
         "multiplier": 1,
-        "lot_size": 1,
+        "lot_size": lot,
         "premium_outlay_brl": round(qty * entry, 2) if side == "buy" and qty else 0,
         "fees_reserved_brl": 0,
         "modeled_max_loss_brl": round(qty * abs(entry - invalidation), 2) if qty else round(risk, 2),
@@ -357,14 +386,14 @@ def assemble(
     if asset is None:
         return _insufficient(
             "Este ativo não está no universo que o arsenal serve ao cliente "
-            "(PETR4, VALE3, ITUB4, BBDC4, WEGE3, BTC, ETH).",
+            "(PETR4, VALE3, ITUB4, BBDC4, WEGE3, BTC, ETH, SOL).",
             contributions,
         )
     if instrument not in asset["instruments"]:
         if instrument == "future" and asset["asset_class"] == "equity_br":
             return _insufficient(
                 "O arsenal não tem livro de futuro B3 para este ativo. "
-                "Futuro/perpétuo automático existe só para BTC e ETH (Binance público).",
+                "Futuro/perpétuo automático existe só para BTC, ETH e SOL (Binance público).",
                 contributions,
                 extra={"ticker": asset["id"], "available_instruments": asset["instruments"]},
             )
@@ -383,7 +412,8 @@ def assemble(
 
     if market is None:
         return _insufficient(
-            "Sem cotação ou histórico de mercado para este ativo agora. O ATOM não inventa preço.",
+            f"Sem cotação ou histórico de mercado para {asset['id']} agora. "
+            "O ATOM não inventa preço. Tente de novo em instantes ou escolha outro ativo.",
             contributions,
         )
 
@@ -473,7 +503,8 @@ def assemble(
     entry, invalidation, target = _levels(spot, direction, horizon_vol)
     strength = abs(mom) / max(horizon_vol, 1e-9)
     confidence = _confidence(strength, desk_regime)
-    qty, budget, can_lot, size_note = _size(capital, risk_pct, entry, invalidation)
+    lot = float(asset.get("lot_size") or 1.0)
+    qty, budget, can_lot, size_note = _size(capital, risk_pct, entry, invalidation, lot=lot)
     invalidation_reason = (
         f"A tese cai se o preço cruzar {invalidation:.4g} "
         f"({('abaixo' if direction == 'bullish' else 'acima')} do gatilho) "
@@ -585,7 +616,7 @@ def assemble(
             ticker=asset["id"], direction=direction, instrument=instrument, strategy=strategy,
             spot=spot, entry=entry, invalidation=invalidation, target=target,
             holding_days=holding_days, quantity=qty, rationale=rationale,
-            capital=capital, risk_pct=risk_pct, now=now,
+            capital=capital, risk_pct=risk_pct, now=now, lot=lot,
         )
         structure = {"strategy": strategy, "legs": paper_plan["legs"], "expiry": paper_plan["expiry"]}
         if not can_paper:
@@ -641,21 +672,36 @@ def assemble(
         "arsenal": contributions,
         "disclaimer": (
             "Cenário/simulação montado pelo arsenal. Não é recomendação, não é ordem, "
-            "não promete retorno. eligible_for_live_trading é sempre falso."
+            "não promete retorno. Nenhuma ordem vai à corretora."
         ),
     }
     payload["why_fallback"] = _why_fallback(payload)
-    payload["why"] = payload["why_fallback"]
+    payload["why"] = client_facing_why(payload["why_fallback"], payload["why_fallback"])
     if garch_fit:
         payload["volatility"]["garch_persistence"] = garch_fit.get("persistence")
     return payload
 
 
 def facts_for_llm(payload: dict[str, Any]) -> str:
-    keys = (
-        "status", "ticker", "instrument", "horizon_label", "direction", "spot",
-        "entry", "invalidation", "target", "confidence", "invalidation_reason",
-        "regime", "volatility", "structure", "reason", "disclaimer",
+    if payload.get("status") == "insufficient":
+        return (
+            f"O arsenal recusou montar a operação. Motivo em português: {payload.get('reason')}. "
+            "Explique a recusa sem inventar tese e sem nomes de variáveis."
+        )
+    direction = "alta" if payload.get("direction") == "bullish" else "baixa"
+    local = _REGIME_PT.get((payload.get("regime") or {}).get("local", ""), "no mercado recente")
+    return (
+        f"Ativo: {payload.get('label') or payload.get('ticker')}\n"
+        f"Direção: {direction}\n"
+        f"Instrumento: {payload.get('instrument')}\n"
+        f"Horizonte: {payload.get('horizon_label')}\n"
+        f"Preço agora: {payload.get('spot')}\n"
+        f"Entrada: {payload.get('entry')}\n"
+        f"Invalidação (stop): {payload.get('invalidation')}\n"
+        f"Alvo: {payload.get('target')}\n"
+        f"Confiança: {payload.get('confidence')}\n"
+        f"Leitura de mercado: {local}\n"
+        f"Por que a tese cai: {payload.get('invalidation_reason')}\n"
+        "Redija em português simples. Proibido citar nomes técnicos "
+        "(z_score, EWMA, GARCH, Hurst, eligible_for_live_trading)."
     )
-    lines = [f"{k}: {payload.get(k)}" for k in keys if k in payload]
-    return "\n".join(lines)

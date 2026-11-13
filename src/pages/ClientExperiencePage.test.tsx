@@ -62,6 +62,17 @@ describe('ClientExperiencePage', () => {
     );
   });
 
+  it('suggests Arrojado for mid horizon, patience and max return', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await answerQuiz(user, [
+      'Entre 1 e 3 anos',
+      'Não mexeria e esperaria',
+      'Buscar o maior retorno possível',
+    ]);
+    expect(screen.getByText('Perfil sugerido: Arrojado')).toBeInTheDocument();
+  });
+
   it('suggests the conservative profile for a short horizon and loss aversion', async () => {
     const user = userEvent.setup();
     renderPage();

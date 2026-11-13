@@ -39,7 +39,7 @@ describe('App routing', () => {
     });
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByText(/três escolhas\. a operação vem pronta/i)).toBeInTheDocument()
+      expect(screen.getByText(/a operação vem pronta/i)).toBeInTheDocument()
     );
     expect(screen.getByRole('button', { name: /começar/i })).toBeInTheDocument();
   });

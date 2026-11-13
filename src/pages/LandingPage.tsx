@@ -18,10 +18,10 @@ export default function LandingPage() {
           <Box component="main" sx={{ py: { xs: 6, md: 10 } }}>
             <Chip label="Simulação paper · sem ordens reais · sem promessa de retorno" sx={{ mb: 3, maxWidth: '100%', height: 'auto', '& .MuiChip-label': { whiteSpace: 'normal', py: 1 } }} />
             <Typography component="h1" sx={{ fontWeight: 750, fontSize: { xs: '2.4rem', md: '4rem' }, lineHeight: 1.08, letterSpacing: '-0.04em', maxWidth: 900 }}>
-              Três escolhas. A operação vem pronta.
+              Escolha o ativo, o tempo, o retorno e o tipo. A operação vem pronta.
             </Typography>
             <Typography sx={{ fontSize: '1.2rem', color: 'text.secondary', maxWidth: 690, mt: 3 }}>
-              Você escolhe o ativo, se opera à vista, opção ou futuro, e o tempo.
+              Você escolhe o(s) ativo(s), o horizonte, o retorno desejado e se opera à vista, opção ou futuro.
               O arsenal da mesa monta entrada, stop, alvo e tamanho — ou diz que não tem dado suficiente.
               Isto é cenário, não recomendação.
             </Typography>
@@ -31,9 +31,9 @@ export default function LandingPage() {
             </Stack>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 3, mt: 8 }}>
               {[
-                { icon: <ShowChart />, title: '01 · Ativo', text: 'PETR4, VALE3, Bitcoin, Ethereum — as fontes que o ATOM já usa, sem inventar preço.' },
-                { icon: <Science />, title: '02 · Instrumento', text: 'À vista, opção (se houver livro) ou futuro/perpétuo em cripto. Só o que o arsenal cobre.' },
-                { icon: <Assessment />, title: '03 · Tempo', text: 'Dias, semanas ou meses. O restante — regime, volatilidade, risco — corre sozinho.' },
+                { icon: <ShowChart />, title: '01 · Ativo', text: 'Ações B3, cripto (BTC, ETH, SOL) ou misto — as fontes que o ATOM já usa, sem inventar preço.' },
+                { icon: <Science />, title: '02 · Tempo e retorno', text: 'Horizonte e perfil (conservador, moderado, arrojado). A carteira segue a classe que você pediu.' },
+                { icon: <Assessment />, title: '03 · Tipo', text: 'À vista, opção (se houver livro) ou futuro/perpétuo em cripto. O restante corre sozinho.' },
               ].map((item) => (
                 <Card key={item.title} variant="outlined">
                   <CardContent sx={{ p: 3 }}>

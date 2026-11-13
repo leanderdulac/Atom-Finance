@@ -13,7 +13,7 @@ import {
   Tooltip as RTooltip, XAxis, YAxis,
 } from 'recharts';
 import { api } from '../services/api';
-import { INVESTOR_PROFILES, type Profile } from '../data/investorProfiles';
+import { INVESTOR_PROFILES, PROFILE_QUESTIONS, recommendedProfile, type Profile, type ProfileAnswers } from '../data/investorProfiles';
 
 // ── Types (same shape as /perfil-investidor and /simulacao-b3) ────────────────
 
@@ -43,38 +43,9 @@ type Scenario = { profile: Profile; sim: SimResult };
 
 const N_PATHS = 500;
 
-const QUESTIONS = [
-  {
-    id: 'horizon',
-    question: 'Quando você pretende usar esse dinheiro?',
-    options: [
-      { label: 'Em até 1 ano', value: 0, hint: 'Prazo curto: oscilação tem pouco tempo para se recuperar.' },
-      { label: 'Entre 1 e 3 anos', value: 1, hint: 'Prazo médio: dá para atravessar um ciclo ruim.' },
-      { label: 'Daqui a 3 anos ou mais', value: 2, hint: 'Prazo longo: o tempo trabalha a favor.' },
-    ],
-  },
-  {
-    id: 'drop',
-    question: 'Se a carteira caísse 20% em um mês, o que você faria?',
-    options: [
-      { label: 'Venderia para parar a perda', value: 0, hint: 'Perder no papel incomoda mais do que a chance de recuperar.' },
-      { label: 'Não mexeria e esperaria', value: 1, hint: 'Aguenta a queda sem mudar o plano.' },
-      { label: 'Aproveitaria para comprar mais', value: 2, hint: 'Queda é oportunidade, não motivo de saída.' },
-    ],
-  },
-  {
-    id: 'goal',
-    question: 'O que você quer desse investimento?',
-    options: [
-      { label: 'Proteger o que já tenho', value: 0, hint: 'Preservar vale mais que render.' },
-      { label: 'Crescer com equilíbrio', value: 1, hint: 'Render, mas sem sustos grandes.' },
-      { label: 'Buscar o maior retorno possível', value: 2, hint: 'Aceita oscilar muito para tentar render mais.' },
-    ],
-  },
-] as const;
+const QUESTIONS = PROFILE_QUESTIONS;
 
-type AnswerKey = (typeof QUESTIONS)[number]['id'];
-type Answers = Record<AnswerKey, number | null>;
+type Answers = ProfileAnswers;
 
 const HORIZON_YEARS = [1, 3, 5] as const;
 
@@ -85,13 +56,6 @@ const brl = (value: number) =>
 
 const pct = (value: number) =>
   `${value >= 0 ? '+' : ''}${value.toFixed(1).replace('.', ',')}%`;
-
-function recommendedProfile(answers: Answers): Profile {
-  const score = (answers.horizon ?? 0) + (answers.drop ?? 0) + (answers.goal ?? 0);
-  if (score <= 2) return INVESTOR_PROFILES[0];
-  if (score <= 4) return INVESTOR_PROFILES[1];
-  return INVESTOR_PROFILES[2];
-}
 
 /** Portfolio value along the path, using each asset's mean/p5/p95 series. */
 function portfolioPath(sim: SimResult, profile: Profile, initial: number, field: 'mean' | 'p5' | 'p95'): number[] {

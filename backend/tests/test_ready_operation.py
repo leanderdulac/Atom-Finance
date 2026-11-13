@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.core.limiter import limiter
 from app.core.security import get_current_user, hash_password
 from app.db import database
-from app.models.ready_operation import MarketView, assemble, resolve_asset
+from app.models.ready_operation import MarketView, assemble, client_facing_why, resolve_asset
 from app.services.ollama import draft_why
 
 
@@ -56,7 +56,83 @@ def _chain(spot, kind="call"):
 def test_universe_aliases():
     assert resolve_asset("btc-usd")["id"] == "BTC"
     assert resolve_asset("PETR4")["id"] == "PETR4"
+    assert resolve_asset("SOLUSDT")["id"] == "SOL"
     assert resolve_asset("XXXX") is None
+
+
+def _crypto_downtrend(spot=1956.0, n=150):
+    """Strong down-move so a short is allowed; last print near `spot`."""
+    daily = -0.008
+    closes = spot / ((1 + daily) ** (n - 1)) * np.cumprod(np.r_[1.0, np.full(n - 1, 1.0 + daily)])
+    closes[-1] = spot
+    dates = [(datetime.now(UTC).date() - timedelta(days=n - i)).isoformat() for i in range(n)]
+    return {
+        "close": [round(float(x), 4) for x in closes],
+        "dates": dates,
+        "provider": "binance",
+        "source": "binance",
+    }
+
+
+def test_eth_future_stop_is_capped_and_size_is_fractional():
+    hist = _crypto_downtrend()
+    view = MarketView(
+        quote={"ticker": "ETH", "price": 1956.0, "provider": "binance", "source": "binance"},
+        history=hist,
+        regime={"regime": "trending", "kill_switch": {"armed": False}},
+    )
+    out = assemble("ETH", "future", "months", market=view, capital=10000, risk_pct=1)
+    assert out["status"] == "ready", out.get("reason")
+    assert out["direction"] == "bearish"
+    stop_pct = abs(out["invalidation"] / out["spot"] - 1)
+    target_pct = abs(out["target"] / out["spot"] - 1)
+    assert stop_pct <= 0.13, stop_pct
+    assert 1.4 <= target_pct / stop_pct <= 1.8
+    qty = out["suggested_size"]["quantity"]
+    assert 0 < qty < 1
+    assert out["suggested_size"]["can_register_paper"] is True
+    why = (out["why"] + out["disclaimer"] + out["invalidation_reason"]).lower()
+    assert "z_score" not in why
+    assert "eligible_for_live_trading" not in why
+    assert "ewma" not in why
+    assert out["paper_plan"]["legs"][0]["quantity"] == qty
+
+
+def test_btc_and_sol_assemble_or_refuse_in_portuguese():
+    hist = _history(start=90000, daily=0.004)
+    view = MarketView(
+        quote={"ticker": "BTC", "price": hist["close"][-1], "provider": "binance", "source": "binance"},
+        history={**hist, "provider": "binance", "source": "binance"},
+        regime={"regime": "trending", "kill_switch": {"armed": False}},
+    )
+    btc = assemble("BTC", "future", "weeks", market=view)
+    assert btc["status"] in {"ready", "insufficient"}
+    if btc["status"] == "insufficient":
+        assert btc["reason"]
+        assert "invent" in btc["reason"].lower() or "sinal" in btc["reason"].lower() or "regime" in btc["reason"].lower() or "volatil" in btc["reason"].lower()
+    else:
+        assert btc["suggested_size"]["quantity"] > 0
+        assert btc["suggested_size"]["quantity"] < 1
+    missing = assemble("BTC", "future", "weeks", market=None)
+    assert missing["status"] == "insufficient"
+    assert "BTC" in missing["reason"]
+    sol = assemble("SOL", "spot", "days", market=None)
+    assert sol["status"] == "insufficient"
+    assert "SOL" in sol["reason"]
+
+
+def test_client_facing_why_strips_jargon():
+    clean = client_facing_why(
+        "Cenário de baixa em Ethereum. Simulação paper.",
+        "fallback",
+    )
+    assert "Ethereum" in clean
+    stripped = client_facing_why(
+        "Regime local trending e z_score -0,817. eligible_for_live_trading é falso.",
+        "O movimento recente de Ethereum levou o arsenal a montar um cenário de baixa.",
+    )
+    assert "z_score" not in stripped
+    assert "eligible_for_live_trading" not in stripped
 
 
 def test_spot_trending_up_is_bullish():
@@ -190,6 +266,7 @@ async def test_api_ready_and_paper(monkeypatch):
     assert cfg.status_code == 200
     assert cfg.json()["eligible_for_live_trading"] is False
     assert any(row["id"] == "PETR4" for row in cfg.json()["universe"])
+    assert any(row["id"] == "SOL" for row in cfg.json()["universe"])
 
     ready = client.post("/api/client/ready-operation", json={"ticker": "PETR4", "instrument": "spot", "horizon": "days"})
     assert ready.status_code == 200, ready.text
