@@ -100,7 +100,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           # jsdom 30 and undici 8.12+ (audit-fixed) require Node >=22.19 / 22.22.
           node-version: "22.22"
