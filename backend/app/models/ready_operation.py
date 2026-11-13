@@ -11,9 +11,10 @@ B3 futures are not in the arsenal — we say so instead of faking a contract.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from math import floor
+from math import floor, isfinite
 from typing import Any, Literal
 
 import numpy as np
@@ -59,8 +60,9 @@ UNIVERSE_BY_ID = {row["id"]: row for row in UNIVERSE}
 MIN_HISTORY = 60
 _CLIENT_JARGON = (
     "z_score", "z-score", "eligible_for_live_trading", "ewma", "garch",
-    "hurst", "kill_switch", "horizon_vol",
+    "hurst", "kill_switch", "horizon_vol", "trade", "pontos",
 )
+_SCI_RE = re.compile(r"(?<![A-Za-z])\d+\.?\d*[eE][+-]?\d+")
 _REGIME_PT = {
     "trending": "em tendência",
     "mean_reverting": "em oscilação",
@@ -93,6 +95,16 @@ def resolve_asset(ticker: str) -> dict[str, Any] | None:
         "BTCUSDT": "BTC", "ETHUSDT": "ETH", "SOLUSDT": "SOL",
     }
     return UNIVERSE_BY_ID.get(aliases.get(key, key))
+
+
+def format_price_ptbr(value: float, decimals: int = 2) -> str:
+    """Client money: 77.640,12 — never scientific notation, never extra cents."""
+    n = float(value)
+    if not isfinite(n):
+        return "—"
+    sign = "-" if n < 0 else ""
+    grouped = f"{abs(n):,.{decimals}f}"
+    return sign + grouped.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
 def _mark(contributions: list[dict[str, Any]], part: str, used: bool, note: str) -> None:
@@ -197,7 +209,11 @@ def _size(capital: float, risk_pct: float, entry: float, invalidation: float, lo
 def client_facing_why(text: str | None, fallback: str) -> str:
     """Drop model-variable names if the LLM (or a template) leaked them."""
     lowered = (text or "").lower()
-    if not text or any(token in lowered for token in _CLIENT_JARGON):
+    if (
+        not text
+        or any(token in lowered for token in _CLIENT_JARGON)
+        or _SCI_RE.search(text)
+    ):
         return fallback
     return text
 
@@ -506,7 +522,7 @@ def assemble(
     lot = float(asset.get("lot_size") or 1.0)
     qty, budget, can_lot, size_note = _size(capital, risk_pct, entry, invalidation, lot=lot)
     invalidation_reason = (
-        f"A tese cai se o preço cruzar {invalidation:.4g} "
+        f"A tese cai se o preço cruzar {format_price_ptbr(invalidation)} "
         f"({('abaixo' if direction == 'bullish' else 'acima')} do gatilho) "
         f"ou se o regime da mesa virar crise."
     )
@@ -695,13 +711,15 @@ def facts_for_llm(payload: dict[str, Any]) -> str:
         f"Direção: {direction}\n"
         f"Instrumento: {payload.get('instrument')}\n"
         f"Horizonte: {payload.get('horizon_label')}\n"
-        f"Preço agora: {payload.get('spot')}\n"
-        f"Entrada: {payload.get('entry')}\n"
-        f"Invalidação (stop): {payload.get('invalidation')}\n"
-        f"Alvo: {payload.get('target')}\n"
+        f"Preço agora: {format_price_ptbr(float(payload.get('spot') or 0))}\n"
+        f"Entrada: {format_price_ptbr(float(payload.get('entry') or 0))}\n"
+        f"Invalidação (stop): {format_price_ptbr(float(payload.get('invalidation') or 0))}\n"
+        f"Alvo: {format_price_ptbr(float(payload.get('target') or 0))}\n"
         f"Confiança: {payload.get('confidence')}\n"
         f"Leitura de mercado: {local}\n"
         f"Por que a tese cai: {payload.get('invalidation_reason')}\n"
-        "Redija em português simples. Proibido citar nomes técnicos "
-        "(z_score, EWMA, GARCH, Hurst, eligible_for_live_trading)."
+        "Redija em português simples. Copie os preços exatamente como estão "
+        "(formato pt-BR, sem notação científica). Proibido citar nomes técnicos "
+        "(z_score, EWMA, GARCH, Hurst, eligible_for_live_trading) e as palavras "
+        "trade e pontos. Fale em reais, dólares ou %."
     )

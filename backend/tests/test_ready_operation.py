@@ -11,7 +11,14 @@ from fastapi.testclient import TestClient
 from app.core.limiter import limiter
 from app.core.security import get_current_user, hash_password
 from app.db import database
-from app.models.ready_operation import MarketView, assemble, client_facing_why, resolve_asset
+from app.models.ready_operation import (
+    MarketView,
+    assemble,
+    client_facing_why,
+    facts_for_llm,
+    format_price_ptbr,
+    resolve_asset,
+)
 from app.services.ollama import draft_why
 
 
@@ -95,6 +102,8 @@ def test_eth_future_stop_is_capped_and_size_is_fractional():
     assert "z_score" not in why
     assert "eligible_for_live_trading" not in why
     assert "ewma" not in why
+    assert "e+" not in why
+    assert format_price_ptbr(out["invalidation"]) in out["invalidation_reason"]
     assert out["paper_plan"]["legs"][0]["quantity"] == qty
 
 
@@ -121,6 +130,15 @@ def test_btc_and_sol_assemble_or_refuse_in_portuguese():
     assert "SOL" in sol["reason"]
 
 
+def test_format_price_ptbr_matches_client_examples():
+    assert format_price_ptbr(77640.12) == "77.640,12"
+    assert format_price_ptbr(2199) == "2.199,00"
+    assert format_price_ptbr(44.7894) == "44,79"
+    assert format_price_ptbr(69185.36198) == "69.185,36"
+    assert "e+" not in format_price_ptbr(77640).lower()
+    assert "e" not in format_price_ptbr(7.764e4).lower()
+
+
 def test_client_facing_why_strips_jargon():
     clean = client_facing_why(
         "Cenário de baixa em Ethereum. Simulação paper.",
@@ -133,6 +151,32 @@ def test_client_facing_why_strips_jargon():
     )
     assert "z_score" not in stripped
     assert "eligible_for_live_trading" not in stripped
+    fallback = "O movimento recente de Bitcoin levou o arsenal a montar um cenário de alta."
+    assert client_facing_why("Esse trade vale 200 pontos.", fallback) == fallback
+    assert client_facing_why("A tese cai se o preço cruzar 7.764e+04.", fallback) == fallback
+
+
+def test_btc_invalidation_text_is_pt_br_not_scientific():
+    hist = _history(start=70000, daily=0.004)
+    spot = 77640.12
+    hist = {**hist, "close": list(hist["close"][:-1]) + [spot], "provider": "binance", "source": "binance"}
+    view = MarketView(
+        quote={"ticker": "BTC", "price": spot, "provider": "binance", "source": "binance"},
+        history=hist,
+        regime={"regime": "trending", "kill_switch": {"armed": False}},
+    )
+    out = assemble("BTC", "future", "weeks", market=view)
+    assert out["status"] == "ready", out.get("reason")
+    reason = out["invalidation_reason"]
+    facts = facts_for_llm(out)
+    blob = reason + out["why"] + facts
+    assert "e+" not in blob.lower()
+    assert "e-" not in blob.lower()
+    assert format_price_ptbr(out["invalidation"]) in reason
+    assert format_price_ptbr(out["invalidation"]) in facts
+    assert format_price_ptbr(spot) in facts
+    assert "trade" not in out["why"].lower()
+    assert "pontos" not in out["why"].lower()
 
 
 def test_spot_trending_up_is_bullish():
@@ -147,6 +191,8 @@ def test_spot_trending_up_is_bullish():
     assert out["entry"] > 0 and out["invalidation"] < out["entry"] < out["target"]
     assert out["paper_plan"]["strategy"] == "long_stock"
     assert out["suggested_size"]["can_register_paper"] is True
+    assert format_price_ptbr(out["invalidation"]) in out["invalidation_reason"]
+    assert "e+" not in out["invalidation_reason"].lower()
     assert "EWMA" in {row["part"] for row in out["arsenal"]}
     assert "não é recomendação" in out["disclaimer"].lower() or "Não é recomendação" in out["disclaimer"]
 
