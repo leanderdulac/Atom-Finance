@@ -73,6 +73,11 @@ type ReadyBody = {
   eligible_for_live_trading?: boolean;
   context_used?: boolean;
   sources?: { title: string; url: string; date?: string }[];
+  thermometer?: {
+    label: string;
+    tone: 'otimista' | 'pessimista' | 'neutro';
+    headlines?: { title: string; url: string; date?: string }[];
+  };
 };
 
 type ReadyPayload = {
@@ -438,6 +443,22 @@ export default function ReadyOperationPage() {
       {assembling && (
         <Alert severity="info" icon={<CircularProgress size={18} />}>
           Montando o cenário. A explicação aparece só quando o texto final estiver pronto.
+        </Alert>
+      )}
+
+      {!assembling && result?.thermometer && (
+        <Alert severity={result.thermometer.tone === 'otimista' ? 'success' : result.thermometer.tone === 'pessimista' ? 'warning' : 'info'}>
+          <Typography fontWeight={700}>{result.thermometer.label}</Typography>
+          {result.thermometer.headlines?.length ? (
+            <Box component="ul" sx={{ pl: 2, mb: 0, mt: 1 }}>
+              {result.thermometer.headlines.slice(0, 3).map((h) => (
+                <li key={h.url}>
+                  <a href={h.url} target="_blank" rel="noreferrer">{h.title}</a>
+                  {h.date ? ` · ${h.date}` : ''}
+                </li>
+              ))}
+            </Box>
+          ) : null}
         </Alert>
       )}
 

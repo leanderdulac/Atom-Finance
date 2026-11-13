@@ -46,6 +46,31 @@ async def context_audits(limit: int = Query(50, ge=1, le=200), _owner: str = Dep
     }
 
 
+@router.get("/sentiment-skill")
+async def sentiment_skill(
+    ticker: str = Query("BTC", min_length=3, max_length=20),
+    horizon: str = Query("weeks"),
+    _owner: str = Depends(get_current_user),
+):
+    """Predictive power of the thermometer vs later returns. Paper only."""
+    from app.services.sentiment_eval import evaluate_ticker
+    report = await evaluate_ticker(ticker.upper(), horizon)
+    return {**report, "eligible_for_live_trading": False}
+
+
+@router.post("/sentiment-skill")
+async def sentiment_skill_diary(
+    ticker: str = Query("BTC", min_length=3, max_length=20),
+    horizon: str = Query("weeks"),
+    owner: str = Depends(get_current_user),
+):
+    """Same report, written into the research diary for audit."""
+    from app.services.sentiment_eval import evaluate_ticker, record_diary
+    report = await evaluate_ticker(ticker.upper(), horizon)
+    run_id = await record_diary(owner, report)
+    return {**report, "experiment_id": run_id, "eligible_for_live_trading": False}
+
+
 async def _run(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, partial(func, *args, **kwargs))
