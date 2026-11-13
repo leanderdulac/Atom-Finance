@@ -18,7 +18,7 @@ yfinance>=0.2.58
 requests>=2.33.0,<3
 
 # Machine Learning
-scikit-learn~=1.5.2
+scikit-learn~=1.9.1
 torch>=2.13.0,<3
 torchsde~=0.2.6
 einops~=0.8.1
