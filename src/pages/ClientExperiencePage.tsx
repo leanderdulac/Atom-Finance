@@ -550,7 +550,12 @@ export default function ClientExperiencePage() {
               </Typography>
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 4 }}>
-                  <Button fullWidth variant="outlined" startIcon={<ShowChart />} onClick={() => navigate('/perfil-investidor')}>
+                  <Button fullWidth variant="contained" startIcon={<ShowChart />} onClick={() => navigate('/cliente')}>
+                    Montar uma operação pronta
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Button fullWidth variant="outlined" startIcon={<ArrowForward />} onClick={() => navigate('/perfil-investidor')}>
                     Comparar os perfis em detalhe
                   </Button>
                 </Grid>
@@ -562,6 +567,11 @@ export default function ClientExperiencePage() {
                 <Grid size={{ xs: 12, md: 4 }}>
                   <Button fullWidth variant="outlined" startIcon={<MenuBook />} onClick={() => navigate('/ai-report')}>
                     Ler uma análise de um ativo
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Button fullWidth variant="outlined" startIcon={<Replay />} onClick={restart}>
+                    Refazer o questionário
                   </Button>
                 </Grid>
               </Grid>

@@ -261,10 +261,16 @@ async def observe(request: Request, trade_id: UUID, req: Observation, owner: str
                 low, high = sorted([plan['exit']['underlying_invalidation'], plan['exit']['underlying_target']])
                 if not low < req.underlying < high:
                     reject('Tese invalidada ou alvo já alcançado.')
-                limit = D(plan['entry']['max_net_debit_per_unit']) * D(plan['quantity_per_leg']) * multiplier
-                if cash <= 0 or cash > limit + D('0.000001'):
-                    reject('Débito simulado inválido ou acima do limite do plano.')
-                risk = cash + 2 * fees
+                is_credit = all(leg['side'] == 'sell' for leg in plan['legs'])
+                if is_credit:
+                    if cash >= 0:
+                        reject('Crédito simulado inválido (venda à vista/perp exige preenchimento a crédito).')
+                    risk = D(plan['modeled_max_loss_brl']) + 2 * fees
+                else:
+                    limit = D(plan['entry']['max_net_debit_per_unit']) * D(plan['quantity_per_leg']) * multiplier
+                    if cash <= 0 or cash > limit + D('0.000001'):
+                        reject('Débito simulado inválido ou acima do limite do plano.')
+                    risk = cash + 2 * fees
                 open_risk = D(0)
                 # Safe from races: lock_owner() above holds this owner's
                 # advisory lock for the whole transaction, so no concurrent

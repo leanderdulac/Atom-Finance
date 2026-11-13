@@ -17,6 +17,7 @@ class TestNeuralSDE:
         assert "statistics" in result
         assert "terminal" in result
         assert "parameters" in result
+        assert result["parameters"]["device"] in {"cpu", "mps", "cuda"}
 
     def test_time_length(self):
         result = NeuralSDE.simulate(n_steps=50, n_paths=1, seed=1)
