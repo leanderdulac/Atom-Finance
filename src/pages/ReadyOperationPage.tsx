@@ -32,7 +32,13 @@ type ReadyBody = {
   invalidation?: number;
   target?: number;
   quantity?: number;
-  suggested_size?: { quantity: number; risk_budget_brl: number; can_register_paper: boolean; paper_block?: string | null };
+  suggested_size?: {
+    quantity: number;
+    risk_budget_brl: number;
+    notional_brl?: number;
+    can_register_paper: boolean;
+    paper_block?: string | null;
+  };
   confidence?: string;
   invalidation_reason?: string;
   why?: string;
@@ -69,10 +75,12 @@ export default function ReadyOperationPage() {
   const [horizon, setHorizon] = useState('weeks');
   const [answers, setAnswers] = useState<ProfileAnswers>({ horizon: null, drop: null, goal: null });
   const [busy, setBusy] = useState(false);
+  const [assembling, setAssembling] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<ReadyBody | null>(null);
   const [paperMsg, setPaperMsg] = useState('');
-  const skipAuto = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+  const seqRef = useRef(0);
 
   const visibleAssets = useMemo(() => {
     if (sleeve === 'crypto') return universe.filter((row) => row.asset_class === 'crypto');
@@ -87,39 +95,67 @@ export default function ReadyOperationPage() {
   const allowed = asset?.instruments ?? ['spot'];
   const answered = answers.horizon !== null && answers.drop !== null && answers.goal !== null;
   const profile = answered ? recommendedProfile(answers, sleeve) : profileFor('moderado', sleeve);
+  const notionalBrl = result?.suggested_size?.notional_brl
+    ?? (result?.quantity != null && result?.entry != null
+      ? Math.abs(result.quantity * result.entry)
+      : null);
+
+  function dropInFlight() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    seqRef.current += 1;
+    setAssembling(false);
+    setBusy(false);
+  }
+
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   useEffect(() => {
     if (!visibleAssets.length) return;
     if (!visibleAssets.some((row) => row.id === ticker)) {
+      dropInFlight();
       setTicker(visibleAssets[0].id);
+      setResult(null);
     }
   }, [visibleAssets, ticker]);
 
   useEffect(() => {
     if (asset && !asset.instruments.includes(instrument)) {
+      dropInFlight();
       setInstrument(asset.instruments[0] || 'spot');
+      setResult(null);
     }
   }, [asset, instrument]);
 
   async function assemble() {
-    setBusy(true); setError(''); setPaperMsg(''); setResult(null);
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const seq = ++seqRef.current;
+    setAssembling(true);
+    setBusy(true);
+    setError('');
+    setPaperMsg('');
+    setResult(null);
     try {
-      const body = await api.clientReadyOperation({ ticker, instrument, horizon }) as ReadyBody;
+      const body = await api.clientReadyOperation(
+        { ticker, instrument, horizon },
+        { signal: ac.signal },
+      ) as ReadyBody;
+      if (seq !== seqRef.current) return;
       setResult(body);
     } catch (e) {
+      if (seq !== seqRef.current) return;
+      if (e instanceof Error && e.name === 'AbortError') return;
       setError(e instanceof Error ? e.message : 'Não foi possível montar a operação.');
-    } finally { setBusy(false); }
-  }
-
-  useEffect(() => {
-    if (skipAuto.current) {
-      skipAuto.current = false;
-      return;
+    } finally {
+      if (seq === seqRef.current) {
+        setAssembling(false);
+        setBusy(false);
+        if (abortRef.current === ac) abortRef.current = null;
+      }
     }
-    void assemble();
-    // assemble when the vehicle changes — the Mac bug was "troquei para BTC e não carregou"
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticker, instrument, horizon]);
+  }
 
   async function registerPaper() {
     setBusy(true); setError(''); setPaperMsg('');
@@ -157,6 +193,7 @@ export default function ReadyOperationPage() {
             value={sleeve}
             onChange={(_, v: Sleeve | null) => {
               if (!v) return;
+              dropInFlight();
               setSleeve(v);
               setResult(null);
             }}
@@ -172,7 +209,7 @@ export default function ReadyOperationPage() {
           <ToggleButtonGroup
             exclusive
             value={ticker}
-            onChange={(_, v) => { if (v) { setTicker(v); setResult(null); } }}
+            onChange={(_, v) => { if (v) { dropInFlight(); setTicker(v); setResult(null); } }}
             sx={{ flexWrap: 'wrap', gap: 1, mt: 2 }}
           >
             {visibleAssets.map((row) => (
@@ -188,7 +225,7 @@ export default function ReadyOperationPage() {
           <ToggleButtonGroup
             exclusive
             value={horizon}
-            onChange={(_, v) => { if (v) { setHorizon(v); setResult(null); } }}
+            onChange={(_, v) => { if (v) { dropInFlight(); setHorizon(v); setResult(null); } }}
             sx={{ flexWrap: 'wrap', gap: 1, mt: 1 }}
           >
             {horizons.map((row) => (
@@ -264,7 +301,7 @@ export default function ReadyOperationPage() {
           <ToggleButtonGroup
             exclusive
             value={instrument}
-            onChange={(_, v) => { if (v) { setInstrument(v); setResult(null); } }}
+            onChange={(_, v) => { if (v) { dropInFlight(); setInstrument(v); setResult(null); } }}
             sx={{ flexWrap: 'wrap', gap: 1, mt: 1 }}
           >
             {instruments.map((row) => (
@@ -299,7 +336,13 @@ export default function ReadyOperationPage() {
       {error && <Alert severity="error">{error}</Alert>}
       {paperMsg && <Alert severity="success">{paperMsg}</Alert>}
 
-      {result?.status === 'insufficient' && (
+      {assembling && (
+        <Alert severity="info" icon={<CircularProgress size={18} />}>
+          Montando o cenário. A explicação aparece só quando o texto final estiver pronto.
+        </Alert>
+      )}
+
+      {!assembling && result?.status === 'insufficient' && (
         <Alert severity="warning">
           <Typography fontWeight={700}>O arsenal não montou operação.</Typography>
           <Typography sx={{ mt: 1 }}>{result.reason}</Typography>
@@ -309,7 +352,7 @@ export default function ReadyOperationPage() {
         </Alert>
       )}
 
-      {result?.status === 'ready' && (
+      {!assembling && result?.status === 'ready' && (
         <Card>
           <CardContent>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
@@ -333,8 +376,10 @@ export default function ReadyOperationPage() {
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{result.invalidation_reason}</Typography>
             {result.suggested_size && (
               <Typography sx={{ mt: 2 }}>
-                Tamanho sugerido por risco ({money(result.suggested_size.risk_budget_brl)} de orçamento paper):{' '}
-                <strong>{num(result.suggested_size.quantity)}</strong>
+                Tamanho sugerido: <strong>{num(result.suggested_size.quantity)}</strong>
+                {' · risco máximo de '}
+                {money(result.suggested_size.risk_budget_brl)}
+                {notionalBrl != null ? ` · nocional da posição ${money(notionalBrl)}` : ''}
                 {result.structure?.expiry ? ` · prazo até ${result.structure.expiry}` : null}
               </Typography>
             )}

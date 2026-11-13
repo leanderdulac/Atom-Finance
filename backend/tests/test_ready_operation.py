@@ -98,6 +98,10 @@ def test_eth_future_stop_is_capped_and_size_is_fractional():
     qty = out["suggested_size"]["quantity"]
     assert 0 < qty < 1
     assert out["suggested_size"]["can_register_paper"] is True
+    assert out["suggested_size"]["notional_brl"] == round(abs(qty * out["entry"]), 2)
+    hurst = out["regime"]["hurst"]
+    if hurst is not None:
+        assert 0.0 <= hurst <= 1.0
     why = (out["why"] + out["disclaimer"] + out["invalidation_reason"]).lower()
     assert "z_score" not in why
     assert "eligible_for_live_trading" not in why
@@ -177,6 +181,12 @@ def test_btc_invalidation_text_is_pt_br_not_scientific():
     assert format_price_ptbr(spot) in facts
     assert "trade" not in out["why"].lower()
     assert "pontos" not in out["why"].lower()
+    hurst = out["regime"]["hurst"]
+    if hurst is not None:
+        assert 0.0 <= hurst <= 1.0
+    assert out["suggested_size"]["notional_brl"] == round(
+        abs(out["suggested_size"]["quantity"] * out["entry"]), 2,
+    )
 
 
 def test_spot_trending_up_is_bullish():
@@ -191,6 +201,12 @@ def test_spot_trending_up_is_bullish():
     assert out["entry"] > 0 and out["invalidation"] < out["entry"] < out["target"]
     assert out["paper_plan"]["strategy"] == "long_stock"
     assert out["suggested_size"]["can_register_paper"] is True
+    assert out["suggested_size"]["notional_brl"] == round(
+        abs(out["suggested_size"]["quantity"] * out["entry"]), 2,
+    )
+    hurst = out["regime"]["hurst"]
+    if hurst is not None:
+        assert 0.0 <= hurst <= 1.0
     assert format_price_ptbr(out["invalidation"]) in out["invalidation_reason"]
     assert "e+" not in out["invalidation_reason"].lower()
     assert "EWMA" in {row["part"] for row in out["arsenal"]}
@@ -246,6 +262,9 @@ def test_option_with_usable_book_builds_structure():
     assert out["paper_plan"]["legs"]
     assert out["greeks"] is not None
     assert out["eligible_for_live_trading"] is False
+    assert out["suggested_size"]["notional_brl"] == round(
+        abs(float(out["paper_plan"]["premium_outlay_brl"])), 2,
+    )
 
 
 def test_crisis_kill_switch_refuses():

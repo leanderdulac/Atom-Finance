@@ -99,7 +99,7 @@ describe('ReadyOperationPage', () => {
       invalidation: 36,
       target: 41,
       quantity: 20,
-      suggested_size: { quantity: 20, risk_budget_brl: 100, can_register_paper: true },
+      suggested_size: { quantity: 20, risk_budget_brl: 100, notional_brl: 764, can_register_paper: true },
       confidence: 'média',
       invalidation_reason: 'A tese cai abaixo de 36.',
       why: 'Cenário de alta em PETR4 montado com cotação e volatilidade. Simulação, não recomendação.',
@@ -113,8 +113,13 @@ describe('ReadyOperationPage', () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole('button', { name: /montar operação/i }));
-    expect(clientReadyOperation).toHaveBeenCalledWith({ ticker: 'PETR4', instrument: 'spot', horizon: 'weeks' });
+    expect(clientReadyOperation).toHaveBeenCalledTimes(1);
+    expect(clientReadyOperation.mock.calls[0][0]).toEqual({ ticker: 'PETR4', instrument: 'spot', horizon: 'weeks' });
+    expect(clientReadyOperation.mock.calls[0][1]).toEqual(expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect((await screen.findAllByText(/compra à vista/i)).length).toBeGreaterThan(0);
+    expect(screen.getByText(/risco máximo de R\$ 100,00/)).toBeInTheDocument();
+    expect(screen.getByText(/nocional da posição R\$ 764,00/)).toBeInTheDocument();
+    expect(screen.queryByText(/orçamento paper/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/aguardando gatilho/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/eligible_for_live_trading/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /registrar como operação paper/i }));
@@ -136,7 +141,7 @@ describe('ReadyOperationPage', () => {
       invalidation: 69185.36198,
       target: 86000.5,
       quantity: 0.01,
-      suggested_size: { quantity: 0.01, risk_budget_brl: 100, can_register_paper: true },
+      suggested_size: { quantity: 0.01, risk_budget_brl: 100, notional_brl: 776.41, can_register_paper: true },
       confidence: 'média',
       invalidation_reason: 'A tese cai se o preço cruzar 69.185,36.',
       why: 'Cenário de alta em Bitcoin. Simulação, não recomendação.',
@@ -148,7 +153,10 @@ describe('ReadyOperationPage', () => {
     await user.click(screen.getByRole('button', { name: /^cripto$/i }));
     await user.click(screen.getByRole('button', { name: /^bitcoin$/i }));
     await user.click(screen.getByRole('button', { name: /futuro \/ perpétuo/i }));
-    expect(clientReadyOperation).toHaveBeenCalledWith({ ticker: 'BTC', instrument: 'future', horizon: 'weeks' });
+    expect(clientReadyOperation).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: /montar operação/i }));
+    expect(clientReadyOperation).toHaveBeenCalledTimes(1);
+    expect(clientReadyOperation.mock.calls[0][0]).toEqual({ ticker: 'BTC', instrument: 'future', horizon: 'weeks' });
     expect((await screen.findAllByText(/compra de perpétuo/i)).length).toBeGreaterThan(0);
     expect(screen.getByText('77.640,12')).toBeInTheDocument();
     expect(screen.getByText('69.185,36')).toBeInTheDocument();
@@ -187,7 +195,8 @@ describe('ReadyOperationPage', () => {
     renderPage();
     await user.click(screen.getByRole('button', { name: /^opção$/i }));
     await user.click(screen.getByRole('button', { name: /montar operação/i }));
-    expect(clientReadyOperation).toHaveBeenCalledWith({ ticker: 'PETR4', instrument: 'option', horizon: 'weeks' });
+    expect(clientReadyOperation).toHaveBeenCalledTimes(1);
+    expect(clientReadyOperation.mock.calls[0][0]).toEqual({ ticker: 'PETR4', instrument: 'option', horizon: 'weeks' });
     expect((await screen.findAllByText(/trava de alta com calls/i)).length).toBeGreaterThan(0);
   });
 
@@ -202,5 +211,94 @@ describe('ReadyOperationPage', () => {
     await user.click(screen.getByRole('button', { name: /montar operação/i }));
     expect(await screen.findByText(/o arsenal não montou operação/i)).toBeInTheDocument();
     expect(screen.getByText(/não inventamos/i)).toBeInTheDocument();
+  });
+
+  it('holds the explanation behind a loading state until the response arrives', async () => {
+    let release!: (value: unknown) => void;
+    const gate = new Promise((resolve) => { release = resolve; });
+    clientReadyOperation.mockImplementation(async () => {
+      await gate;
+      return {
+        status: 'ready',
+        ticker: 'PETR4',
+        label: 'Petrobras (PETR4)',
+        instrument: 'spot',
+        direction: 'bullish',
+        structure: { strategy: 'long_stock', legs: [], expiry: '2026-12-01' },
+        suggested_size: { quantity: 20, risk_budget_brl: 100, notional_brl: 764, can_register_paper: true },
+        why: 'Texto final da IA. Simulação, não recomendação.',
+        eligible_for_live_trading: false,
+      };
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /montar operação/i }));
+    expect(screen.getByText(/montando o cenário/i)).toBeInTheDocument();
+    expect(screen.getByText(/texto final estiver pronto/i)).toBeInTheDocument();
+    expect(screen.queryByText(/texto final da IA/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/compra à vista/i)).not.toBeInTheDocument();
+    release(undefined);
+    expect(await screen.findByText(/texto final da IA/i)).toBeInTheDocument();
+    expect(screen.queryByText(/montando o cenário/i)).not.toBeInTheDocument();
+  });
+
+  it('sends one request per Montar click, aborts the previous, and ignores a stale ETH/PETR race', async () => {
+    let releasePetr!: (value: unknown) => void;
+    const petrGate = new Promise((resolve) => { releasePetr = resolve; });
+    const petrBody = {
+      status: 'ready',
+      ticker: 'PETR4',
+      label: 'Petrobras (PETR4)',
+      instrument: 'spot',
+      direction: 'bearish',
+      structure: { strategy: 'short_stock', legs: [{ side: 'sell', symbol: 'PETR4', strike: 38, quantity: 20 }], expiry: '2026-12-01' },
+      suggested_size: { quantity: 20, risk_budget_brl: 100, notional_brl: 764, can_register_paper: true },
+      why: 'PETR antiga — não deveria aparecer.',
+      eligible_for_live_trading: false,
+    };
+    const ethBody = {
+      status: 'ready',
+      ticker: 'ETH',
+      label: 'Ethereum',
+      instrument: 'future',
+      direction: 'bearish',
+      structure: { strategy: 'short_perp', legs: [{ side: 'sell', symbol: 'ETH', strike: 1956, quantity: 0.05 }], expiry: '2026-12-01' },
+      suggested_size: { quantity: 0.05, risk_budget_brl: 100, notional_brl: 97.8, can_register_paper: true },
+      why: 'ETH final. Simulação, não recomendação.',
+      eligible_for_live_trading: false,
+    };
+    clientReadyOperation
+      .mockImplementationOnce(async (_data: unknown, init?: { signal?: AbortSignal }) => {
+        await petrGate;
+        if (init?.signal?.aborted) {
+          const err = new Error('The operation was aborted.');
+          err.name = 'AbortError';
+          throw err;
+        }
+        return petrBody;
+      })
+      .mockImplementationOnce(async () => ethBody);
+
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /montar operação/i }));
+    expect(clientReadyOperation).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/montando o cenário/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^cripto$/i }));
+    await user.click(screen.getByRole('button', { name: /^ethereum$/i }));
+    await user.click(screen.getByRole('button', { name: /futuro \/ perpétuo/i }));
+    expect(clientReadyOperation).toHaveBeenCalledTimes(1);
+    expect((clientReadyOperation.mock.calls[0][1] as { signal: AbortSignal }).signal.aborted).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: /montar operação/i }));
+    expect(clientReadyOperation).toHaveBeenCalledTimes(2);
+    expect(clientReadyOperation.mock.calls[1][0]).toEqual({ ticker: 'ETH', instrument: 'future', horizon: 'weeks' });
+
+    releasePetr(undefined);
+    expect(await screen.findByText(/ETH final/i)).toBeInTheDocument();
+    expect(screen.queryByText(/PETR antiga/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/venda à vista/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/venda de perpétuo/i).length).toBeGreaterThan(0);
   });
 });

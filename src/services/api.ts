@@ -131,8 +131,10 @@ export const api = {
     client_mode: boolean; universe: unknown[]; instruments: unknown[];
     horizons: unknown[]; disclaimer: string; eligible_for_live_trading: boolean;
   }>('/client/config'),
-  clientReadyOperation: (data: { ticker: string; instrument: string; horizon: string }) =>
-    request<unknown>('/client/ready-operation', { method: 'POST', body: JSON.stringify(data) }),
+  clientReadyOperation: (
+    data: { ticker: string; instrument: string; horizon: string },
+    init?: RequestInit,
+  ) => request<unknown>('/client/ready-operation', { method: 'POST', body: JSON.stringify(data), ...init }),
   clientReadyPaper: (data: { ticker: string; instrument: string; horizon: string }) =>
     request<unknown>('/client/ready-operation/paper', { method: 'POST', body: JSON.stringify(data) }),
 
