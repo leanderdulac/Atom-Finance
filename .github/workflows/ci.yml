@@ -41,7 +41,7 @@ jobs:
       ATOM_DATABASE_URL: postgresql+asyncpg://atom:atom_ci@localhost:5432/atom_ci
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -97,7 +97,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -143,7 +143,7 @@ jobs:
       ATOM_SMOKE_USER: production_test
       ATOM_SMOKE_PASSWORD: isolated-test-only-password
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Migrations must precede the backend, not follow it: its lifespan calls
       # exclusive_runtime(), which UPDATEs the experiments table, so it cannot
       # start against an unmigrated database. Starting the stack first left the
