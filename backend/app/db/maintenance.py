@@ -52,7 +52,7 @@ def main():
     user = commands.add_parser('create-user')
     user.add_argument('username')
     user.add_argument('email')
-    user.add_argument('--role', choices=['admin', 'analyst'], default='analyst')
+    user.add_argument('--role', choices=['admin', 'operator', 'analyst'], default='analyst')
     args = parser.parse_args()
     if args.command == 'backup':
         print(backup(args.destination))

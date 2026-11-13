@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 22: tela única do cliente + perfil/carteira/níveis
+
+Feedback do Mac (PR #34): o cliente via mesa, o perfil saía sempre Moderado, a carteira era só B3, BTC/ETH travavam e o stop do ETH estava incoerente.
+
+### Changed
+- Scoring de perfil: o retorno desejado vale o dobro; 1–3 anos + esperar a queda + maior retorno → **Arrojado** (não Moderado). Tabela das 27 combinações. Carteira por classe: ações B3, cripto (BTC/ETH/SOL) ou misto.
+- Tela única pós-login (`/cliente`): ativo(s), horizonte, retorno desejado e tipo de operação. «Meu plano» fundido nela. Mesa, doutrina, regimes etc. só no **modo operador** (menu da conta, admin/operator). 403 no backend para analyst permanece.
+- Níveis: stop = 1× vol do horizonte (teto 12%), alvo = 1,6× o stop. Tamanho fracionário em cripto (lote 0,0001/0,001/0,01). Texto ao cliente em português, sem nomes de variável.
+- Cotação cripto: Binance público primeiro (BTC/ETH/SOL); yfinance com timeout. Sem dado → recusa clara, sem spinner eterno.
+
+### Not
+- Paper only. Nenhuma ordem. Sem promessa de retorno.
+
+## [Unreleased] — round 21: operação pronta para o cliente + modo Mac
+
+O cliente deixa de ver ~30 telas de operador. Três escolhas (ativo, instrumento, horizonte) e o arsenal monta a operação paper — ou recusa com honestidade. No Mac público, `ATOM_CLIENT_MODE=true` tranca a mesa no backend, não só no menu.
+
+### Added
+- `POST /api/client/ready-operation` e `…/paper`: orquestrador determinístico (cotação, EWMA/GARCH, Hurst, regime, planner de derivativos, gregas BS, Heston só como ilustração). LLM local (Ollama) redige o «por quê»; não escolhe a operação. Sem dado/sinal → `insufficient`, sem livro inventado.
+- Tela `/cliente` (Operação pronta) e `/cliente/plano` (Meu plano, jornadas do PR #32 sem depender do merge). Landing e login no modo cliente levam a essa experiência.
+- `ATOM_CLIENT_MODE`: 403 nas APIs da mesa para `analyst`; `admin`/`operator` seguem com tudo. Job de cache (`client_arsenal` + Redis) reaproveita o loop de regime.
+- `ops/macos/`: launchd (backend em `127.0.0.1:$ATOM_API_PORT` com caffeinate, worker, UI `serve.py` com proxy `/api`, cloudflared). Sem token → quick tunnel; URL em `~/Library/Logs/atom/public-url.txt` (muda a cada reinício). `ATOM_VENV` reaproveita um venv existente. `SECRET_KEY` é gerado no `.env` se faltar, sem ser impresso.
+- Paralelismo por env: `ATOM_COMPUTE_WORKERS`, `ATOM_IO_WORKERS`, `ATOM_DB_POOL_*`, `ATOM_TORCH_DEVICE` (mps/cpu).
+
+### Not
+- Paper only. `eligible_for_live_trading` continua falso. Sem OMS, sem ordem real, sem promessa de retorno.
+- «Ativo de operação» = instrumento (à vista / opção / futuro-perp), não um segundo ticker. Futuro B3 não existe no arsenal — a tela diz isso.
+- O diário `/paper-trades` permanece o único escritor; o cliente só abre um `watching`.
+
 ## [Unreleased] — round 20: tooling — ESLint 10 (flat config)
 
 O lint tinha parado de correr: ESLint 10 removeu o suporte a `.eslintrc.*` e o repo ainda estava no formato legacy. A migração é de formato, não de política — o conjunto de regras efetivas é o mesmo de antes.

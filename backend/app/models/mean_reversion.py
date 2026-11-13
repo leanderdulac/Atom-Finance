@@ -72,7 +72,10 @@ def _hurst(log_prices: np.ndarray) -> float:
     if len(rs) < 2:
         return float("nan")
     slope, _ = np.polyfit(np.log(tau), np.log(rs), 1)
-    return float(slope)
+    if not np.isfinite(slope):
+        return float("nan")
+    # R/S slope on short samples can print outside [0, 1]; that is not a Hurst exponent.
+    return float(np.clip(slope, 0.0, 1.0))
 
 
 def score_series(prices: np.ndarray, ticker: str = "") -> dict:
