@@ -10,6 +10,8 @@ from pydantic import ValidationError
 
 from app.services.agents.llm import OllamaProvider, get_agent_llm, parse_json_object
 from app.services.agents.schemas import EventoProximo, NewsBrief, SourceRef
+from app.services.agents.xai import news_brief as xai_news_brief
+from app.services.agents.xai import xai_configured
 from app.services.context import calendar, crypto, gather, search
 
 logger = logging.getLogger(__name__)
@@ -121,6 +123,14 @@ async def run_news_agent(ticker: str, horizon: str, *, asset_class: str = "equit
     bundle = await asyncio.to_thread(
         gather.gather_context, ticker, horizon, asset_class=asset_class,
     )
+    if xai_configured():
+        try:
+            brief = await xai_news_brief(ticker, horizon, bundle)
+        except Exception as exc:
+            logger.info("xAI news agent failed (%s)", type(exc).__name__)
+            brief = None
+        if brief:
+            return brief
     llm = get_agent_llm()
     if isinstance(llm, OllamaProvider):
         days = HORIZON_DAYS.get(horizon, 21)

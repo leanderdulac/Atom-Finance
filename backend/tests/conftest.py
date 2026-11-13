@@ -22,6 +22,21 @@ os.environ.setdefault("ATOM_AGENT_LLM", "ollama")
 os.environ.setdefault("SEARXNG_URL", "")
 os.environ.setdefault("BRAVE_API_KEY", "")
 os.environ.setdefault("TAVILY_API_KEY", "")
+# Unit tests never see a real xAI key. @pytest.mark.xai restores it for the live test.
+_XAI_KEY_FROM_ENV = os.environ.get("XAI_API_KEY", "")
+os.environ["XAI_API_KEY"] = ""
+os.environ.setdefault("ATOM_XAI_LIVE", "0")
+os.environ.setdefault("ATOM_RISK_PROVIDER", "ollama")
+
+@pytest.fixture(autouse=True)
+def _xai_key_for_live_marker(monkeypatch, request):
+    """Blank xAI in unit tests; restore only for @pytest.mark.xai."""
+    if request.node.get_closest_marker("xai"):
+        monkeypatch.setenv("XAI_API_KEY", _XAI_KEY_FROM_ENV)
+    else:
+        monkeypatch.setenv("XAI_API_KEY", "")
+    yield
+
 
 @pytest.fixture(autouse=True)
 def _silence_context_http(monkeypatch, request):

@@ -1,6 +1,7 @@
 [tool.pytest.ini_options]
 markers = [
     "ollama: optional integration against a local Ollama daemon (skipped in CI)",
+    "xai: optional live xAI Responses+search (skipped without XAI_API_KEY and ATOM_XAI_LIVE=1)",
 ]
 
 [tool.ruff]
