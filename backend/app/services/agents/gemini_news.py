@@ -295,15 +295,15 @@ async def _generate(
     except Exception as exc:
         logger.info("google-genai unavailable (%s)", type(exc).__name__)
         return None
-    tools = [types.Tool(google_search=types.GoogleSearch())] if grounded else None
     try:
         client = genai.Client(api_key=key)
+        search_tool = types.Tool(google_search=types.GoogleSearch())
         response = await client.aio.models.generate_content(
             model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system,
-                tools=tools,
+                tools=[search_tool] if grounded else None,  # type: ignore[arg-type]
                 http_options=types.HttpOptions(timeout=int(timeout * 1000)),
             ),
         )
