@@ -49,7 +49,7 @@ greenlet~=3.1.1
 sentry-sdk[fastapi]~=2.19.0
 
 # Metrics — Prometheus exposition at /api/metrics
-prometheus-client>=0.21,<1
+prometheus-client>=0.26.0,<1
 
 # Rate limiting
 slowapi~=0.1.9
