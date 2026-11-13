@@ -37,6 +37,8 @@ class NewsBrief(BaseModel):
     fontes: list[SourceRef]
     xai_sentimento: float | None = None
     openai_sentimento: float | None = None
+    gemini_sentimento: float | None = None
+    dispersion: float = 0.0
     source_disagreement: bool = False
     providers: list[str] = Field(default_factory=list)
 

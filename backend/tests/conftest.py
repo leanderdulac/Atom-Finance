@@ -25,10 +25,14 @@ os.environ.setdefault("TAVILY_API_KEY", "")
 # Unit tests never see a real xAI/OpenAI key. Live markers restore them.
 _XAI_KEY_FROM_ENV = os.environ.get("XAI_API_KEY", "")
 _OPENAI_KEY_FROM_ENV = os.environ.get("OPENAI_API_KEY", "")
+_GEMINI_KEY_FROM_ENV = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
 os.environ["XAI_API_KEY"] = ""
 os.environ["OPENAI_API_KEY"] = ""
+os.environ["GEMINI_API_KEY"] = ""
+os.environ["GOOGLE_API_KEY"] = ""
 os.environ.setdefault("ATOM_XAI_LIVE", "0")
 os.environ.setdefault("ATOM_OPENAI_LIVE", "0")
+os.environ.setdefault("ATOM_GEMINI_LIVE", "0")
 os.environ.setdefault("ATOM_RISK_PROVIDER", "ollama")
 
 @pytest.fixture(autouse=True)
@@ -52,12 +56,24 @@ def _openai_key_for_live_marker(monkeypatch, request):
 
 
 @pytest.fixture(autouse=True)
+def _gemini_key_for_live_marker(monkeypatch, request):
+    """Blank Gemini in unit tests; restore only for @pytest.mark.gemini."""
+    if request.node.get_closest_marker("gemini"):
+        monkeypatch.setenv("GEMINI_API_KEY", _GEMINI_KEY_FROM_ENV)
+    else:
+        monkeypatch.setenv("GEMINI_API_KEY", "")
+        monkeypatch.setenv("GOOGLE_API_KEY", "")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _silence_context_http(monkeypatch, request):
     """Unit tests never hit SearXNG/Brave/exchanges. Live Ollama tests opt out."""
     if (
         request.node.get_closest_marker("ollama")
         or request.node.get_closest_marker("xai")
         or request.node.get_closest_marker("openai")
+        or request.node.get_closest_marker("gemini")
     ):
         yield
         return

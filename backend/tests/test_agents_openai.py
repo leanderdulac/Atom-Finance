@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.cache import Cache
+from app.services.agents.cost_log import log_cost, recent_costs
 from app.services.agents.llm import get_risk_llm
 from app.services.agents.news import merge_news_briefs
 from app.services.agents.openai_news import (
@@ -14,7 +15,6 @@ from app.services.agents.openai_news import (
     news_cache_key,
     openai_configured,
     openai_model,
-    recent_costs,
 )
 from app.services.agents.schemas import NewsBrief
 from app.services.agents.xai import brief_from_xai
@@ -70,9 +70,8 @@ def test_brief_drops_hallucinated_openai_urls():
 def test_estimate_usd_is_labelled_estimate():
     usd = estimate_usd(input_tokens=1_000_000, output_tokens=0, web_search_calls=1)
     assert usd > 0
-    Cache.delete("atom:openai:costs")
-    from app.services.agents.openai_news import log_cost
-    log_cost({"kind": "news", "estimated_usd": usd, "model": "gpt-5-mini"})
+    Cache.delete("atom:context:costs")
+    log_cost({"kind": "news", "provider": "openai", "estimated_usd": usd, "model": "gpt-5-mini"})
     rows = recent_costs()
     assert rows[0]["estimate"] is True
     assert rows[0]["eligible_for_live_trading"] is False
@@ -127,7 +126,7 @@ async def test_openai_news_brief_parses_mocked_responses(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
     monkeypatch.setenv("ATOM_OPENAI_MAX_CALLS_PER_HOUR", "60")
     Cache.delete(news_cache_key("BTC", "days"))
-    Cache.delete("atom:openai:costs")
+    Cache.delete("atom:context:costs")
     text = (
         '{"sentimento": 0.4, "riscos": ["CPI"], "eventos_proximos": [], '
         '"fontes": [{"titulo": "BLS", "url": "https://www.bls.gov/cpi/", "data": "2026-11-13"}]}'

@@ -739,7 +739,7 @@ def assemble(
         confidence = "baixa"
         _mark(
             contributions, "termômetro (fontes)", True,
-            "Grok e OpenAI divergem no clima — confiança reduzida; níveis do arsenal intactos",
+            "As fontes do clima divergem — confiança reduzida; níveis do arsenal intactos",
         )
     lot = float(asset.get("lot_size") or 1.0)
     quote_ccy = "USD" if asset.get("asset_class") == "crypto" else "BRL"

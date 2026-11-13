@@ -3,6 +3,7 @@ markers = [
     "ollama: optional integration against a local Ollama daemon (skipped in CI)",
     "xai: optional live xAI Responses+search (skipped without XAI_API_KEY and ATOM_XAI_LIVE=1)",
     "openai: optional live OpenAI Responses+web_search (skipped without OPENAI_API_KEY and ATOM_OPENAI_LIVE=1)",
+    "gemini: optional live Gemini Google Search grounding (skipped without GEMINI_API_KEY and ATOM_GEMINI_LIVE=1)",
 ]
 
 [tool.ruff]

@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.services.agents.gemini_news import gemini_configured
+from app.services.agents.gemini_news import news_brief as gemini_news_brief
 from app.services.agents.llm import OllamaProvider, get_agent_llm, parse_json_object
 from app.services.agents.openai_news import news_brief as openai_news_brief
 from app.services.agents.openai_news import openai_configured
@@ -109,67 +111,83 @@ def news_from_bundle(bundle: dict[str, Any]) -> NewsBrief | None:
     )
 
 
-# Equal share when both independent sources print. Gap + opposite sign → desacordo.
-_XAI_SHARE = 0.5
-_OPENAI_SHARE = 0.5
+# Equal share among sources that actually printed. High dispersion → desacordo.
 _DIVERGE_GAP = 0.5
+_DISPERSION_HIGH = 0.35
+
+
+def _std(xs: list[float]) -> float:
+    if len(xs) < 2:
+        return 0.0
+    mean = sum(xs) / len(xs)
+    return (sum((x - mean) ** 2 for x in xs) / len(xs)) ** 0.5
+
+
+def _pair_clash(xs: list[float]) -> bool:
+    for i, a in enumerate(xs):
+        for b in xs[i + 1 :]:
+            if a * b < 0 and abs(a - b) >= _DIVERGE_GAP:
+                return True
+    return False
 
 
 def merge_news_briefs(
-    xai: NewsBrief | None,
-    openai: NewsBrief | None,
+    xai: NewsBrief | None = None,
+    openai: NewsBrief | None = None,
+    gemini: NewsBrief | None = None,
 ) -> NewsBrief | None:
-    """Weighted consensus. Grok = X/trends+web; OpenAI = web/notícias."""
-    if xai is None and openai is None:
+    """Weighted consensus of whatever independent sources answered.
+
+    Grok = X/trends+web; OpenAI = web/notícias; Gemini = Google Search/News (pt-BR B3).
+    A failed provider is omitted — the rest still vote.
+    """
+    parts: list[tuple[str, NewsBrief]] = []
+    if xai is not None:
+        parts.append(("xai", xai))
+    if openai is not None:
+        parts.append(("openai", openai))
+    if gemini is not None:
+        parts.append(("gemini", gemini))
+    if not parts:
         return None
-    if xai is not None and openai is None:
-        return xai.model_copy(update={
-            "xai_sentimento": xai.sentimento,
-            "openai_sentimento": None,
-            "source_disagreement": False,
-            "providers": ["xai"],
-        })
-    if openai is not None and xai is None:
-        return openai.model_copy(update={
-            "xai_sentimento": None,
-            "openai_sentimento": openai.sentimento,
-            "source_disagreement": False,
-            "providers": ["openai"],
-        })
-    assert xai is not None and openai is not None
-    xs, os_ = float(xai.sentimento), float(openai.sentimento)
-    score = float(_XAI_SHARE * xs + _OPENAI_SHARE * os_)
-    disagree = (xs * os_) < 0 and abs(xs - os_) >= _DIVERGE_GAP
-    fontes = list(xai.fontes)
-    seen = {s.url for s in fontes}
-    for src in openai.fontes:
-        if src.url not in seen:
-            fontes.append(src)
-            seen.add(src.url)
-    eventos = list(xai.eventos_proximos)
-    ev_keys = {(e.nome, e.data) for e in eventos}
-    for event in openai.eventos_proximos:
-        key = (event.nome, event.data)
-        if key not in ev_keys:
-            eventos.append(event)
-            ev_keys.add(key)
+    scores = [float(b.sentimento) for _, b in parts]
+    mean = sum(scores) / len(scores)
+    disp = round(_std(scores), 4)
+    disagree = _pair_clash(scores) or disp >= _DISPERSION_HIGH
+    fontes = []
+    seen: set[str] = set()
+    eventos = []
+    ev_keys: set[tuple[str, str]] = set()
     riscos: list[str] = []
-    for item in list(xai.riscos) + list(openai.riscos):
-        if item and item not in riscos:
-            riscos.append(item)
+    for _name, brief in parts:
+        for src in brief.fontes:
+            if src.url not in seen:
+                fontes.append(src)
+                seen.add(src.url)
+        for event in brief.eventos_proximos:
+            key = (event.nome, event.data)
+            if key not in ev_keys:
+                eventos.append(event)
+                ev_keys.add(key)
+        for item in brief.riscos:
+            if item and item not in riscos:
+                riscos.append(item)
+    by_name = {name: brief for name, brief in parts}
     try:
         return NewsBrief(
             eventos_proximos=eventos,
-            sentimento=max(-1.0, min(1.0, score)),
+            sentimento=max(-1.0, min(1.0, mean)),
             riscos=riscos[:8],
             fontes=fontes,
-            xai_sentimento=xs,
-            openai_sentimento=os_,
+            xai_sentimento=float(by_name["xai"].sentimento) if "xai" in by_name else None,
+            openai_sentimento=float(by_name["openai"].sentimento) if "openai" in by_name else None,
+            gemini_sentimento=float(by_name["gemini"].sentimento) if "gemini" in by_name else None,
+            dispersion=disp,
             source_disagreement=disagree,
-            providers=["xai", "openai"],
+            providers=[name for name, _ in parts],
         )
     except ValidationError:
-        return xai
+        return parts[0][1]
 
 
 def _validate_brief(raw: dict[str, Any] | None) -> NewsBrief | None:
@@ -188,21 +206,24 @@ async def run_news_agent(ticker: str, horizon: str, *, asset_class: str = "equit
     bundle = await asyncio.to_thread(
         gather.gather_context, ticker, horizon, asset_class=asset_class,
     )
-    xai_brief = None
-    openai_brief = None
-    if xai_configured():
+    packed = dict(bundle)
+    packed["asset_class"] = asset_class
+
+    async def _try(name: str, enabled: bool, fn: Any) -> NewsBrief | None:
+        if not enabled:
+            return None
         try:
-            xai_brief = await xai_news_brief(ticker, horizon, bundle)
+            return await fn(ticker, horizon, packed)
         except Exception as exc:
-            logger.info("xAI news agent failed (%s)", type(exc).__name__)
-            xai_brief = None
-    if openai_configured():
-        try:
-            openai_brief = await openai_news_brief(ticker, horizon, bundle)
-        except Exception as exc:
-            logger.info("OpenAI news agent failed (%s)", type(exc).__name__)
-            openai_brief = None
-    merged = merge_news_briefs(xai_brief, openai_brief)
+            logger.info("%s news agent failed (%s)", name, type(exc).__name__)
+            return None
+
+    xai_brief, openai_brief, gemini_brief = await asyncio.gather(
+        _try("xAI", xai_configured(), xai_news_brief),
+        _try("OpenAI", openai_configured(), openai_news_brief),
+        _try("Gemini", gemini_configured(), gemini_news_brief),
+    )
+    merged = merge_news_briefs(xai_brief, openai_brief, gemini_brief)
     if merged:
         return merged
     llm = get_agent_llm()

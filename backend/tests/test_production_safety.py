@@ -77,6 +77,7 @@ _HEALTH_SECRET_ENV = {
     'OPENAI_API_KEY': 'sk-proj-abcdefghijklmnopqrstuvwxyz012345',
     'PERPLEXITY_API_KEY': 'pplx-abcdefghijklmnopqrstuvwxyz012345',
     'GOOGLE_API_KEY': 'AIzaSyabcdefghijklmnopqrstuvwxyz012345678',
+    'GEMINI_API_KEY': 'AIzaSyGeminiTestKeyabcdefghijklmnopqr',
     'XAI_API_KEY': 'xai-abcdefghijklmnopqrstuvwxyz0123456789',
     'BRAPI_TOKEN': 'brapi-secret-token-abcdefghijklmnop',
 }
