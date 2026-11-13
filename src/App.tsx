@@ -9,7 +9,7 @@ import {
   ShowChart, Assessment, AccountBalance, Psychology, Warning,
   Timeline, DarkMode, LightMode, Menu as MenuIcon, Waves, Terminal, AutoGraph,
   FindInPage, Functions, TrendingUp, MonetizationOn, CallMerge, RocketLaunch, AutoFixHigh,
-  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune,
+  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune, Speed,
 } from '@mui/icons-material';
 import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -19,6 +19,7 @@ import DisclaimerBanner from './components/DisclaimerBanner';
 // multi-megabyte bundle for the whole app (30+ pages were previously eager).
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const LandingPage = lazy(() => import('./pages/LandingPage'));
+const OperationsPage = lazy(() => import('./pages/OperationsPage'));
 const ExperimentsPage = lazy(() => import('./pages/ExperimentsPage'));
 const PricingPage = lazy(() => import('./pages/PricingPage'));
 const RiskPage = lazy(() => import('./pages/RiskPage'));
@@ -97,6 +98,7 @@ const exploratoryItems = [
 ];
 
 const coreItems = [
+  { label: 'Mesa de operações', path: '/operations', icon: <Speed /> },
   { label: 'Doutrina da mesa', path: '/quant-doctrine', icon: <MenuBook /> },
   { label: 'Mesa de papers', path: '/desk', icon: <Functions /> },
   { label: 'Regimes', path: '/regime', icon: <Warning /> },
@@ -266,6 +268,7 @@ function AppLayout() {
       >
         <Suspense fallback={<RouteFallback />}>
         <Routes>
+          <Route path="/operations" element={<ProtectedRoute><OperationsPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><ExperimentsPage /></ProtectedRoute>} />
           <Route path="/desk" element={<ProtectedRoute><DeskLabPage /></ProtectedRoute>} />
           <Route path="/regime" element={<ProtectedRoute><RegimePage /></ProtectedRoute>} />

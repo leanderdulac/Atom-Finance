@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 19: mesa de operações (cockpit do operador)
+
+Operar deixou de ser caçar em 13 páginas: a Mesa de operações junta o que exige atenção hoje (bandas de saída vs último preço registrado, prazos, alertas, risco reservado) e uma entrada assistida (mercado → ativo → tese → livro declarado → planos → acompanhar).
+
+### Added
+- `GET /api/paper-trades/operations` — estado do operador em uma ida: bandas de plano (gatilho/invalidação/alvo), entrada preenchida (débito), último mark (PnL estimado, alertas), risco reservado e orçamento por plano, via LATERAL joins (sem N+1). O diário `/paper-trades/{id}` permanece o único escritor e registro imutável.
+- Página `/operations` (`OperationsPage`), primeira da navegação: cartões "Agora" (aguardando gatilho com validade expirada destacada; abertas com barra de banda invalidação→alvo e countdown do prazo), agregado (abertas/aguardando/risco reservado), chip de regime com kill switch.
+- Entrada assistida em 4 passos sem import de arquivo: ativo + cotação (brapi) → tese (direção, gatilho, invalidação, alvo, prazo, calendário) → livro de opções **declarado pelo operador** (tabela inline; o ATOM nunca inventa liquidez — o `options-chain` automático é BS/OpenBB e não serve de livro) → planos condicionais → acompanhar.
+- Testes: ciclo completo do estado (watching→open→mark→invalidação) + fronteira de usuário em `test_paper_trades.py`.
+
+### Not
+- O diário continua o único escritor das operações em curso: entrada/mark/close continuam no `/paper-trades` (deep links na mesa). Cotações das pernas seguem declaradas pelo operador; nada envia ordens.
+
 ## [Unreleased] — round 18: observabilidade de produção
 
 Sem métrica não há operação: `/api/metrics` expõe o processo em formato Prometheus, fail-closed (JWT) por default, com cardinalidade limitada (handler do endpoint como label — query string e id de recurso nunca viram label).
