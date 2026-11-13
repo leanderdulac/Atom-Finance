@@ -123,6 +123,62 @@ def _client_view(payload: dict) -> dict:
     return out
 
 
+async def _load_sentiment(ticker: str, horizon: Horizon, news, market) -> tuple[dict | None, float]:
+    from app.models.sentiment_signal import build_signal, effective_weight
+    from app.services.sentiment_eval import evaluate_pairs
+
+    history: list = []
+    skill = None
+    try:
+        from app.db.sentiment import list_snapshots
+        history = await list_snapshots(ticker, horizon, limit=200)
+        skill = evaluate_pairs(history)
+    except Exception:
+        history = []
+    holding = int(HORIZONS[horizon]["holding_days"])
+    price = None
+    price_mom = None
+    if market and market.quote:
+        try:
+            price = float(market.quote.get("price") or market.quote.get("current_price") or 0) or None
+        except (TypeError, ValueError):
+            price = None
+    closes = (market.history or {}).get("close") or [] if market else []
+    if len(closes) > holding:
+        try:
+            price_mom = float(closes[-1] / closes[-1 - holding] - 1.0)
+        except (TypeError, ValueError, ZeroDivisionError):
+            price_mom = None
+    signal = build_signal(
+        ticker, horizon, news=news, history=history, price=price,
+        price_mom=price_mom, holding_days=holding,
+    )
+    return signal, effective_weight(skill)
+
+
+async def _persist_signal(signal: dict | None) -> None:
+    if not signal:
+        return
+    try:
+        from datetime import UTC, datetime
+
+        from app.db.sentiment import insert_snapshot, latest_snapshot
+        latest = await latest_snapshot(signal["ticker"], signal["horizon"])
+        if latest and latest.get("created_at"):
+            created = latest["created_at"]
+            if getattr(created, "tzinfo", None) is None:
+                created = created.replace(tzinfo=UTC)
+            age = datetime.now(UTC) - created
+            if age.total_seconds() < 180:
+                return
+        await insert_snapshot({
+            **signal,
+            "payload": {"label": signal.get("label"), "climate": signal.get("climate")},
+        })
+    except Exception:
+        return
+
+
 async def build_ready_operation(
     req: ReadyRequest,
     *,
@@ -130,22 +186,28 @@ async def build_ready_operation(
     role: str | None = None,
 ) -> dict:
     market = await asyncio.to_thread(load_market, req.ticker)
-    payload = await asyncio.to_thread(
-        assemble, req.ticker, req.instrument, req.horizon, market=market,
-    )
-    payload = await _decorate_why(payload)
     asset = resolve_asset(req.ticker)
     asset_class = str((asset or {}).get("asset_class") or "equity_br")
     news = await run_news_agent(req.ticker, req.horizon, asset_class=asset_class)
+    signal, weight = await _load_sentiment(req.ticker, req.horizon, news, market)
+    payload = await asyncio.to_thread(
+        assemble, req.ticker, req.instrument, req.horizon, market=market,
+        sentiment=signal, sentiment_weight=weight,
+    )
+    payload = await _decorate_why(payload)
     risk = await run_risk_agent(payload, news)
     payload = apply_context_risk(payload, news, risk)
     payload["why"] = cite_sources(str(payload.get("why") or ""), news)
+    if payload.get("thermometer") is None and signal:
+        from app.models.sentiment_signal import thermometer_view
+        payload["thermometer"] = thermometer_view(signal)
     payload.setdefault("arsenal", []).append({
         "part": "Contexto (notícias/macro)",
         "used": bool(news),
         "note": "fontes públicas em cache; LLM não escolhe preço nem nível" if news
         else "sem fonte pública — nenhum contexto inventado",
     })
+    await _persist_signal(signal)
     await record_audit(
         owner=owner, role=role, ticker=req.ticker, horizon=req.horizon,
         payload=payload, news=news, risk=risk,

@@ -56,6 +56,7 @@ cd backend && alembic upgrade head
 #    XAI_MODEL=grok-4.3             # ou grok-4.20-0309-reasoning
 #    ATOM_XAI_MAX_CALLS_PER_HOUR=60
 #    ATOM_RISK_PROVIDER=ollama
+#    ATOM_SENTIMENT_WEIGHT=0.2      # termômetro; só subir com evidência
 #    SEARXNG_URL=                   # vazio = sem busca web; ver «Contexto»
 #    BRAVE_API_KEY=
 #    TAVILY_API_KEY=
@@ -149,7 +150,11 @@ O **agente de risco** (advogado do diabo) é Ollama por omissão (`ATOM_RISK_PRO
 | OpenAI | `ATOM_AGENT_LLM=openai` **e** `OPENAI_API_KEY=…` |
 | Perplexity | `ATOM_AGENT_LLM=perplexity` **e** `PERPLEXITY_API_KEY=…` |
 
-Sem a chave, nenhuma chamada sai. JSON inválido ou notícia sem `fontes` é descartado. Teste pago: `ATOM_XAI_LIVE=1 pytest -m xai` (pula sem chave). O cliente vê o resultado e as fontes; objeções ficam no diário (`GET /api/desk/context-audits`, modo operador).
+Sem a chave, nenhuma chamada sai. JSON inválido ou notícia sem `fontes` é descartado. Teste pago: `ATOM_XAI_LIVE=1 pytest -m xai` (pula sem chave). O cliente vê o resultado, o **termômetro** («Clima do mercado para BTC: otimista») e as fontes; objeções ficam no diário (`GET /api/desk/context-audits`, modo operador).
+
+### Termômetro (direção, não só risco)
+
+O clima (X search + notícias) entra na direção e na confiança com peso `ATOM_SENTIMENT_WEIGHT` (padrão **0.2**). Concordância com o arsenal sobe a confiança; desacordo forte recusa o paper. **Entrada, stop e alvo continuam só do arsenal.** O worker grava a série em Postgres (`sentiment_snapshots`). Relatório honesto: `GET /api/desk/sentiment-skill?ticker=BTC&horizon=weeks` (acerto e correlação vs retorno futuro). `POST` no mesmo caminho escreve no diário de pesquisa. CLI: `python -m app.services.sentiment_eval --ticker BTC --horizon weeks`. O peso **não sobe sozinho** — só com evidência neste relatório.
 
 ## Desinstalar
 

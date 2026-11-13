@@ -82,6 +82,7 @@ def _redacted_database_url() -> str:
 _TABLES = (
     "reports", "users", "experiments", "experiment_reviews",
     "derivative_plans", "source_snapshots", "paper_trades", "paper_events",
+    "sentiment_snapshots",
 )
 
 
