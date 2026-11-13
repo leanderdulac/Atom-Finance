@@ -86,11 +86,11 @@ UI_HOST="${ATOM_UI_HOST:-127.0.0.1}"
 UI_PORT="${ATOM_UI_PORT:-4173}"
 URL_FILE="$LOGS/public-url.txt"
 
-echo "Aguardando URL do túnel em $URL_FILE…"
+echo "Aguardando URL do túnel em ${URL_FILE}…"
 public=""
 for _ in $(seq 1 45); do
-  if [[ -s "$URL_FILE" ]]; then
-    public="$(tr -d '\r' < "$URL_FILE" | awk 'NF{print; exit}')"
+  if [[ -s "${URL_FILE}" ]]; then
+    public="$(tr -d '\r' < "${URL_FILE}" | awk 'NF{print; exit}')"
     break
   fi
   sleep 1
@@ -116,7 +116,7 @@ elif [[ "$public" == "named-tunnel" ]]; then
 else
   echo "  público:  $public"
   echo "            Quick tunnel: este endereço muda a cada reinício."
-  echo "            Gravado em $URL_FILE"
+  echo "            Gravado em ${URL_FILE}"
 fi
 
 cat <<EOF
