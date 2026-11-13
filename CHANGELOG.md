@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 20: tooling — ESLint 10 (flat config)
+
+O lint tinha parado de correr: ESLint 10 removeu o suporte a `.eslintrc.*` e o repo ainda estava no formato legacy. A migração é de formato, não de política — o conjunto de regras efetivas é o mesmo de antes.
+
+### Changed
+- `eslint.config.js` (flat) substitui `.eslintrc.cjs`, que é removido: mesmas regras (`eslint:recommended`, `@typescript-eslint/recommended`, `react-hooks` clássico, `react-refresh/only-export-components`), com `no-undef` desligado em TS (o `tsc` já cobre) e `backend/`, `research/` e `.venv` ignorados.
+- Dependências: `eslint` 8 → 10, `@typescript-eslint/*` 7 → 8, `eslint-plugin-react-hooks` 4 → 7, `eslint-plugin-react-refresh` 0.4 → 0.5, `typescript` 5.2 → 5.9; entram `@eslint/js` e `globals`.
+- Script `lint` sem `--ext ts,tsx` (a flag desapareceu no ESLint 9+); `src/services/api.ts` perde a diretiva `no-constant-condition`, obsoleta porque `while (true)` passou a ser aceito por omissão.
+
+### Not
+- As 14 regras novas do `react-hooks` v7 (React Compiler) não foram adotadas: medidas, custam 17 erros no código atual (14 `set-state-in-effect`, 3 `purity`). Fica como tarefa à parte.
+
 ## [Unreleased] — round 19: mesa de operações (cockpit do operador)
 
 Operar deixou de ser caçar em 13 páginas: a Mesa de operações junta o que exige atenção hoje (bandas de saída vs último preço registrado, prazos, alertas, risco reservado) e uma entrada assistida (mercado → ativo → tese → livro declarado → planos → acompanhar).
