@@ -132,10 +132,10 @@ export const api = {
     horizons: unknown[]; disclaimer: string; eligible_for_live_trading: boolean;
   }>('/client/config'),
   clientReadyOperation: (
-    data: { ticker: string; instrument: string; horizon: string },
+    data: { ticker: string; instrument: string; horizon: string; tickers?: string[]; weights?: number[] },
     init?: RequestInit,
   ) => request<unknown>('/client/ready-operation', { method: 'POST', body: JSON.stringify(data), ...init }),
-  clientReadyPaper: (data: { ticker: string; instrument: string; horizon: string }) =>
+  clientReadyPaper: (data: { ticker: string; instrument: string; horizon: string; tickers?: string[]; weights?: number[] }) =>
     request<unknown>('/client/ready-operation/paper', { method: 'POST', body: JSON.stringify(data) }),
 
   // Pricing

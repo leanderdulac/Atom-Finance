@@ -312,4 +312,105 @@ describe('ReadyOperationPage', () => {
     expect(screen.queryByText(/venda à vista/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/venda de perpétuo/i).length).toBeGreaterThan(0);
   });
+
+  it('lets the mixed sleeve mark several assets and sends a weighted basket', async () => {
+    clientReadyOperation.mockResolvedValue({
+      status: 'ready',
+      ticker: 'MIX',
+      label: 'Carteira mista',
+      basket: [
+        {
+          ticker: 'PETR4',
+          label: 'Petrobras (PETR4)',
+          status: 'ready',
+          weight: 0.4,
+          direction: 'bullish',
+          instrument: 'spot',
+          spot: 38,
+          entry: 38.2,
+          invalidation: 36,
+          quote_currency: 'BRL',
+          structure: { strategy: 'long_stock', legs: [{ side: 'buy', symbol: 'PETR4', strike: 38, quantity: 10 }] },
+          suggested_size: { quantity: 10, risk_budget_brl: 40, can_register_paper: true },
+        },
+        {
+          ticker: 'BTC',
+          label: 'Bitcoin',
+          status: 'ready',
+          weight: 0.6,
+          direction: 'bullish',
+          instrument: 'spot',
+          spot: 77640.12,
+          entry: 78000,
+          invalidation: 70000,
+          quote_currency: 'USD',
+          structure: { strategy: 'long_stock', legs: [{ side: 'buy', symbol: 'BTC', strike: 77640, quantity: 0.001 }] },
+          suggested_size: { quantity: 0.001, risk_budget_brl: 60, can_register_paper: true },
+        },
+      ],
+      structure: {
+        strategy: 'mixed_book',
+        legs: [
+          { side: 'buy', symbol: 'PETR4', strike: 38, quantity: 10 },
+          { side: 'buy', symbol: 'BTC', strike: 77640, quantity: 0.001 },
+        ],
+        expiry: '2026-12-01',
+      },
+      suggested_size: { quantity: 2, risk_budget_brl: 100, notional_brl: 900, can_register_paper: true },
+      why: 'Carteira mista com Petrobras e Bitcoin. Simulação, não recomendação.',
+      invalidation_reason: 'Cada perna cai no próprio stop.',
+      confidence: 'média',
+      horizon_label: 'Algumas semanas',
+      eligible_for_live_trading: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /^misto$/i }));
+    const petr = screen.getByRole('button', { name: /petrobras/i });
+    const btc = screen.getByRole('button', { name: /^bitcoin$/i });
+    expect(petr).toHaveAttribute('aria-pressed', 'true');
+    await user.click(btc);
+    expect(petr).toHaveAttribute('aria-pressed', 'true');
+    expect(btc).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/2 marcados/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /montar operação/i }));
+    expect(clientReadyOperation).toHaveBeenCalledTimes(1);
+    expect(clientReadyOperation.mock.calls[0][0]).toEqual({
+      ticker: 'PETR4',
+      tickers: ['PETR4', 'BTC'],
+      instrument: 'spot',
+      horizon: 'weeks',
+      weights: [0.4, 0.6],
+    });
+    expect(await screen.findByText(/carteira mista com petrobras/i)).toBeInTheDocument();
+    expect(screen.getByText(/peso 40,0%/)).toBeInTheDocument();
+    expect(screen.getByText(/peso 60,0%/)).toBeInTheDocument();
+    expect(screen.getByText(/risco máximo de R\$ 100,00/)).toBeInTheDocument();
+    expect(screen.getByText(/carteira com/i)).toHaveTextContent(/2 pernas/);
+    expect(screen.getAllByText(/carteira mista/i).length).toBeGreaterThan(0);
+  });
+
+  it('keeps B3 and crypto sleeves as a single exclusive asset', async () => {
+    clientReadyOperation.mockResolvedValue({
+      status: 'ready',
+      ticker: 'ETH',
+      label: 'Ethereum',
+      instrument: 'spot',
+      direction: 'bearish',
+      structure: { strategy: 'short_stock', legs: [{ side: 'sell', symbol: 'ETH', strike: 1956, quantity: 0.05 }], expiry: '2026-12-01' },
+      suggested_size: { quantity: 0.05, risk_budget_brl: 100, can_register_paper: true },
+      why: 'ETH único. Simulação, não recomendação.',
+      eligible_for_live_trading: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /^cripto$/i }));
+    await user.click(screen.getByRole('button', { name: /^bitcoin$/i }));
+    await user.click(screen.getByRole('button', { name: /^ethereum$/i }));
+    expect(screen.getByRole('button', { name: /^ethereum$/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^bitcoin$/i })).toHaveAttribute('aria-pressed', 'false');
+    await user.click(screen.getByRole('button', { name: /montar operação/i }));
+    expect(clientReadyOperation.mock.calls[0][0]).toEqual({ ticker: 'ETH', instrument: 'spot', horizon: 'weeks' });
+    expect(clientReadyOperation.mock.calls[0][0]).not.toHaveProperty('tickers');
+  });
 });

@@ -63,7 +63,7 @@ export const PROFILE_QUESTIONS = [
 export const SLEEVES: { id: Sleeve; label: string; hint: string }[] = [
   { id: 'equities', label: 'Ações (B3)', hint: 'Carteira em papéis brasileiros que o arsenal já acompanha.' },
   { id: 'crypto', label: 'Cripto', hint: 'Bitcoin, Ethereum e Solana via feed público.' },
-  { id: 'mixed', label: 'Misto', hint: 'Parte em ações, parte em cripto — quando as duas classes fazem sentido.' },
+  { id: 'mixed', label: 'Misto', hint: 'Marque vários ativos (B3 e cripto). Uma perna por marcado; o risco total fica limitado e os pesos vêm do perfil.' },
 ];
 
 const EQUITY = {
@@ -165,6 +165,18 @@ export function tickersForSleeve(sleeve: Sleeve): string[] {
   if (sleeve === 'crypto') return ['BTC', 'ETH', 'SOL'];
   if (sleeve === 'equities') return ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'WEGE3'];
   return ['PETR4', 'VALE3', 'ITUB4', 'BTC', 'ETH', 'SOL'];
+}
+
+/** Profile mix when every marked ticker is in the sleeve book; otherwise equal weights. */
+export function weightsForTickers(tickers: string[], profile: Profile): number[] {
+  if (!tickers.length) return [];
+  const map = new Map(profile.assets.map((row) => [row.ticker, row.weight]));
+  const raw = tickers.map((ticker) => map.get(ticker) ?? 0);
+  const sum = raw.reduce((acc, weight) => acc + weight, 0);
+  if (sum > 0 && raw.every((weight) => weight > 0)) {
+    return raw.map((weight) => weight / sum);
+  }
+  return tickers.map(() => 1 / tickers.length);
 }
 
 /** Default sleeve = ações B3, used by the leftover «Meu plano» simulation. */
