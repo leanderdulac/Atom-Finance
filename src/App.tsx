@@ -9,7 +9,7 @@ import {
   ShowChart, Assessment, AccountBalance, Psychology, Warning,
   Timeline, DarkMode, LightMode, Menu as MenuIcon, Waves, Terminal, AutoGraph,
   FindInPage, Functions, TrendingUp, MonetizationOn, CallMerge, RocketLaunch, AutoFixHigh,
-  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune, Speed,
+  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune, Speed, Person,
 } from '@mui/icons-material';
 import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -54,6 +54,7 @@ const ForwardTestPage = lazy(() => import('./pages/ForwardTestPage'));
 const TargetChoicePage = lazy(() => import('./pages/TargetChoicePage'));
 const QuantDoctrinePage = lazy(() => import('./pages/QuantDoctrinePage'));
 const ErrorMaximizerPage = lazy(() => import('./pages/ErrorMaximizerPage'));
+const ClientExperiencePage = lazy(() => import('./pages/ClientExperiencePage'));
 
 function RouteFallback() {
   return (
@@ -98,6 +99,7 @@ const exploratoryItems = [
 ];
 
 const coreItems = [
+  { label: 'Meu plano', path: '/cliente', icon: <Person /> },
   { label: 'Mesa de operações', path: '/operations', icon: <Speed /> },
   { label: 'Doutrina da mesa', path: '/quant-doctrine', icon: <MenuBook /> },
   { label: 'Mesa de papers', path: '/desk', icon: <Functions /> },
@@ -268,6 +270,7 @@ function AppLayout() {
       >
         <Suspense fallback={<RouteFallback />}>
         <Routes>
+          <Route path="/cliente" element={<ProtectedRoute><ClientExperiencePage /></ProtectedRoute>} />
           <Route path="/operations" element={<ProtectedRoute><OperationsPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><ExperimentsPage /></ProtectedRoute>} />
           <Route path="/desk" element={<ProtectedRoute><DeskLabPage /></ProtectedRoute>} />
