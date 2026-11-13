@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPricePtBr } from './moneyPtBr';
+import { formatDatePtBr, formatPricePtBr } from './moneyPtBr';
 
 describe('formatPricePtBr', () => {
   it('formats BTC, ETH and equities in pt-BR with two decimals', () => {
@@ -13,5 +13,12 @@ describe('formatPricePtBr', () => {
     const text = formatPricePtBr(7.764e4);
     expect(text).toBe('77.640,00');
     expect(text.toLowerCase()).not.toMatch(/e[+-]?\d/);
+  });
+});
+
+describe('formatDatePtBr', () => {
+  it('turns ISO into dd/mm/aaaa', () => {
+    expect(formatDatePtBr('2026-12-04')).toBe('04/12/2026');
+    expect(formatDatePtBr('2026-12-04T12:00:00Z')).toBe('04/12/2026');
   });
 });

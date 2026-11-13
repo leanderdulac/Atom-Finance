@@ -68,6 +68,8 @@ describe('ReadyOperationPage', () => {
     expect(screen.getByText(/retorno desejado/i)).toBeInTheDocument();
     expect(screen.queryByText(/ver meu plano de investimento/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/mesa de operações/i)).not.toBeInTheDocument();
+    expect(screen.getByText('WEGE3')).toBeInTheDocument();
+    expect(screen.queryByText('ABEV3')).not.toBeInTheDocument();
     expect(screen.getAllByText(/não recomendação/i).length).toBeGreaterThan(0);
   });
 
@@ -94,6 +96,7 @@ describe('ReadyOperationPage', () => {
       horizon_label: 'Alguns dias',
       direction: 'bullish',
       structure: { strategy: 'long_stock', legs: [{ side: 'buy', symbol: 'PETR4', strike: 38, quantity: 20 }], expiry: '2026-12-01' },
+      quote_currency: 'BRL',
       spot: 38.1,
       entry: 38.2,
       invalidation: 36,
@@ -119,6 +122,8 @@ describe('ReadyOperationPage', () => {
     expect((await screen.findAllByText(/compra à vista/i)).length).toBeGreaterThan(0);
     expect(screen.getByText(/risco máximo de R\$ 100,00/)).toBeInTheDocument();
     expect(screen.getByText(/nocional da posição R\$ 764,00/)).toBeInTheDocument();
+    expect(screen.getByText('01/12/2026')).toBeInTheDocument();
+    expect(screen.queryByText(/2026-12-01/)).not.toBeInTheDocument();
     expect(screen.queryByText(/orçamento paper/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/aguardando gatilho/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/eligible_for_live_trading/i)).not.toBeInTheDocument();
@@ -136,12 +141,14 @@ describe('ReadyOperationPage', () => {
       horizon_label: 'Algumas semanas',
       direction: 'bullish',
       structure: { strategy: 'long_perp', legs: [{ side: 'buy', symbol: 'BTC', strike: 95000, quantity: 0.01 }], expiry: '2026-12-01' },
+      quote_currency: 'USD',
+      fx_usd_brl: { rate: 5.5, source: 'binance:USDTBRL' },
       spot: 77640.12,
       entry: 77641.2,
       invalidation: 69185.36198,
       target: 86000.5,
-      quantity: 0.01,
-      suggested_size: { quantity: 0.01, risk_budget_brl: 100, notional_brl: 776.41, can_register_paper: true },
+      quantity: 0.002,
+      suggested_size: { quantity: 0.002, risk_budget_brl: 100, notional_brl: 854.05, notional_usd: 155.28, can_register_paper: true },
       confidence: 'média',
       invalidation_reason: 'A tese cai se o preço cruzar 69.185,36.',
       why: 'Cenário de alta em Bitcoin. Simulação, não recomendação.',
@@ -158,8 +165,12 @@ describe('ReadyOperationPage', () => {
     expect(clientReadyOperation).toHaveBeenCalledTimes(1);
     expect(clientReadyOperation.mock.calls[0][0]).toEqual({ ticker: 'BTC', instrument: 'future', horizon: 'weeks' });
     expect((await screen.findAllByText(/compra de perpétuo/i)).length).toBeGreaterThan(0);
-    expect(screen.getByText('77.640,12')).toBeInTheDocument();
-    expect(screen.getByText('69.185,36')).toBeInTheDocument();
+    expect(screen.getByText(/US\$ 77\.640,12/)).toBeInTheDocument();
+    expect(screen.getByText(/US\$ 69\.185,36/)).toBeInTheDocument();
+    expect(screen.getByText(/nocional da posição R\$ 854,05/)).toBeInTheDocument();
+    expect(screen.getByText(/câmbio USD\/BRL 5,5000/)).toBeInTheDocument();
+    expect(screen.getByText('01/12/2026')).toBeInTheDocument();
+    expect(screen.queryByText(/2026-12-01/)).not.toBeInTheDocument();
     expect(screen.queryByText(/e\+0/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/69185,36198/)).not.toBeInTheDocument();
   });

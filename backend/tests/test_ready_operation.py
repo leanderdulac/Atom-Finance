@@ -16,6 +16,8 @@ from app.models.ready_operation import (
     assemble,
     client_facing_why,
     facts_for_llm,
+    format_date_ptbr,
+    format_money_ptbr,
     format_price_ptbr,
     resolve_asset,
 )
@@ -67,6 +69,10 @@ def test_universe_aliases():
     assert resolve_asset("XXXX") is None
 
 
+def _fx(rate=5.5):
+    return {"rate": rate, "source": "test", "as_of": datetime.now(UTC).isoformat()}
+
+
 def _crypto_downtrend(spot=1956.0, n=150):
     """Strong down-move so a short is allowed; last print near `spot`."""
     daily = -0.008
@@ -87,6 +93,7 @@ def test_eth_future_stop_is_capped_and_size_is_fractional():
         quote={"ticker": "ETH", "price": 1956.0, "provider": "binance", "source": "binance"},
         history=hist,
         regime={"regime": "trending", "kill_switch": {"armed": False}},
+        fx_usd_brl=_fx(5.5),
     )
     out = assemble("ETH", "future", "months", market=view, capital=10000, risk_pct=1)
     assert out["status"] == "ready", out.get("reason")
@@ -98,7 +105,10 @@ def test_eth_future_stop_is_capped_and_size_is_fractional():
     qty = out["suggested_size"]["quantity"]
     assert 0 < qty < 1
     assert out["suggested_size"]["can_register_paper"] is True
-    assert out["suggested_size"]["notional_brl"] == round(abs(qty * out["entry"]), 2)
+    assert out["quote_currency"] == "USD"
+    assert out["suggested_size"]["notional_brl"] == round(abs(qty * out["entry"] * 5.5), 2)
+    risk_used = qty * abs(out["entry"] - out["invalidation"]) * 5.5
+    assert risk_used == pytest.approx(out["suggested_size"]["risk_budget_brl"], rel=0.08)
     hurst = out["regime"]["hurst"]
     if hurst is not None:
         assert 0.0 <= hurst <= 1.0
@@ -111,12 +121,30 @@ def test_eth_future_stop_is_capped_and_size_is_fractional():
     assert out["paper_plan"]["legs"][0]["quantity"] == qty
 
 
+def test_crypto_without_fx_does_not_label_usd_as_reais():
+    hist = _crypto_downtrend()
+    view = MarketView(
+        quote={"ticker": "ETH", "price": 1956.0, "provider": "binance", "source": "binance"},
+        history=hist,
+        regime={"regime": "trending", "kill_switch": {"armed": False}},
+    )
+    out = assemble("ETH", "future", "months", market=view, capital=10000, risk_pct=1)
+    assert out["status"] == "ready", out.get("reason")
+    assert out["quote_currency"] == "USD"
+    assert out["suggested_size"]["notional_brl"] is None
+    assert out["suggested_size"]["can_register_paper"] is False
+    assert "câmbio" in (out["suggested_size"]["paper_block"] or "").lower()
+    assert "US$" in out["why"]
+    assert "R$ 946" not in (out["why"] + str(out["suggested_size"]))
+
+
 def test_btc_and_sol_assemble_or_refuse_in_portuguese():
     hist = _history(start=90000, daily=0.004)
     view = MarketView(
         quote={"ticker": "BTC", "price": hist["close"][-1], "provider": "binance", "source": "binance"},
         history={**hist, "provider": "binance", "source": "binance"},
         regime={"regime": "trending", "kill_switch": {"armed": False}},
+        fx_usd_brl=_fx(),
     )
     btc = assemble("BTC", "future", "weeks", market=view)
     assert btc["status"] in {"ready", "insufficient"}
@@ -143,6 +171,13 @@ def test_format_price_ptbr_matches_client_examples():
     assert "e" not in format_price_ptbr(7.764e4).lower()
 
 
+def test_format_date_and_money_ptbr():
+    assert format_date_ptbr("2026-12-04") == "04/12/2026"
+    assert format_date_ptbr(datetime(2026, 12, 4, tzinfo=UTC)) == "04/12/2026"
+    assert format_money_ptbr(77640.12, "USD") == "US$ 77.640,12"
+    assert format_money_ptbr(100, "BRL") == "R$ 100,00"
+
+
 def test_client_facing_why_strips_jargon():
     clean = client_facing_why(
         "Cenário de baixa em Ethereum. Simulação paper.",
@@ -158,6 +193,7 @@ def test_client_facing_why_strips_jargon():
     fallback = "O movimento recente de Bitcoin levou o arsenal a montar um cenário de alta."
     assert client_facing_why("Esse trade vale 200 pontos.", fallback) == fallback
     assert client_facing_why("A tese cai se o preço cruzar 7.764e+04.", fallback) == fallback
+    assert client_facing_why("Prazo até 2026-12-04.", fallback) == fallback
 
 
 def test_btc_invalidation_text_is_pt_br_not_scientific():
@@ -168,6 +204,7 @@ def test_btc_invalidation_text_is_pt_br_not_scientific():
         quote={"ticker": "BTC", "price": spot, "provider": "binance", "source": "binance"},
         history=hist,
         regime={"regime": "trending", "kill_switch": {"armed": False}},
+        fx_usd_brl=_fx(5.5),
     )
     out = assemble("BTC", "future", "weeks", market=view)
     assert out["status"] == "ready", out.get("reason")
@@ -179,14 +216,17 @@ def test_btc_invalidation_text_is_pt_br_not_scientific():
     assert format_price_ptbr(out["invalidation"]) in reason
     assert format_price_ptbr(out["invalidation"]) in facts
     assert format_price_ptbr(spot) in facts
+    assert "US$" in reason
+    assert "Gatilho de entrada" in facts
+    assert "Preço agora" in facts
+    assert "2026-" not in out["why"]
     assert "trade" not in out["why"].lower()
     assert "pontos" not in out["why"].lower()
     hurst = out["regime"]["hurst"]
     if hurst is not None:
         assert 0.0 <= hurst <= 1.0
-    assert out["suggested_size"]["notional_brl"] == round(
-        abs(out["suggested_size"]["quantity"] * out["entry"]), 2,
-    )
+    qty = out["suggested_size"]["quantity"]
+    assert out["suggested_size"]["notional_brl"] == round(abs(qty * out["entry"] * 5.5), 2)
 
 
 def test_spot_trending_up_is_bullish():
@@ -204,6 +244,13 @@ def test_spot_trending_up_is_bullish():
     assert out["suggested_size"]["notional_brl"] == round(
         abs(out["suggested_size"]["quantity"] * out["entry"]), 2,
     )
+    assert out["quote_currency"] == "BRL"
+    assert "cotação agora" in out["why"].lower()
+    assert "gatilho de entrada" in out["why"].lower()
+    assert format_money_ptbr(out["spot"], "BRL") in out["why"]
+    assert format_money_ptbr(out["entry"], "BRL") in out["why"]
+    assert out["spot"] != out["entry"]
+    assert "2026-" not in out["why"]
     hurst = out["regime"]["hurst"]
     if hurst is not None:
         assert 0.0 <= hurst <= 1.0
