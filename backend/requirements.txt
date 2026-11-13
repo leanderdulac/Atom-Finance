@@ -52,7 +52,7 @@ sentry-sdk[fastapi]~=2.19.0
 prometheus-client>=0.21,<1
 
 # Rate limiting
-slowapi~=0.1.9
+slowapi~=0.1.10
 
 # CORS
 starlette>=1.3.1,<2
