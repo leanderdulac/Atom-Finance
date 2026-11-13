@@ -17,12 +17,50 @@ CACHE_TTL = 60  # seconds
 # Lazy-loaded yfinance
 _yfinance = None
 
+# yfinance logs ERROR/WARNING on empty history ("possibly delisted; no price
+# data found") for every call. One warning per ticker from this module is enough.
+_MISSING_DATA_WARNED: set[str] = set()
+
+
+class _YFinanceEmptyDataFilter(logging.Filter):
+    _FRAGMENTS = ("possibly delisted", "no price data found", "no timezone found")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not record.name.startswith("yfinance"):
+            return True
+        msg = record.getMessage().lower()
+        return not any(fragment in msg for fragment in self._FRAGMENTS)
+
+
+def _silence_yfinance_empty_data_logs() -> None:
+    filt = _YFinanceEmptyDataFilter()
+    yf_logger = logging.getLogger("yfinance")
+    if not any(isinstance(existing, _YFinanceEmptyDataFilter) for existing in yf_logger.filters):
+        yf_logger.addFilter(filt)
+    root = logging.getLogger()
+    for handler in root.handlers:
+        if not any(isinstance(existing, _YFinanceEmptyDataFilter) for existing in handler.filters):
+            handler.addFilter(filt)
+
+
+def _warn_missing_data_once(symbol: str, detail: str) -> None:
+    key = symbol.upper()
+    if key in _MISSING_DATA_WARNED:
+        return
+    _MISSING_DATA_WARNED.add(key)
+    logger.warning(
+        "Skipping %s: no market data (%s). Further empty results for this ticker will be silent.",
+        key,
+        detail,
+    )
+
 
 def _get_yfinance():
     global _yfinance
     if _yfinance is None:
         try:
             import yfinance as yf
+            _silence_yfinance_empty_data_logs()
             _yfinance = yf
         except ImportError:
             logger.error("yfinance not installed. Run: pip install yfinance")
@@ -50,9 +88,13 @@ class DataFetcher:
 
         try:
             data = yf.Ticker(symbol).info
+            price = data.get("currentPrice") or data.get("regularMarketPrice", 0)
+            if not price:
+                _warn_missing_data_once(symbol, "no price in quote")
+                return None
             quote = {
                 "ticker": symbol,
-                "price": data.get("currentPrice") or data.get("regularMarketPrice", 0),
+                "price": price,
                 "change": data.get("regularMarketChange", 0),
                 "change_pct": data.get("regularMarketChangePercent", 0),
                 "volume": data.get("volume", 0),
@@ -73,7 +115,7 @@ class DataFetcher:
             Cache.set(cache_key, quote, ex=CACHE_TTL)
             return quote
         except Exception as exc:
-            logger.error("Error fetching quote for %s: %s", symbol, exc)
+            _warn_missing_data_once(symbol, f"quote error: {type(exc).__name__}")
             return None
 
     # ── Historical ────────────────────────────────────────────────────────────
@@ -89,10 +131,14 @@ class DataFetcher:
         if not yf:
             return None
         try:
-            return yf.Ticker(symbol).history(period=period, interval=interval)
-        except Exception as exc:
-            logger.error("Error fetching historical data for %s: %s", symbol, exc)
+            frame = yf.Ticker(symbol).history(period=period, interval=interval)
+        except Exception:
+            _warn_missing_data_once(symbol, "history error")
             return None
+        if frame is None or frame.empty:
+            _warn_missing_data_once(symbol, "empty history")
+            return None
+        return frame
 
     # ── Options Chain ─────────────────────────────────────────────────────────
 

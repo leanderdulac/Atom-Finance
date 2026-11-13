@@ -1,0 +1,22 @@
+[Unit]
+Description=ATOM Quantitative Finance Platform
+Documentation=file:///opt/atom/docs/PRODUCTION.md
+Requires=docker.service
+Wants=network-online.target
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/atom
+EnvironmentFile=/opt/atom/.env.prod
+# Boot must reuse images already built by scripts/deploy.sh (or an explicit
+# `docker compose build`). `up --build` pip-installs torch on every reboot and
+# exceeds TimeoutStartSec, marking the unit failed even when containers are up.
+ExecStart=/usr/bin/docker compose --project-name atom --env-file /opt/atom/.env.prod -f docker-compose.prod.yml up -d --no-build
+ExecStop=/usr/bin/docker compose --project-name atom --env-file /opt/atom/.env.prod -f docker-compose.prod.yml down
+TimeoutStartSec=120
+User=atom
+
+[Install]
+WantedBy=multi-user.target

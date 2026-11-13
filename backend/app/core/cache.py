@@ -6,6 +6,7 @@ import logging
 import os
 import time
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit, urlunsplit
 
 if TYPE_CHECKING:
     import redis
@@ -14,6 +15,18 @@ logger = logging.getLogger(__name__)
 
 _redis_client: redis.Redis | None = None
 _redis_unavailable = False  # avoid hammering a down Redis on every request
+
+
+def _redact_url(url: str) -> str:
+    """Strip passwords from redis/db URLs before they reach logs."""
+    parts = urlsplit(url)
+    if parts.password is None:
+        return url
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    username = parts.username if parts.username is not None else ""
+    return urlunsplit(parts._replace(netloc=f"{username}:***@{host}"))
 
 
 def _get_redis() -> redis.Redis | None:
@@ -29,11 +42,11 @@ def _get_redis() -> redis.Redis | None:
         client = redis.from_url(url, decode_responses=True, socket_connect_timeout=2)
         client.ping()
         _redis_client = client
-        logger.info("Redis connected at %s", url)
+        logger.info("Redis connected at %s", _redact_url(url))
         return _redis_client
     except Exception as exc:
         _redis_unavailable = True
-        logger.warning("Redis unavailable — using in-memory cache: %s", exc)
+        logger.warning("Redis unavailable — using in-memory cache: %s", type(exc).__name__)
         return None
 
 

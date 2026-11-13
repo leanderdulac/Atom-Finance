@@ -18,6 +18,8 @@ docker compose -p atom --env-file /opt/atom/.env.prod \
   -f docker-compose.prod.yml -f docker-compose.edge.yml up -d --build --wait
 ```
 
+Esse `--build` é um passo explícito de ativação/deploy (Caddy + stack), não o boot. O unit `atom.service` sobe só imagens já construídas (`up -d --no-build`). Atualizações seguintes: `ATOM_ENABLE_EDGE=true TARGET_SHA=… scripts/deploy.sh`.
+
 O Caddy cuida da emissão e renovação de certificados, persistidos em `caddy_data`. O nginx interno continua em loopback no host. O script antigo `setup-ssl.sh` foi desativado: sobrescrevia arquivo versionado sem montar corretamente os certificados. Não combinar os dois métodos.
 
 Para atualizar com `scripts/deploy.sh`, passar `ATOM_ENABLE_EDGE=true` e `TARGET_SHA` do commit aprovado pelo CI. A ativação HTTPS não é presumida no workflow existente: configurar o hostname e verificar primeiro o host. O sucesso de `compose --wait` não certifica TLS público: conferir HTTPS externamente.

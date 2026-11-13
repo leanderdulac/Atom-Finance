@@ -23,6 +23,7 @@ if [[ "${ATOM_ENABLE_EDGE:-false}" == true ]]; then
   services+=(edge)
 fi
 "${compose[@]}" config --quiet
+# Image builds belong here, not in atom.service (boot is `up --no-build`).
 "${compose[@]}" build backend frontend
 # Online backup using the currently running image, before changing the service.
 # Storage is Postgres (managed, outside this compose) since round 3 — pg_dump
@@ -38,6 +39,7 @@ if [[ -n "$("${compose[@]}" ps --status running -q backend)" ]]; then
   chmod 600 "$APP_DIR/backups/$backup_file"
 fi
 # --wait fails the release if any container fails readiness. Retain images/worktrees.
-"${compose[@]}" up -d --wait --wait-timeout 180 "${services[@]}"
+# --no-build: this script already built; boot/start must not compile torch again.
+"${compose[@]}" up -d --no-build --wait --wait-timeout 180 "${services[@]}"
 printf '%s\n' "$TARGET_SHA" > "$APP_DIR/deployed-sha"
 echo "Healthy release: $TARGET_SHA"

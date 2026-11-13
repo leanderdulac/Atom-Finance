@@ -24,10 +24,11 @@ asyncpg==0.30.0
 bcrypt==4.2.1
     # via -r backend/requirements.txt
 beautifulsoup4==4.15.0
+
     # via
     #   -r backend/requirements.txt
     #   yfinance
-certifi==2026.10.18
+certifi==2026.10.23
     # via
     #   -r backend/requirements.txt
     #   curl-cffi
@@ -84,7 +85,7 @@ et-xmlfile==2.0.0
     #   openpyxl
 fastapi==0.141.1
     # via -r backend/requirements.txt
-filelock==4.2.1
+filelock==4.2.9
     # via
     #   -r backend/requirements.txt
     #   huggingface-hub
@@ -300,7 +301,7 @@ scipy==1.14.1
     #   torchsde
 sentry-sdk==2.19.2
     # via -r backend/requirements.txt
-setuptools==84.1.0
+setuptools==84.2.1
     # via
     #   -r backend/requirements.txt
     #   torch
@@ -376,6 +377,7 @@ typing-extensions==4.16.0
     #   torch
     #   typing-inspection
 typing-inspection==0.4.4
+
     # via
     #   -r backend/requirements.txt
     #   fastapi
