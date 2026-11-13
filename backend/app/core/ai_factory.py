@@ -130,8 +130,18 @@ class GrokProvider(LLMProvider):
             )
             return response.choices[0].message.content
         except Exception as e:
+            err_msg = str(e).lower()
+            if "insufficient_quota" in err_msg or "rate_limit" in err_msg:
+                logger.error(f"Grok Quota Error: {e}")
+                raise QuotaException(str(e)) from e
+            if "insufficient_balance" in err_msg:
+                logger.error(f"Grok Credit Error: {e}")
+                raise CreditException(str(e)) from e
+            # Raise instead of returning a fallback string: swallowing the error
+            # here would present a failure as a valid completion and break the
+            # generate_robust_complete() fallback chain (grok sits mid-order).
             logger.error(f"Grok error: {e}")
-            return f"Erro no Grok: {e}"
+            raise LLMException(str(e)) from e
 
 class PerplexityProvider(LLMProvider):
     def __init__(self, api_key: str):
@@ -151,8 +161,18 @@ class PerplexityProvider(LLMProvider):
             )
             return response.choices[0].message.content
         except Exception as e:
+            err_msg = str(e).lower()
+            if "insufficient_quota" in err_msg or "rate_limit" in err_msg:
+                logger.error(f"Perplexity Quota Error: {e}")
+                raise QuotaException(str(e)) from e
+            if "insufficient_balance" in err_msg:
+                logger.error(f"Perplexity Credit Error: {e}")
+                raise CreditException(str(e)) from e
+            # Raise instead of returning a fallback string: swallowing the error
+            # here would present a failure as a valid completion and break the
+            # generate_robust_complete() fallback chain (perplexity sits mid-order).
             logger.error(f"Perplexity error: {e}")
-            return f"Erro no Perplexity: {e}"
+            raise LLMException(str(e)) from e
 
 class AIFactory:
     _instance = None
