@@ -5,11 +5,13 @@ import {
 } from '@mui/material';
 import { Visibility, VisibilityOff, AutoGraph, Lock, Person, Email } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
+import { useClientConfig } from '../contexts/ClientModeContext';
 import { useNavigate } from 'react-router-dom';
 
 export default function LoginPage() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
+  const clientCfg = useClientConfig();
   const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,7 +31,7 @@ export default function LoginPage() {
     try {
       if (tab === 0) await login(username, password);
       else await register(username, email, password);
-      navigate('/dashboard');
+      navigate(clientCfg.client_mode ? '/cliente' : '/dashboard');
     } catch (err: any) {
       setError(err.message || 'Erro desconhecido.');
     } finally {

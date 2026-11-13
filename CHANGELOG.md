@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 21: operação pronta para o cliente + modo Mac
+
+O cliente deixa de ver ~30 telas de operador. Três escolhas (ativo, instrumento, horizonte) e o arsenal monta a operação paper — ou recusa com honestidade. No Mac público, `ATOM_CLIENT_MODE=true` tranca a mesa no backend, não só no menu.
+
+### Added
+- `POST /api/client/ready-operation` e `…/paper`: orquestrador determinístico (cotação, EWMA/GARCH, Hurst, regime, planner de derivativos, gregas BS, Heston só como ilustração). LLM local (Ollama) redige o «por quê»; não escolhe a operação. Sem dado/sinal → `insufficient`, sem livro inventado.
+- Tela `/cliente` (Operação pronta) e `/cliente/plano` (Meu plano, jornadas do PR #32 sem depender do merge). Landing e login no modo cliente levam a essa experiência.
+- `ATOM_CLIENT_MODE`: 403 nas APIs da mesa para `analyst`; `admin`/`operator` seguem com tudo. Job de cache (`client_arsenal` + Redis) reaproveita o loop de regime.
+- `ops/macos/`: launchd (backend com caffeinate, worker, frontend `dist`, cloudflared), install/uninstall idempotentes, logs em `~/Library/Logs/atom/`.
+- Paralelismo por env: `ATOM_COMPUTE_WORKERS`, `ATOM_IO_WORKERS`, `ATOM_DB_POOL_*`, `ATOM_TORCH_DEVICE` (mps/cpu).
+
+### Not
+- Paper only. `eligible_for_live_trading` continua falso. Sem OMS, sem ordem real, sem promessa de retorno.
+- «Ativo de operação» = instrumento (à vista / opção / futuro-perp), não um segundo ticker. Futuro B3 não existe no arsenal — a tela diz isso.
+- O diário `/paper-trades` permanece o único escritor; o cliente só abre um `watching`.
+
 ## [Unreleased] — round 20: tooling — ESLint 10 (flat config)
 
 O lint tinha parado de correr: ESLint 10 removeu o suporte a `.eslintrc.*` e o repo ainda estava no formato legacy. A migração é de formato, não de política — o conjunto de regras efetivas é o mesmo de antes.

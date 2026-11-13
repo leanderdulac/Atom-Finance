@@ -59,7 +59,11 @@ logger = logging.getLogger(__name__)
 
 def _parse_origins() -> list[str]:
     """Support comma-separated ALLOWED_ORIGINS or single FRONTEND_URL."""
-    raw = os.getenv("ALLOWED_ORIGINS") or os.getenv("FRONTEND_URL", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174")
+    raw = os.getenv("ALLOWED_ORIGINS") or os.getenv(
+        "FRONTEND_URL",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,"
+        "http://localhost:4173,http://127.0.0.1:4173",
+    )
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
@@ -70,17 +74,22 @@ async def lifespan(_app: FastAPI):
         logger.info("Cache backend: Redis")
     else:
         logger.warning("Cache backend: in-memory (Redis not available)")
-    job_task = None
+    job_tasks: list[asyncio.Task] = []
     async with exclusive_runtime():
         from app.services.regime_job import job_enabled
         from app.services.regime_job import loop as regime_loop
         if job_enabled():
-            job_task = asyncio.create_task(regime_loop(), name="regime-job")
+            job_tasks.append(asyncio.create_task(regime_loop(), name="regime-job"))
             logger.info("Regime 4h job started")
+        from app.services.client_arsenal import job_enabled as client_job_enabled
+        from app.services.client_arsenal import loop as client_arsenal_loop
+        if client_job_enabled():
+            job_tasks.append(asyncio.create_task(client_arsenal_loop(), name="client-arsenal"))
+            logger.info("Client arsenal cache job started")
         try:
             yield
         finally:
-            if job_task is not None:
+            for job_task in job_tasks:
                 job_task.cancel()
                 try:
                     await job_task
@@ -176,7 +185,39 @@ from app.api.paper_trades import router as paper_trades_router
 
 protected.include_router(paper_trades_router, prefix="/api/paper-trades", tags=["Paper Trading"])
 protected.include_router(desk_router, prefix="/api/desk", tags=["Quant Desk"])
+from app.api.client import router as client_router
+
+# /api/client/config is public (landing). The remaining client routes still
+# declare Depends(get_current_user) on the router in client.py except config.
+app.include_router(client_router, prefix="/api/client", tags=["Client"])
 app.include_router(protected)
+
+@app.middleware("http")
+async def client_mode_guard(request, call_next):
+    """When ATOM_CLIENT_MODE is on, non-operators cannot hit the desk APIs."""
+    from app.core.client_mode import client_may_access, client_mode_enabled, is_operator_role
+    if request.method == "OPTIONS" or not client_mode_enabled():
+        return await call_next(request)
+    path = request.url.path
+    if not path.startswith("/api/") or client_may_access(path):
+        return await call_next(request)
+    auth = request.headers.get("authorization") or ""
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    if not token:
+        return await call_next(request)
+    from app.core.security import decode_token
+    username = decode_token(token)
+    if username is None:
+        return await call_next(request)
+    from app.db.database import get_user_by_username
+    user = await get_user_by_username(username)
+    if is_operator_role((user or {}).get("role")):
+        return await call_next(request)
+    return JSONResponse(
+        status_code=403,
+        content={"detail": "Modo cliente: esta superfície é da mesa, não do cliente."},
+    )
+
 
 @app.middleware("http")
 async def response_security(request, call_next):
@@ -239,6 +280,7 @@ def _health_payload() -> dict:
             provider: _credential_configured(env_name)
             for provider, env_name in _AI_PROVIDER_ENV
         },
+        "client_mode": os.getenv("ATOM_CLIENT_MODE", "").strip().lower() in {"1", "true", "yes", "on"},
     }
 
 
