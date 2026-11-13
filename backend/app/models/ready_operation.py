@@ -200,10 +200,25 @@ def _size(capital: float, risk_pct: float, entry: float, invalidation: float, lo
     qty = floor(raw / lot + 1e-12) * lot
     if qty < lot:
         return round(raw, 8), budget, False, (
-            "O orçamento paper deste cenário não cabe o lote mínimo deste ativo. "
+            "O risco máximo deste cenário não cabe o lote mínimo deste ativo. "
             "A tela mostra o tamanho fracionário; o diário só registra a partir do lote."
         )
     return float(round(qty, 8)), budget, True, None
+
+
+def _notional_brl(instrument: str, qty: float, entry: float, paper_plan: dict | None) -> float:
+    """Gross position value (qty × entry), or option premium outlay when that is the book."""
+    if instrument == "option" and isinstance(paper_plan, dict):
+        prem = paper_plan.get("premium_outlay_brl")
+        if prem is not None:
+            try:
+                return round(abs(float(prem)), 2)
+            except (TypeError, ValueError):
+                pass
+    try:
+        return round(abs(float(qty or 0) * float(entry or 0)), 2)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def client_facing_why(text: str | None, fallback: str) -> str:
@@ -471,12 +486,14 @@ def assemble(
     hurst = None
     try:
         if len(log_p) >= 50:
-            hurst = float(_hurst(log_p))
+            raw_h = float(_hurst(log_p))
+            hurst = raw_h if np.isfinite(raw_h) else None
     except Exception:
         hurst = None
     local = _local_regime(vol, hurst, mom)
-    _mark(contributions, "Hurst / regime local", hurst is not None,
-          f"H={hurst:.2f} → {local}" if hurst is not None else f"Hurst indisponível; regime local {local}")
+    hurst_ok = hurst is not None and bool(np.isfinite(hurst))
+    _mark(contributions, "Hurst / regime local", hurst_ok,
+          f"H={hurst:.2f} → {local}" if hurst_ok else f"Hurst indisponível; regime local {local}")
 
     desk = market.regime if market.regime is not None else last_snapshot()
     desk_regime = (desk or {}).get("regime")
@@ -657,6 +674,9 @@ def assemble(
             "quantity": qty,
             "capital_brl": capital,
             "risk_budget_brl": round(budget, 2),
+            "notional_brl": _notional_brl(
+                instrument, qty, entry, paper_plan if isinstance(paper_plan, dict) else None,
+            ),
             "risk_per_trade_pct": risk_pct,
             "can_register_paper": bool(can_paper),
             "paper_block": paper_block,

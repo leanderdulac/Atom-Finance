@@ -8,7 +8,7 @@ contract. These tests prove that an interior request uses only the data before
 import numpy as np
 import pytest
 
-from app.models.mean_reversion import _ar1_half_life, _expanding_z, score_series
+from app.models.mean_reversion import _ar1_half_life, _expanding_z, _hurst, score_series
 
 
 def _ou_walk(n, phi, sigma, seed=7):
@@ -53,3 +53,22 @@ def test_z_starts_at_zero_for_level_slice():
     """A flat level slice has σ≈0 → z=0, not NaN."""
     prices = np.ones(100) * 100.0
     assert _expanding_z(prices) == 0.0
+
+
+def test_hurst_clips_to_unit_interval(monkeypatch):
+    """R/S slope of 1.067 (BTC print) is not a Hurst exponent — clip to [0, 1]."""
+    import app.models.mean_reversion as mr
+
+    x = np.log(np.linspace(100.0, 200.0, 64))
+    monkeypatch.setattr(mr.np, "polyfit", lambda *_a, **_k: np.array([1.067, 0.0]))
+    assert _hurst(x) == 1.0
+    monkeypatch.setattr(mr.np, "polyfit", lambda *_a, **_k: np.array([-0.12, 0.0]))
+    assert _hurst(x) == 0.0
+
+
+def test_hurst_on_random_walk_stays_in_unit_interval():
+    rng = np.random.default_rng(7)
+    prices = 100 * np.cumprod(1 + rng.normal(0.002, 0.02, 256))
+    h = _hurst(np.log(prices))
+    assert np.isfinite(h)
+    assert 0.0 <= h <= 1.0
