@@ -10,19 +10,19 @@
   <dict>
     <key>PATH</key>
     <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>ATOM_HOME</key>
+    <string>__ATOM_HOME__</string>
+    <key>ATOM_LOGS</key>
+    <string>__ATOM_LOGS__</string>
+    <key>ATOM_ENV_FILE</key>
+    <string>__ATOM_ENV_FILE__</string>
+    <key>ATOM_VENV</key>
+    <string>__ATOM_VENV__</string>
   </dict>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/caffeinate</string>
-    <string>-dims</string>
-    <string>__ATOM_HOME__/backend/venv/bin/uvicorn</string>
-    <string>main:app</string>
-    <string>--host</string>
-    <string>0.0.0.0</string>
-    <string>--port</string>
-    <string>8000</string>
-    <string>--env-file</string>
-    <string>__ATOM_HOME__/.env</string>
+    <string>/bin/bash</string>
+    <string>__ATOM_HOME__/ops/macos/backend.sh</string>
   </array>
   <key>RunAtLoad</key>
   <true/>

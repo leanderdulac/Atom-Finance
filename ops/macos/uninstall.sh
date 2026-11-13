@@ -12,5 +12,5 @@ for label in "${LABELS[@]}"; do
   echo "removido: $label"
 done
 
-echo "Logs em ~/Library/Logs/atom/ foram preservados."
+echo "Logs em ~/Library/Logs/atom/ (incluindo public-url.txt) foram preservados."
 echo "pmset não foi revertido — se você alterou o sono, revise com pmset -g."
