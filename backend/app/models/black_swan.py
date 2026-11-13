@@ -55,22 +55,26 @@ class BlackSwanDetector:
         drawdowns = (cumulative - running_max) / running_max
         max_drawdown = float(np.min(drawdowns))
 
-        # Hill estimator for tail index
-        sorted_returns = np.sort(np.abs(returns))[::-1]
-        k = max(int(n * 0.05), 5)
+        # Hill estimator for downside crash tail index
+        losses = -returns[returns < 0]
+        tail_sample = losses if len(losses) >= 10 else np.abs(returns)
+        sorted_returns = np.sort(tail_sample)[::-1]
+        k = min(max(int(len(sorted_returns) * 0.10), 5), max(len(sorted_returns) - 1, 1))
         top_k = sorted_returns[:k]
-        if top_k[-1] > 0:
-            hill_estimator = float(np.mean(np.log(top_k / top_k[-1])))
+        denom = float(sorted_returns[k]) if k < len(sorted_returns) else float(top_k[-1])
+        if len(top_k) > 0 and denom > 0:
+            hill_estimator = float(np.mean(np.log(np.maximum(top_k, denom) / denom)))
             tail_index = 1 / hill_estimator if hill_estimator > 0 else 1_000_000.0
         else:
             tail_index = 1_000_000.0
 
         tail_index = BlackSwanDetector._finite_float(tail_index, 1_000_000.0)
 
-        # Black swan probability score (0-100)
+        # Black swan probability score (0-100): penalize fat tails and negative (crash) skewness
+        downside_skew = max(-skewness, 0.0)
         swan_score = min(100, max(0,
-            20 * (kurtosis / 3) +
-            15 * abs(skewness) +
+            20 * max(kurtosis / 3, 0.0) +
+            15 * downside_skew +
             25 * (tail_ratio / 5) +
             20 * abs(max_drawdown) * 10 +
             20 * (1 / max(tail_index, 0.1)) * 5

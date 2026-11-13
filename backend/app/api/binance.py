@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from app.core.security import get_current_user
@@ -7,23 +7,30 @@ from app.services.binance_service import BinanceService
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
+_SYMBOL_PATTERN = r"^[A-Za-z0-9]{2,20}$"
+_INTERVAL_PATTERN = r"^(1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|1d|3d|1w|1M)$"
+
+
 class KellyCryptoRequest(BaseModel):
-    symbol: str = Field(..., description="Binance symbol, e.g. BTCUSDT")
+    symbol: str = Field(..., pattern=_SYMBOL_PATTERN, description="Binance symbol, e.g. BTCUSDT")
     win_prob: float = Field(..., gt=0, lt=1)
     payout_ratio: float = Field(..., gt=0)
     bankroll_override: float | None = Field(None, description="Manual bankroll. If None, tries to fetch from Binance USDT balance.")
     fraction: float = Field(0.25, gt=0, le=1)
 
+
 class LeverageRequest(BaseModel):
-    symbol: str = Field(..., description="Symbol for the futures contract")
+    symbol: str = Field(..., pattern=_SYMBOL_PATTERN, description="Symbol for the futures contract")
     leverage: int = Field(..., ge=1, le=125)
 
+
 @router.get("/price/{symbol}")
-async def get_price(symbol: str):
+async def get_price(symbol: str = Path(..., pattern=_SYMBOL_PATTERN)):
     price = await BinanceService.get_ticker_price(symbol)
     if not price:
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found on Binance")
     return price
+
 
 @router.get("/tickers")
 async def get_all_tickers():
@@ -32,31 +39,40 @@ async def get_all_tickers():
         raise HTTPException(status_code=400, detail="Could not fetch all tickers")
     return tickers
 
+
 @router.get("/depth/{symbol}")
-async def get_depth(symbol: str, limit: int = Query(100, ge=1, le=5000)):
+async def get_depth(
+    symbol: str = Path(..., pattern=_SYMBOL_PATTERN),
+    limit: int = Query(100, ge=1, le=5000),
+):
     depth = await BinanceService.get_order_book(symbol, limit)
     if not depth:
         raise HTTPException(status_code=404, detail=f"Depth not found for {symbol}")
     return depth
 
+
 @router.get("/account")
 async def get_account():
     raise HTTPException(410, "ATOM Research não acessa contas nem altera posições na corretora.")
 
+
 @router.get("/futures/price/{symbol}")
-async def get_futures_price(symbol: str):
+async def get_futures_price(symbol: str = Path(..., pattern=_SYMBOL_PATTERN)):
     price = await BinanceService.get_futures_ticker(symbol)
     if not price:
         raise HTTPException(status_code=404, detail=f"Futures contract {symbol} not found")
     return price
 
+
 @router.get("/futures/account")
 async def get_futures_account():
     raise HTTPException(410, "ATOM Research não acessa contas nem altera posições na corretora.")
 
+
 @router.post("/futures/leverage")
 async def set_leverage(req: LeverageRequest):
     raise HTTPException(410, "ATOM Research não acessa contas nem altera posições na corretora.")
+
 
 @router.post("/kelly-sizing")
 async def get_kelly_sizing(req: KellyCryptoRequest):
@@ -69,11 +85,12 @@ async def get_kelly_sizing(req: KellyCryptoRequest):
         raise HTTPException(status_code=400, detail=result.get("error") or result.get("erro"))
     return result
 
+
 @router.get("/klines/{symbol}")
 async def get_klines(
-    symbol: str, 
-    interval: str = Query("1d", description="1m, 5m, 1h, 1d, etc."), 
-    limit: int = Query(100, ge=1, le=1000)
+    symbol: str = Path(..., pattern=_SYMBOL_PATTERN),
+    interval: str = Query("1d", pattern=_INTERVAL_PATTERN, description="1m, 5m, 1h, 1d, etc."),
+    limit: int = Query(100, ge=1, le=1000),
 ):
     data = await BinanceService.get_klines(symbol, interval, limit)
     if not data:

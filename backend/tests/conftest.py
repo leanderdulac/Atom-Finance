@@ -35,7 +35,7 @@ _TABLES = (
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def _clean_db():
+async def _clean_db(monkeypatch):
     """Every test starts from an empty database — tests share one real
     Postgres instance now (no more per-test SQLite file via monkeypatching
     ATOM_DB_PATH), so isolation comes from truncating between tests instead.
@@ -52,6 +52,17 @@ async def _clean_db():
     that no longer exists.
     """
     if os.getenv("ATOM_SKIP_DB") == "1":
+        async def _skip_db_pool(*args, **kwargs):
+            pytest.skip("Database test skipped because ATOM_SKIP_DB=1")
+
+        import asyncpg
+
+        import app.db.database
+        import app.db.postgres
+        monkeypatch.setattr(app.db.postgres, "_pool", None)
+        monkeypatch.setattr(asyncpg, "create_pool", _skip_db_pool)
+        monkeypatch.setattr(app.db.postgres, "get_pool", _skip_db_pool)
+        monkeypatch.setattr(app.db.database, "get_pool", _skip_db_pool)
         yield
         return
 

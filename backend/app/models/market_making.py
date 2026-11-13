@@ -69,8 +69,7 @@ def simulate_inventory(
     seed: int | None = 42,
 ) -> dict:
     """Euler mid + Poisson fills. Terminal inventory is penalised, not hedged."""
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
     dt = T / n_steps
     mid = mid0
     q = 0.0
@@ -81,15 +80,17 @@ def simulate_inventory(
     fills = 0
     for step in range(n_steps):
         tau = T - step * dt
-        quotes = avellaneda_stoikov_quotes(mid, q, sigma, gamma, k, A, tau)
+        # Convert relative volatility sigma to price-space volatility when mid > 5 and sigma <= 2
+        sigma_price = sigma * mid if (sigma <= 2.0 and mid > 5.0) else sigma
+        quotes = avellaneda_stoikov_quotes(mid, q, sigma_price, gamma, k, A, tau)
         if abs(q) >= q_max:
             # Hard inventory cap: pull the overflowing side.
             if q > 0:
                 quotes["intensity_bid"] = 0.0
             else:
                 quotes["intensity_ask"] = 0.0
-        buy_hit = np.random.random() < quotes["intensity_bid"] * dt
-        sell_hit = np.random.random() < quotes["intensity_ask"] * dt
+        buy_hit = float(rng.random()) < (1.0 - np.exp(-quotes["intensity_bid"] * dt))
+        sell_hit = float(rng.random()) < (1.0 - np.exp(-quotes["intensity_ask"] * dt))
         if buy_hit:
             cash -= quotes["bid"]
             q += 1.0
@@ -98,7 +99,7 @@ def simulate_inventory(
             cash += quotes["ask"]
             q -= 1.0
             fills += 1
-        mid *= np.exp(-0.5 * sigma ** 2 * dt + sigma * np.sqrt(dt) * np.random.standard_normal())
+        mid *= float(np.exp(-0.5 * sigma ** 2 * dt + sigma * np.sqrt(dt) * rng.standard_normal()))
         mids.append(float(mid))
         qs.append(float(q))
         pnls.append(float(cash + q * mid))

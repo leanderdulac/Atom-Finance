@@ -98,7 +98,7 @@ export default function MarketTickerAutocomplete({
       disabled={disabled}
       filterSelectedOptions
       options={options}
-      // Uncontrolled value — let MUI manage it internally to avoid reset loops
+      value={multiple ? (values ?? []) : (value ?? '')}
       inputValue={inputValue}
       onInputChange={(_, newValue, reason) => {
         if (reason === 'reset') {

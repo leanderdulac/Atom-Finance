@@ -26,12 +26,16 @@ def _ols(y: np.ndarray, x: np.ndarray) -> tuple[float, float, np.ndarray]:
     return alpha, beta, residual
 
 
-def _adf_tstat(residual: np.ndarray, lags: int = 1) -> float:
+def _adf_tstat(residual: np.ndarray, lags: int = 1, include_const: bool = False) -> float:
     e = np.asarray(residual, dtype=np.float64)
     de = np.diff(e)
+    if len(de) <= lags + 3:
+        return 0.0
     y = de[lags:]
     lagged = e[lags:-1]
     cols = [lagged]
+    if include_const:
+        cols.append(np.ones(len(y)))
     for lag in range(1, lags + 1):
         cols.append(de[lags - lag : len(de) - lag])
     x = np.column_stack(cols)
@@ -190,23 +194,26 @@ def pairs_backtest(
             target = 0
 
         fill = t + 1
-        dy = (y[fill] - y[fill - 1]) / y[fill - 1]
-        dx = (x[fill] - x[fill - 1]) / x[fill - 1]
+        dy = (y[fill] - y[fill - 1]) / max(abs(y[fill - 1]), 1e-12)
+        dx = (x[fill] - x[fill - 1]) / max(abs(x[fill - 1]), 1e-12)
         # hedge applied to this bar's return is β_t (causal; does not include dy).
         beta_t = beta[t] if np.isfinite(beta[t]) else float(stats["beta"])
         if target != position:
             turnover = abs(target - position)
             cost = turnover * (commission + slippage) * 2.0  # two legs
-            equity *= 1.0 - cost
             costs_paid += cost * equity
+            equity *= 1.0 - cost
             if position != 0:
                 closed += 1
             trades += 1
             position = target
         if position != 0:
-            # Dollar-neutral: +1 y vs β x, scaled to unit gross on y.
-            pnl = position * (dy - beta_t * dx)
-            equity *= 1.0 + pnl
+            # Convert share hedge ratio β_t into dollar hedge ratio β_t · (x_{t} / y_{t})
+            # and normalize by gross dollar exposure (1 + |dollar_hedge|).
+            dollar_hedge = beta_t * (x[fill - 1] / max(abs(y[fill - 1]), 1e-12))
+            gross_exposure = max(1.0 + abs(dollar_hedge), 1.0)
+            pnl = position * (dy - dollar_hedge * dx) / gross_exposure
+            equity *= max(1.0 + pnl, 0.0)
         curve.append(equity)
 
     rets = np.diff(curve) / np.array(curve[:-1])

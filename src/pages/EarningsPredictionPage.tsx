@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Box, Typography, Paper, TextField, Button, Grid, Switch, FormControlLabel,
-  CircularProgress, Alert, Divider, useTheme, Tooltip, IconButton, InputAdornment
+  CircularProgress, Alert, Divider, useTheme, Tooltip, InputAdornment
 } from '@mui/material';
 import { api } from '../services/api';
 import { AutoFixHigh, Assessment, Search, HelpOutline } from '@mui/icons-material';
@@ -72,9 +72,11 @@ export default function EarningsPredictionPage() {
     try {
       const res = await api.getTickerFinancials(ticker);
       if (res.current) {
-        const fmt = (o: any) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, (v as number).toFixed(0)]));
+        const fmt = (o: any) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Number(v ?? 0).toFixed(0)]));
         setCurrent(fmt(res.current));
-        setPrevious(fmt(res.previous));
+        if (res.previous) {
+          setPrevious(fmt(res.previous));
+        }
       }
     } catch (err: any) {
       setError('Não foi possível buscar dados para este ticker. Tente formatar como PETR4.SA ou AAPL.');
@@ -181,7 +183,7 @@ export default function EarningsPredictionPage() {
               value={ticker}
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
               disabled={fetchingTicker}
-              onKeyPress={(e) => e.key === 'Enter' && fetchFromTicker()}
+              onKeyDown={(e) => e.key === 'Enter' && fetchFromTicker()}
               InputProps={{
                 startAdornment: <Search sx={{ mr: 1, opacity: 0.5 }} />,
                 endAdornment: (

@@ -7,6 +7,7 @@ Options Pricing Models
 - Greeks Calculation
 - Implied Volatility
 """
+import os
 from dataclasses import dataclass
 from typing import Literal
 
@@ -127,20 +128,47 @@ class MonteCarlo:
     def price(S: float, K: float, T: float, r: float, sigma: float,
               option_type: Literal["call", "put"] = "call",
               n_simulations: int = 100_000, n_steps: int = 252,
-              q: float = 0.0, seed: int | None = 42) -> dict:
-
-        if seed is not None:
-            np.random.seed(seed)
+              q: float = 0.0, seed: int | None = 42,
+              device: str | None = None) -> dict:
 
         dt = T / n_steps
         drift = (r - q - 0.5 * sigma**2) * dt
         vol = sigma * np.sqrt(dt)
+        half = max(1, (n_simulations + 1) // 2)
 
-        # Antithetic variates for variance reduction
-        z = np.random.standard_normal((n_simulations // 2, n_steps))
-        z = np.concatenate([z, -z], axis=0)
+        # Optional GPU/MPS dispatch when requested or when ATOM_MC_DEVICE is set
+        mc_device_req = device or os.getenv("ATOM_MC_DEVICE")
+        used_device = "cpu"
+        log_paths: np.ndarray | None = None
 
-        log_paths = np.cumsum(drift + vol * z, axis=1)
+        if mc_device_req and mc_device_req.lower() in ("auto", "mps", "cuda"):
+            try:
+                import torch
+
+                from app.core.accelerator import select_torch_device
+                t_dev = select_torch_device(
+                    n_simulations,
+                    min_gpu_batch=10_000,
+                    requested=None if mc_device_req.lower() == "auto" else mc_device_req.lower(),
+                )
+                if t_dev.type in ("mps", "cuda"):
+                    if seed is not None:
+                        torch.manual_seed(seed)
+                    with torch.no_grad():
+                        z_t = torch.randn((half, n_steps), device=t_dev, dtype=torch.float32)
+                        z_t = torch.cat([z_t, -z_t], dim=0)[:n_simulations]
+                        lp_t = torch.cumsum(float(drift) + float(vol) * z_t, dim=1)
+                        log_paths = lp_t.detach().cpu().numpy().astype(np.float64)
+                        used_device = str(t_dev)
+            except Exception:
+                log_paths = None
+
+        if log_paths is None:
+            if seed is not None:
+                np.random.seed(seed)
+            z = np.random.standard_normal((half, n_steps))
+            z = np.concatenate([z, -z], axis=0)[:n_simulations]
+            log_paths = np.cumsum(drift + vol * z, axis=1)
         ST = S * np.exp(log_paths[:, -1])
 
         if option_type == "call":
@@ -162,6 +190,7 @@ class MonteCarlo:
             "std_error": round(std_err, 6),
             "confidence_95": [round(price - 1.96 * std_err, 6), round(price + 1.96 * std_err, 6)],
             "n_simulations": len(discounted),
+            "device": used_device,
             "sample_paths": paths_list[:20],
             "terminal_distribution": {
                 "mean": round(float(np.mean(ST)), 2),
@@ -191,7 +220,7 @@ class BinomialTree:
         dt = T / n_steps
         u = np.exp(sigma * np.sqrt(dt))
         d = 1.0 / u
-        p = (np.exp((r - q) * dt) - d) / (u - d)
+        p = float(np.clip((np.exp((r - q) * dt) - d) / (u - d), 0.0, 1.0))
         disc = np.exp(-r * dt)
 
         # Build price tree at maturity
@@ -263,15 +292,23 @@ class FiniteDifference:
         M2 = np.diag(1 + beta[1:N_S]) + np.diag(alpha[2:N_S], -1) + np.diag(gamma_c[1:N_S - 1], 1)
 
         for i in range(N_t):
+            tau_curr = i * dt
+            tau_next = (i + 1) * dt
             rhs = M2 @ V[1:N_S]
 
-            # Boundary conditions
+            # Boundary conditions (Crank-Nicolson averages time levels i and i+1)
             if option_type == "call":
-                rhs[0] += alpha[1] * 0
-                rhs[-1] += gamma_c[N_S - 1] * (S_max - K * np.exp(-r * (T - (i + 1) * dt)))
+                bc_upper_curr = max(S_max * np.exp(-q * tau_curr) - K * np.exp(-r * tau_curr), 0.0)
+                bc_upper_next = max(S_max * np.exp(-q * tau_next) - K * np.exp(-r * tau_next), 0.0)
+                rhs[-1] += gamma_c[N_S - 1] * (bc_upper_curr + bc_upper_next)
             else:
-                rhs[0] += alpha[1] * (K * np.exp(-r * (T - (i + 1) * dt)))
-                rhs[-1] += gamma_c[N_S - 1] * 0
+                if american:
+                    bc_lower_curr = K
+                    bc_lower_next = K
+                else:
+                    bc_lower_curr = K * np.exp(-r * tau_curr)
+                    bc_lower_next = K * np.exp(-r * tau_next)
+                rhs[0] += alpha[1] * (bc_lower_curr + bc_lower_next)
 
             V[1:N_S] = np.linalg.solve(M1, rhs)
 
@@ -392,19 +429,29 @@ class OptionsStrategies:
 
         net_payoff = total_payoff - total_premium
 
-        # Find breakeven points
-        sign_changes = np.where(np.diff(np.sign(net_payoff)))[0]
-        breakevens = [round(float(S_range[i]), 2) for i in sign_changes]
+        # Find breakeven points via linear interpolation (avoid duplicate zeros)
+        breakevens = []
+        for idx in range(len(net_payoff) - 1):
+            y0, y1 = float(net_payoff[idx]), float(net_payoff[idx + 1])
+            if abs(y0) < 1e-12:
+                breakevens.append(round(float(S_range[idx]), 2))
+            elif y0 * y1 < 0.0:
+                s_be = S_range[idx] - y0 * (S_range[idx + 1] - S_range[idx]) / (y1 - y0)
+                breakevens.append(round(float(s_be), 2))
 
         max_profit = float(np.max(net_payoff))
         max_loss = float(np.min(net_payoff))
+        net_call_slope = sum(
+            (leg.get("quantity", 1) if leg.get("position", "long").lower() == "long" else -leg.get("quantity", 1))
+            for leg in legs if leg["type"].lower() == "call"
+        )
 
         return {
             "payoff_x": S_range.tolist(),
             "payoff_y": net_payoff.tolist(),
             "total_premium": round(total_premium, 4),
-            "max_profit": round(max_profit, 4) if max_profit < 1e6 else "unlimited",
-            "max_loss": round(max_loss, 4),
+            "max_profit": "unlimited" if (net_call_slope > 0 or max_profit >= 1e6) else round(max_profit, 4),
+            "max_loss": "unlimited" if net_call_slope < 0 else round(max_loss, 4),
             "breakeven_points": breakevens,
             "greeks": {k: round(v, 6) for k, v in greeks_total.items()},
         }

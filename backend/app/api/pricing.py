@@ -1,4 +1,5 @@
 """Options Pricing API endpoints."""
+import asyncio
 import math
 from typing import Literal
 
@@ -56,31 +57,39 @@ class IVRequest(BaseModel):
 class SurfaceRequest(BaseModel):
     spot: float = Field(..., gt=0)
     rate: float = 0.05
-    strikes: list[float] = Field(default_factory=lambda: [80, 85, 90, 95, 100, 105, 110, 115, 120])
-    maturities: list[float] = Field(default_factory=lambda: [0.083, 0.25, 0.5, 1.0, 2.0])
+    strikes: list[float] = Field(
+        default_factory=lambda: [80, 85, 90, 95, 100, 105, 110, 115, 120],
+        min_length=1,
+        max_length=100,
+    )
+    maturities: list[float] = Field(
+        default_factory=lambda: [0.083, 0.25, 0.5, 1.0, 2.0],
+        min_length=1,
+        max_length=100,
+    )
     option_type: Literal["call", "put"] = "call"
 
 
 class StrategyLeg(BaseModel):
-    strike: float
+    strike: float = Field(..., gt=0)
     type: Literal["call", "put"]
     position: Literal["long", "short"]
-    quantity: int = 1
+    quantity: int = Field(1, ge=1, le=1000)
 
 
 class StrategyRequest(BaseModel):
     spot: float = Field(..., gt=0)
-    sigma: float = 0.2
+    sigma: float = Field(0.2, gt=0)
     rate: float = 0.05
-    maturity: float = 0.25
-    legs: list[StrategyLeg]
+    maturity: float = Field(0.25, gt=0)
+    legs: list[StrategyLeg] = Field(..., min_length=1, max_length=20)
 
 
 class PresetStrategyRequest(BaseModel):
     spot: float = Field(..., gt=0)
-    sigma: float = 0.2
+    sigma: float = Field(0.2, gt=0)
     rate: float = 0.05
-    maturity: float = 0.25
+    maturity: float = Field(0.25, gt=0)
 
 
 @router.post("/black-scholes")
@@ -97,26 +106,38 @@ async def price_black_scholes(req: PricingRequest):
 @router.post("/monte-carlo")
 @limiter.limit("20/minute")
 async def price_monte_carlo(request: Request, req: MonteCarloRequest):
-    result = MonteCarlo.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.n_simulations, req.n_steps, req.dividend_yield)
+    result = await asyncio.to_thread(
+        MonteCarlo.price,
+        req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.n_simulations, req.n_steps, req.dividend_yield,
+    )
     return {"model": "monte_carlo", **result, "inputs": req.model_dump()}
 
 
 @router.post("/binomial")
 async def price_binomial(req: BinomialRequest):
-    result = BinomialTree.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.american, req.n_steps, req.dividend_yield)
+    result = await asyncio.to_thread(
+        BinomialTree.price,
+        req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.american, req.n_steps, req.dividend_yield,
+    )
     return {"model": "binomial_tree", **result, "inputs": req.model_dump()}
 
 
 @router.post("/finite-difference")
 @limiter.limit("20/minute")
 async def price_finite_difference(request: Request, req: FiniteDiffRequest):
-    result = FiniteDifference.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.american, N_S=req.n_S, N_t=req.n_t, q=req.dividend_yield)
+    result = await asyncio.to_thread(
+        FiniteDifference.price,
+        req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.american, N_S=req.n_S, N_t=req.n_t, q=req.dividend_yield,
+    )
     return {"model": "finite_difference", **result, "inputs": req.model_dump()}
 
 
 @router.post("/implied-volatility")
 async def calc_implied_volatility(req: IVRequest):
-    iv = BlackScholes.implied_volatility(req.market_price, req.spot, req.strike, req.maturity, req.rate, req.option_type)
+    iv = await asyncio.to_thread(
+        BlackScholes.implied_volatility,
+        req.market_price, req.spot, req.strike, req.maturity, req.rate, req.option_type,
+    )
     valid = math.isfinite(iv)
     return {
         "implied_volatility": round(iv, 6) if valid else None,
@@ -127,14 +148,20 @@ async def calc_implied_volatility(req: IVRequest):
 
 @router.post("/volatility-surface")
 async def generate_vol_surface(req: SurfaceRequest):
-    result = VolatilitySurface.generate(req.spot, req.rate, req.strikes, req.maturities, option_type=req.option_type)
+    result = await asyncio.to_thread(
+        VolatilitySurface.generate,
+        req.spot, req.rate, req.strikes, req.maturities, option_type=req.option_type,
+    )
     return result
 
 
 @router.post("/strategy")
 async def analyze_strategy(req: StrategyRequest):
     legs = [leg.model_dump() for leg in req.legs]
-    result = OptionsStrategies.analyze_strategy(legs, req.spot, req.sigma, req.rate, req.maturity)
+    result = await asyncio.to_thread(
+        OptionsStrategies.analyze_strategy,
+        legs, req.spot, req.sigma, req.rate, req.maturity,
+    )
     return {"strategy": "custom", **result}
 
 
@@ -154,12 +181,17 @@ async def butterfly(req: PresetStrategyRequest, k1: float = 90, k2: float = 100,
 
 
 @router.post("/compare")
-async def compare_models(req: PricingRequest):
+@limiter.limit("10/minute")
+async def compare_models(request: Request, req: PricingRequest):
     """Compare pricing across all models."""
-    bs = BlackScholes.greeks(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.dividend_yield)
-    mc = MonteCarlo.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, q=req.dividend_yield)
-    bt = BinomialTree.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, q=req.dividend_yield)
-    fd = FiniteDifference.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, q=req.dividend_yield)
+    def _run_compare():
+        bs = BlackScholes.greeks(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, req.dividend_yield)
+        mc = MonteCarlo.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, q=req.dividend_yield)
+        bt = BinomialTree.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, q=req.dividend_yield)
+        fd = FiniteDifference.price(req.spot, req.strike, req.maturity, req.rate, req.sigma, req.option_type, q=req.dividend_yield)
+        return bs, mc, bt, fd
+
+    bs, mc, bt, fd = await asyncio.to_thread(_run_compare)
 
     return {
         "comparison": {

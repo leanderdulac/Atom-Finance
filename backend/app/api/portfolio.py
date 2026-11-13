@@ -8,13 +8,14 @@ import numpy as np
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app.api._limits import Matrix
 from app.models.portfolio import PortfolioOptimizer
 
 router = APIRouter()
 
 
 class PortfolioRequest(BaseModel):
-    returns: list[list[float]] = Field(..., description="Matrix of returns [n_days × n_assets]")
+    returns: Matrix = Field(..., description="Matrix of returns [n_days × n_assets]")
     asset_names: list[str] | None = None
     risk_free_rate: float = 0.02
     allow_short: bool = False

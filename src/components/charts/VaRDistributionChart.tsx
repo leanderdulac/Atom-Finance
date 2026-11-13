@@ -16,15 +16,20 @@ export default function VaRDistributionChart({ returns, varThreshold, confidence
   const min = Math.min(...returns);
   const max = Math.max(...returns);
   const nBins = 50;
-  const binWidth = (max - min) / nBins;
+  const binWidth = max > min ? (max - min) / nBins : 0.001;
   const bins: { x: number; count: number; pct: string }[] = [];
 
   for (let i = 0; i < nBins; i++) {
     const lo = min + i * binWidth;
     const hi = lo + binWidth;
-    const count = returns.filter((r) => r >= lo && r < hi).length;
+    const count = returns.filter((r) => r >= lo && (i === nBins - 1 ? r <= hi : r < hi)).length;
     bins.push({ x: parseFloat((lo + binWidth / 2).toFixed(4)), count, pct: ((lo + hi) / 2 * 100).toFixed(2) });
   }
+
+  const varBinPct = bins.reduce(
+    (best, b) => (Math.abs(b.x - varThreshold) < Math.abs(best.x - varThreshold) ? b : best),
+    bins[0]
+  )?.pct;
 
   return (
     <Box>
@@ -43,7 +48,7 @@ export default function VaRDistributionChart({ returns, varThreshold, confidence
             formatter={(v: any) => [v, 'Observations']}
             labelFormatter={(l) => `Return ≈ ${l}%`}
           />
-          <ReferenceLine x={(varThreshold * 100).toFixed(2)} stroke="#ef4444" strokeWidth={2}
+          <ReferenceLine x={varBinPct} stroke="#ef4444" strokeWidth={2}
             label={{ value: `VaR`, position: 'insideTopRight', fill: '#ef4444', fontSize: 11 }} />
           <Bar dataKey="count" isAnimationActive={false} radius={[1, 1, 0, 0]}>
             {bins.map((b, i) => (

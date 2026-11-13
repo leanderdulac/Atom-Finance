@@ -82,7 +82,7 @@ def score_series(prices: np.ndarray, ticker: str = "") -> dict:
     log_p = np.log(prices)
     phi, half_life = _ar1_half_life(log_p)
     hurst = _hurst(log_p)
-    adf = _adf_tstat(log_p, lags=1)
+    adf = _adf_tstat(log_p, lags=1, include_const=True)
     rets = np.diff(prices) / prices[:-1]
     # Expanding estimates as of the present bar: only data[:T] enters μ, σ, φ.
     z = _expanding_z(log_p)

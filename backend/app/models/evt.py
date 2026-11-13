@@ -93,7 +93,7 @@ class GeneralizedParetoDistribution:
 
         # Method-of-moments starting values (ξ = ½(1 − μ²/σ²); σ = ½μ(1 + μ²/σ²))
         m1 = float(np.mean(exceedances))
-        m2 = float(np.var(exceedances))
+        m2 = max(float(np.var(exceedances)), 1e-18)
         xi0 = 0.5 * (1.0 - m1 ** 2 / m2)
         sigma0 = 0.5 * m1 * (m1 ** 2 / m2 + 1.0)
 
@@ -278,7 +278,9 @@ def compute_evt_risk(
         return_level_error = f"{return_level_error}; {msg}" if return_level_error else msg
 
     # Normal (Gaussian) VaR for comparison
-    normal_var = float(-np.quantile(returns, 1.0 - confidence))
+    mu_norm = float(np.mean(returns))
+    sigma_norm = float(np.std(returns, ddof=1)) if len(returns) > 1 else float(np.std(returns))
+    normal_var = float(-(mu_norm + sigma_norm * stats.norm.ppf(1.0 - confidence)))
     evt_premium_pct = float((var / normal_var - 1.0) * 100) if normal_var > 0 else 0.0
 
     return EVTRiskMetrics(
@@ -313,8 +315,10 @@ def hill_estimator(data: np.ndarray, k: int | None = None) -> dict:
         k = max(10, int(0.10 * n))
     k = min(k, n - 1)
 
-    log_ratios = np.log(sorted_data[:k] / sorted_data[k])
-    alpha_hat = k / np.sum(log_ratios)  # Hill estimator
+    denom = max(float(sorted_data[k]), 1e-18)
+    log_ratios = np.log(np.maximum(sorted_data[:k], denom) / denom)
+    sum_logs = float(np.sum(log_ratios))
+    alpha_hat = k / sum_logs if sum_logs > 1e-18 else 1_000_000.0  # Hill estimator
     xi_hat = 1.0 / alpha_hat            # shape parameter
 
     return {

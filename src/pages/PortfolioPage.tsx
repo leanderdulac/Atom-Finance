@@ -87,6 +87,21 @@ export default function PortfolioPage() {
     return state;
   };
 
+  const handleLoadMarketReturns = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const state = await loadMarketReturns();
+      if (!state) {
+        setError('Could not load enough historical data for at least 2 tickers.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load market history.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const runOptimization = async () => {
     setLoading(true); setError('');
     try {
@@ -157,7 +172,7 @@ export default function PortfolioPage() {
                     : `If live data fails, synthetic data is used for: ${names.join(', ')}`}
                 </Alert>
 
-                <Button variant="outlined" onClick={loadMarketReturns} disabled={loading} fullWidth>
+                <Button variant="outlined" onClick={handleLoadMarketReturns} disabled={loading} fullWidth>
                   Load Market History
                 </Button>
 

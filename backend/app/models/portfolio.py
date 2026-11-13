@@ -207,32 +207,43 @@ class PortfolioOptimizer:
         else:
             w_mkt = np.ones(self.n_assets) / self.n_assets
 
-        # Implied equilibrium returns
-        delta = (np.dot(w_mkt, self.mean_returns) - risk_free_rate) / np.dot(w_mkt, np.dot(self.cov_matrix, w_mkt))
+        # Implied equilibrium returns (guard against negative/zero market excess return)
+        mkt_var = max(float(np.dot(w_mkt, np.dot(self.cov_matrix, w_mkt))), 1e-8)
+        raw_delta = (float(np.dot(w_mkt, self.mean_returns)) - risk_free_rate) / mkt_var
+        delta = raw_delta if raw_delta > 0.1 else 2.5
         pi = delta * np.dot(self.cov_matrix, w_mkt)
 
-        # Build view matrices
-        n_views = len(views)
-        P = np.zeros((n_views, self.n_assets))
-        Q = np.zeros(n_views)
+        # Build view matrices for valid assets only (avoids zero rows in P and singular Omega)
+        valid_views = {k: v for k, v in (views or {}).items() if k in self.asset_names}
+        if not valid_views:
+            bl_returns = pi
+        else:
+            n_views = len(valid_views)
+            P = np.zeros((n_views, self.n_assets))
+            Q = np.zeros(n_views)
 
-        for i, (asset, view_return) in enumerate(views.items()):
-            if asset in self.asset_names:
+            for i, (asset, view_return) in enumerate(valid_views.items()):
                 idx = self.asset_names.index(asset)
-                P[i, idx] = 1
-                Q[i] = view_return
+                P[i, idx] = 1.0
+                Q[i] = float(view_return)
 
-        # Omega (uncertainty in views)
-        Omega = np.diag(np.diag(tau * P @ self.cov_matrix @ P.T))
+            # Omega (uncertainty in views)
+            Sigma_tau = tau * self.cov_matrix
+            omega_diag = np.maximum(np.diag(P @ Sigma_tau @ P.T), 1e-8)
+            Omega_inv = np.diag(1.0 / omega_diag)
+            Sigma_tau_inv = np.linalg.pinv(Sigma_tau)
 
-        # BL combined returns
-        Sigma_tau = tau * self.cov_matrix
-        M1 = np.linalg.inv(np.linalg.inv(Sigma_tau) + P.T @ np.linalg.inv(Omega) @ P)
-        bl_returns = M1 @ (np.linalg.inv(Sigma_tau) @ pi + P.T @ np.linalg.inv(Omega) @ Q)
+            # BL combined returns
+            M1 = np.linalg.pinv(Sigma_tau_inv + P.T @ Omega_inv @ P)
+            bl_returns = M1 @ (Sigma_tau_inv @ pi + P.T @ Omega_inv @ Q)
 
         # Optimal weights
-        bl_weights = np.linalg.inv(delta * self.cov_matrix) @ bl_returns
-        bl_weights = bl_weights / np.sum(bl_weights)  # Normalize
+        bl_weights = np.linalg.pinv(delta * self.cov_matrix) @ bl_returns
+        weight_sum = float(np.sum(bl_weights))
+        if abs(weight_sum) > 1e-8:
+            bl_weights = bl_weights / weight_sum  # Normalize
+        else:
+            bl_weights = w_mkt.copy()
 
         return {
             "weights": {name: round(float(w), 4) for name, w in zip(self.asset_names, bl_weights, strict=False)},

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app.models.ibovespa import (
     IBOVESPA_ASSETS,
     RLOptimizeResult,
+    TailModel,
     cem_optimize,
     generate_excel_report,
     refresh_ibovespa_params,
@@ -22,6 +23,12 @@ from app.models.ibovespa import (
 )
 
 router = APIRouter()
+
+TAIL_MODEL_DESC = (
+    "Dependência de cauda dos choques: 'crisis' (regime de crise com co-quedas, default), "
+    "'student_t' (caudas pesadas elípticas) ou 'gaussian' (cópula gaussiana, legado). "
+    "Todos preservam σ e a correlação de Pearson."
+)
 
 
 async def _run(func, *args, **kwargs):
@@ -35,6 +42,7 @@ class SimulateRequest(BaseModel):
     n_paths: int = Field(500, ge=100, le=3000)
     T: float = Field(1.0, ge=0.25, le=5.0)
     seed: int | None = Field(42)
+    tail_model: TailModel = Field("crisis", description=TAIL_MODEL_DESC)
 
 
 class RLRequest(BaseModel):
@@ -44,6 +52,7 @@ class RLRequest(BaseModel):
     n_iterations: int = Field(60, ge=10, le=200)
     initial_capital: float = Field(100_000.0, gt=0)
     seed: int | None = Field(42)
+    tail_model: TailModel = Field("crisis", description=TAIL_MODEL_DESC)
 
 
 class ExcelRequest(BaseModel):
@@ -52,6 +61,7 @@ class ExcelRequest(BaseModel):
     T: float = Field(1.0, ge=0.25, le=5.0)
     initial_capital: float = Field(100_000.0, gt=0)
     seed: int | None = Field(42)
+    tail_model: TailModel = Field("crisis", description=TAIL_MODEL_DESC)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -74,7 +84,7 @@ async def simulate(req: SimulateRequest):
     Retorna médias, bandas P5/P95 e distribuição terminal por ativo.
     """
     await refresh_ibovespa_params()   # Background check
-    result = await _run(simulate_ibovespa, req.T * 252 // 1, req.n_paths, req.T, req.seed)
+    result = await _run(simulate_ibovespa, req.T * 252 // 1, req.n_paths, req.T, req.seed, req.tail_model)
     # strip internal numpy array before serialising
     result.pop("_daily_returns", None)
     return result
@@ -97,7 +107,7 @@ async def rl_optimize(req: RLRequest):
 
     # 2. Simulate
     n_steps = int(req.T * 252)
-    sim_raw = await _run(simulate_ibovespa, n_steps, req.n_paths, req.T, req.seed)
+    sim_raw = await _run(simulate_ibovespa, n_steps, req.n_paths, req.T, req.seed, req.tail_model)
     daily_returns = sim_raw.pop("_daily_returns")
 
     # 2. Optimise
@@ -134,12 +144,15 @@ async def rl_optimize(req: RLRequest):
         "profile": req.profile,
         "initial_capital": req.initial_capital,
         "algorithm": "Cross-Entropy Method (CEM) — RL policy search",
+        "tail_model": req.tail_model,
         "iterations": rl.iterations,
         "portfolio_metrics": {
             "expected_return_ann_pct": round(rl.portfolio_return * 100, 2),
             "volatility_ann_pct": round(rl.portfolio_vol * 100, 2),
             "sharpe_ratio": round(rl.sharpe_ratio, 3),
             "expected_terminal_capital": round(req.initial_capital * (1 + rl.portfolio_return), 2),
+            "cvar_95_daily_pct": round(rl.cvar_95_daily * 100, 3),
+            "tail_vol_ann_pct": round(rl.tail_vol * 100, 2),
         },
         "reward_convergence": [round(r, 4) for r in rl.reward_history[::5]],   # every 5 iters
         "allocation": allocation,
@@ -157,7 +170,7 @@ async def export_excel(req: ExcelRequest):
     3 abas: Portfólio RL (pesos + alocação), Projeções GBM (trajetórias), Métricas de Risco.
     """
     n_steps = int(req.T * 252)
-    sim_raw = await _run(simulate_ibovespa, n_steps, req.n_paths, req.T, req.seed)
+    sim_raw = await _run(simulate_ibovespa, n_steps, req.n_paths, req.T, req.seed, req.tail_model)
     daily_returns = sim_raw.pop("_daily_returns")
 
     rl = await _run(
@@ -192,6 +205,8 @@ async def demo():
             "expected_return_ann_pct": round(rl.portfolio_return * 100, 2),
             "volatility_ann_pct": round(rl.portfolio_vol * 100, 2),
             "sharpe_ratio": round(rl.sharpe_ratio, 3),
+            "cvar_95_daily_pct": round(rl.cvar_95_daily * 100, 3),
+            "tail_vol_ann_pct": round(rl.tail_vol * 100, 2),
         },
         "top5_allocation": sorted(
             [{"ticker": t, "weight_pct": round(w * 100, 2)}

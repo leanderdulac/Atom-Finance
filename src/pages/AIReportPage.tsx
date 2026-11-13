@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, CircularProgress,
   Alert, Chip, Grid, LinearProgress, Divider, TextField,
@@ -166,34 +166,6 @@ function RecommendationBanner({ rec }: { rec: any }) {
   );
 }
 
-// ── Loading steps ──────────────────────────────────────────────────────────
-
-const STEPS = [
-  { icon: <ShowChart />, label: 'Buscando dados de mercado...' },
-  { icon: <AutoGraph />, label: 'Executando Black-Scholes e CAPM...' },
-  { icon: <Psychology />, label: 'Rodando baseline de suavização exponencial...' },
-  { icon: <Security />, label: 'Calculando VaR e Black Swan...' },
-  { icon: <AutoGraph />, label: 'Gerando relatório com IA...' },
-];
-
-function LoadingSteps({ step }: { step: number }) {
-  return (
-    <Box sx={{ py: 4 }}>
-      {STEPS.map((s, i) => (
-        <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2,
-          opacity: i < step ? 0.4 : i === step ? 1 : 0.2 }}>
-          <Box sx={{ color: i < step ? '#10b981' : i === step ? 'primary.main' : 'text.disabled' }}>
-            {i < step ? '✓' : i === step ? <CircularProgress size={16} /> : s.icon}
-          </Box>
-          <Typography variant="body2" color={i === step ? 'text.primary' : 'text.secondary'}>
-            {s.label}
-          </Typography>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
 // ── Rate Limit Cool Down ───────────────────────────────────────────────────
 
 function RateLimitCoolDown() {
@@ -226,6 +198,7 @@ function RateLimitCoolDown() {
 // ── Agent cards ────────────────────────────────────────────────────────────
 
 function AgentCards({ agents }: { agents: any[] }) {
+  if (!Array.isArray(agents) || agents.length === 0) return null;
   const signalColor = (signal: string) => {
     if (signal === 'COMPRAR CALL') return '#22c55e';
     if (signal === 'COMPRAR PUT') return '#ef4444';
@@ -313,7 +286,7 @@ function IntelligenceHub({ analysis }: { analysis: any }) {
                 <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: 'text.secondary', lineHeight: 1.8 }}>
                   {typeof analysis.news_monitoring_gemini === 'string' 
                     ? analysis.news_monitoring_gemini 
-                    : analysis.news_monitoring_gemini.ai_analysis}
+                    : (analysis.news_monitoring_gemini?.ai_analysis ?? '')}
                 </Typography>
               </Box>
             </Fade>
@@ -430,6 +403,12 @@ export default function AIReportPage() {
   const [rateLimited, setRateLimited] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ step: number; total: number; message: string } | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) abortRef.current();
+    };
+  }, []);
 
   const runAnalysis = (t?: string) => {
     const sym = (t || ticker).toUpperCase().trim();

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════════
 //  MATH ENGINE — todos os 12 conceitos
@@ -39,7 +39,6 @@ function blackScholes(S: number, K: number, T: number, r: number, sigma: number,
 }
 function bsGreeks(S: number, K: number, T: number, r: number, sigma: number) {
   const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
-  const d2 = d1 - sigma * Math.sqrt(T);
   const phi = Math.exp(-0.5 * d1 ** 2) / Math.sqrt(2 * Math.PI);
   return {
     delta: normCDF(d1),
@@ -119,10 +118,10 @@ function runBacktest(params: any) {
     const rets = slice.slice(1).map((p, j) => Math.log(p / slice[j]));
     const { mu: localMu, vol: localVol } = meanVariance(rets);
     const k = kelly(localMu, localVol, rf);
-    const position_size = Math.max(0, Math.min(k.half, 1.0));
+    const position_size = Math.max(0.05, Math.min(k.half, 1.0));
     
     if (cs.signal !== positions) {
-      const pnl = positions * (prices[i + 1] - prices[i]) * (equity / prices[i]) * 0.3;
+      const pnl = positions * (prices[i + 1] - prices[i]) * (equity / prices[i]) * position_size;
       equity += pnl;
       if (pnl > 0) wins++;
       trades++;
@@ -221,7 +220,14 @@ export default function CSQAPage() {
   const pct = (v: number) => (v * 100).toFixed(1) + "%";
   const money = (v: number) => "$" + (v / 1000).toFixed(0) + "k";
 
-  useEffect(() => { run(); }, [params]); // Run dynamically if desired, or manually on button
+  useEffect(() => {
+    setRunning(true);
+    const timer = setTimeout(() => {
+      setResult(runBacktest(params));
+      setRunning(false);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [params]);
 
   function run() {
     setRunning(true);

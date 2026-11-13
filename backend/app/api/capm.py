@@ -6,6 +6,7 @@ import numpy as np
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app.api._limits import Matrix, Series
 from app.models.capm import CAPMAnalyzer
 from app.models.kelly_derivatives import kelly_derivatives, simular_caminhos_kelly_derivativos
 
@@ -18,8 +19,8 @@ async def _run_in_thread(func, *args, **kwargs):
 
 
 class BetaRequest(BaseModel):
-    asset_returns: list[float] = Field(..., min_length=30)
-    market_returns: list[float] = Field(..., min_length=30)
+    asset_returns: Series = Field(..., min_length=30)
+    market_returns: Series = Field(..., min_length=30)
     risk_free_rate: float = Field(0.05, ge=0, le=0.2)
     market_premium: float = Field(0.06, ge=0, le=0.2)
 
@@ -38,7 +39,7 @@ class KellyDerivativesRequest(BaseModel):
 
 
 class KellyDerivativesSimRequest(KellyDerivativesRequest):
-    num_apostas: int = Field(100, gt=0)
+    num_apostas: int = Field(100, gt=0, le=2000)
     num_simulacoes: int = Field(10000, gt=0, le=50000)
     seed: int | None = Field(42)
 
@@ -65,7 +66,7 @@ class GBMMultiRequest(BaseModel):
     T: float = Field(1.0, gt=0, le=10, description="Horizon in years")
     n_steps: int = Field(252, ge=21, le=1260, description="252=1y, 504=2y …")
     n_paths: int = Field(500, ge=100, le=5000)
-    corr_matrix: list[list[float]] | None = Field(
+    corr_matrix: Matrix | None = Field(
         None, description="d×d correlation matrix. Defaults to identity (independent)."
     )
     seed: int | None = Field(42)
@@ -150,9 +151,9 @@ async def gbm_multi_demo():
 @router.get("/demo")
 async def capm_demo():
     """Demo: SPY-like asset vs market benchmark."""
-    np.random.seed(99)
-    market = np.random.normal(0.0004, 0.012, 252)
-    asset = 1.2 * market + np.random.normal(0.0002, 0.008, 252)  # beta ~1.2
+    rng = np.random.default_rng(99)
+    market = rng.normal(0.0004, 0.012, 252)
+    asset = 1.2 * market + rng.normal(0.0002, 0.008, 252)  # beta ~1.2
     beta_result = CAPMAnalyzer.compute_beta(asset, market)
     capm = CAPMAnalyzer.expected_return(beta_result["beta"])
     kelly = CAPMAnalyzer.kelly_criterion(0.55, 1.8, 0.5)

@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import {
   Box, Typography, Slider, Button, Card, CardContent, Chip,
   CircularProgress, LinearProgress, Divider, Fade, Zoom, Grid,
-  ToggleButton, ToggleButtonGroup, Tooltip, Collapse, Alert
+  ToggleButton, ToggleButtonGroup, Collapse, Alert
 } from '@mui/material';
 import {
   AutoFixHigh, RocketLaunch, Shield, LocalFireDepartment,
-  Balance, Visibility, VisibilityOff, CheckCircle, Warning,
-  TrendingUp, TrendingDown, Psychology, Search as SearchIcon
+  Balance, Visibility, VisibilityOff, CheckCircle,
+  TrendingUp, Psychology, Search as SearchIcon
 } from '@mui/icons-material';
 import { api } from '../services/api';
 
@@ -249,6 +249,10 @@ export default function AutopilotPage() {
         capital,
         horizon_days: horizon,
       });
+      if (res?.error || !Array.isArray(res?.operations)) {
+        setError(res?.error || 'Não foi possível gerar cenários de opções no momento.');
+        return;
+      }
       setResult(res);
     } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Erro ao processar. Verifique as chaves de API.');

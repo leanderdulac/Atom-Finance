@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Tab, Tabs, TextField, Typography,
+  Alert, Box, Button, Card, CardContent, Chip, Divider, MenuItem, Table,
+  TableBody, TableCell, TableHead, TableRow, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
 import { api } from '../services/api';
 
@@ -27,6 +28,10 @@ export default function DeskLabPage() {
   const [inventory, setInventory] = useState(0);
   const [ticker, setTicker] = useState('AAPL');
   const [symbol, setSymbol] = useState('BTCUSDT');
+  const [pbCapital, setPbCapital] = useState(100_000);
+  const [pbMode, setPbMode] = useState<'synthetic' | 'live'>('synthetic');
+  const [pbRegime, setPbRegime] = useState<'calm' | 'trending' | 'crisis'>('calm');
+  const [pbEntryZ, setPbEntryZ] = useState(1.8);
 
   const run = async (fn: () => Promise<unknown>) => {
     setLoading(true); setError(''); setResult(null);
@@ -90,8 +95,16 @@ export default function DeskLabPage() {
 
   const perpLive = () => run(() => api.deskPerpLive(symbol));
   const edgar = () => run(() => api.deskEdgar({ ticker, limit: 6, window_days: 7, min_insiders: 2 }));
+  const playbook = () => run(() => api.deskPlaybookScan({
+    mode: pbMode,
+    regime_demo: pbRegime,
+    capital: pbCapital,
+    entry_z: pbEntryZ,
+    exit_z: 0.5,
+  }));
 
   const actions = [
+    { label: 'Playbook 3 Frentes', paper: 'Engle–Granger + Johansen + Perp Carry + Regime Half-Kelly', blurb: 'Scanner unificado do Tripé Quantitativo com Boleta de Montagem (Order Ticket): Pares B3 & Commodities cointegrados, Arbitragem de Funding Cripto (BTC/ETH/SOL) e Alocação de Capital por Regime.', run: playbook },
     { label: 'Heston CF', paper: 'Heston 1993', blurb: 'Preço europeu pela função característica (Albrecher), não Euler.', run: heston },
     { label: 'Heston calibração', paper: 'Smile → (v0, κ, θ, ξ, ρ)', blurb: 'Least squares no preço. Cinco parâmetros numa expiry não são identificados — o RMSE do smile é o que importa.', run: calibrate },
     { label: 'Pairs / EG', paper: 'Engle–Granger 1987', blurb: 'β OLS, ADF no residual, backtest com z expanding, fill t+1 e rank de Johansen.', run: pairs },
@@ -104,17 +117,18 @@ export default function DeskLabPage() {
     { label: 'EDGAR Form 4', paper: 'Cohen–Malloy–Pomorski 2012', blurb: 'P/S em mercado aberto. Exige ATOM_SEC_USER_AGENT com e-mail. Sem isso a API recusa.', run: edgar },
   ];
 
+  const isPlaybook = actions[tab].label === 'Playbook 3 Frentes';
   const needsInventory = actions[tab].label === 'Avellaneda–Stoikov';
   const needsTicker = actions[tab].label === 'EDGAR Form 4';
   const needsSymbol = actions[tab].label === 'Perp live';
   const liveish = actions[tab].label === 'Perp live' || actions[tab].label === 'EDGAR Form 4';
 
   return (
-    <Box sx={{ maxWidth: 960, mx: 'auto' }}>
+    <Box sx={{ maxWidth: 1080, mx: 'auto' }}>
       <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>Mesa de papers</Typography>
       <Typography color="text.secondary" sx={{ mb: 2 }}>
         Implementações from-scratch. Cada resposta inclui a conta em inglês simples e
-        <strong> what broke</strong>. Nada aqui é elegível para execução.
+        <strong> what broke</strong>. Nada aqui é elegível para execução direta sem validação em Paper Trading.
       </Typography>
       <Tabs value={tab} onChange={(_, v) => { setTab(v); setResult(null); setError(''); }} sx={{ mb: 2 }} variant="scrollable">
         {actions.map((a, i) => <Tab key={a.label} label={a.label} value={i} />)}
@@ -123,6 +137,49 @@ export default function DeskLabPage() {
         <CardContent>
           <Chip size="small" label={actions[tab].paper} sx={{ mb: 1 }} />
           <Typography sx={{ mb: 2 }}>{actions[tab].blurb}</Typography>
+          {isPlaybook && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
+              <TextField
+                type="number"
+                size="small"
+                label="Capital Total (R$)"
+                value={pbCapital}
+                onChange={(e) => setPbCapital(Math.max(1000, Number(e.target.value)))}
+              />
+              <TextField
+                select
+                size="small"
+                label="Regime de Mercado"
+                value={pbRegime}
+                onChange={(e) => setPbRegime(e.target.value as 'calm' | 'trending' | 'crisis')}
+                sx={{ minWidth: 180 }}
+              >
+                <MenuItem value="calm">Calmo / Mean-Rev</MenuItem>
+                <MenuItem value="trending">Tendência (Trending)</MenuItem>
+                <MenuItem value="crisis">Crise (Stress / Risk-Off)</MenuItem>
+              </TextField>
+              <TextField
+                select
+                size="small"
+                label="Fonte de Dados"
+                value={pbMode}
+                onChange={(e) => setPbMode(e.target.value as 'synthetic' | 'live')}
+                sx={{ minWidth: 170 }}
+              >
+                <MenuItem value="synthetic">Benchmark Determinístico</MenuItem>
+                <MenuItem value="live">Cotações Live (Yahoo/B3)</MenuItem>
+              </TextField>
+              <TextField
+                type="number"
+                size="small"
+                label="Gatilho |Z-Score|"
+                inputProps={{ step: 0.1, min: 1.0, max: 3.5 }}
+                value={pbEntryZ}
+                onChange={(e) => setPbEntryZ(Math.max(0.8, Number(e.target.value)))}
+                sx={{ width: 150 }}
+              />
+            </Box>
+          )}
           {needsInventory && (
             <TextField
               type="number" label="Inventário (contratos)" value={inventory} sx={{ mb: 2, mr: 2 }}
@@ -142,11 +199,153 @@ export default function DeskLabPage() {
             />
           )}
           <Button variant="contained" onClick={actions[tab].run} disabled={loading}>
-            {loading ? 'Calculando…' : liveish ? 'Consultar livros / EDGAR' : 'Rodar demonstração'}
+            {loading ? 'Calculando…' : isPlaybook ? 'Gerar Scanner & Boletas de Montagem' : liveish ? 'Consultar livros / EDGAR' : 'Rodar demonstração'}
           </Button>
           {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
           {result && (
             <Box sx={{ mt: 2 }}>
+              {result.pillar_1_pairs_and_commodities && (
+                <Box sx={{ mb: 3 }}>
+                  <Alert severity={result.regime_summary?.regime === 'crisis' ? 'error' : 'success'} sx={{ mb: 2 }}>
+                    <strong>Regime Detectado: {result.regime_summary?.regime}</strong> — Reserva em Caixa Recomendada:{' '}
+                    <strong>R$ {result.capital_allocation?.cash_reserve?.toLocaleString('pt-BR')} ({result.capital_allocation?.cash_reserve_pct}%)</strong>
+                    {' | '}DSR (Probabilidade Anti-Overfitting):{' '}
+                    <strong>{((result.multiple_testing_audit?.deflated_sharpe_prob ?? 0) * 100).toFixed(1)}%</strong>
+                  </Alert>
+
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                    1. Orçamento por Estratégia (Half-Kelly + Corte de Correlação)
+                  </Typography>
+                  <Table size="small" sx={{ mb: 3 }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Caixa Estratégica</TableCell>
+                        <TableCell>Ação</TableCell>
+                        <TableCell align="right">Peso Alvo (%)</TableCell>
+                        <TableCell align="right">Capital Alocado (R$)</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {result.capital_allocation?.strategies?.map((s: any) => (
+                        <TableRow key={s.strategy_id}>
+                          <TableCell>{s.strategy_name}</TableCell>
+                          <TableCell><Chip size="small" label={s.action} /></TableCell>
+                          <TableCell align="right">{s.target_weight_pct}%</TableCell>
+                          <TableCell align="right">R$ {Number(s.allocated_capital).toLocaleString('pt-BR')}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                    2. Boletas de Montagem — Pares Cointegrados (B3 & Commodities)
+                  </Typography>
+                  <Table size="small" sx={{ mb: 3 }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Par / Categoria</TableCell>
+                        <TableCell align="right">Z-Score / Meia-Vida</TableCell>
+                        <TableCell>Ponta Y (Ações / Preço)</TableCell>
+                        <TableCell>Ponta X (Ações / Preço)</TableCell>
+                        <TableCell>Regras de Saída (Alvo / Stops)</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {result.pillar_1_pairs_and_commodities.map((p: any) => {
+                        const t = p.order_ticket;
+                        return (
+                          <TableRow key={p.pair}>
+                            <TableCell>
+                              <strong>{p.pair}</strong>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                {p.label} ({p.bucket})
+                              </Typography>
+                              <Chip
+                                size="small"
+                                color={p.actionable ? 'success' : 'default'}
+                                label={p.actionable ? 'ACIONÁVEL' : 'AGUARDAR'}
+                                sx={{ mt: 0.5 }}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              <strong>{p.current_z > 0 ? `+${p.current_z}` : p.current_z}</strong>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                HL: {p.half_life_days ?? '—'}d | β={p.hedge_ratio_beta}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Chip size="small" color={t?.leg_y?.side === 'BUY' ? 'success' : t?.leg_y?.side === 'SELL_SHORT' ? 'warning' : 'default'} label={t?.leg_y?.side} sx={{ mr: 0.5 }} />
+                              <strong>{t?.leg_y?.shares_exact}</strong> un. ({t?.leg_y?.ticker} @ {t?.leg_y?.last_price})
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                Lote padrão: {t?.leg_y?.b3_standard_lot} + Frac: {t?.leg_y?.fractional_shares} (R$ {t?.leg_y?.notional?.toLocaleString('pt-BR')})
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Chip size="small" color={t?.leg_x?.side === 'BUY' ? 'success' : t?.leg_x?.side === 'SELL_SHORT' ? 'warning' : 'default'} label={t?.leg_x?.side} sx={{ mr: 0.5 }} />
+                              <strong>{t?.leg_x?.shares_exact}</strong> un. ({t?.leg_x?.ticker} @ {t?.leg_x?.last_price})
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                Lote padrão: {t?.leg_x?.b3_standard_lot} + Frac: {t?.leg_x?.fractional_shares} (R$ {t?.leg_x?.notional?.toLocaleString('pt-BR')})
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="caption" display="block">
+                                <strong>Alvo:</strong> {t?.rules?.take_profit_z}
+                              </Typography>
+                              <Typography variant="caption" display="block">
+                                <strong>Stop Z:</strong> {t?.rules?.stop_loss_z}
+                              </Typography>
+                              <Typography variant="caption" display="block">
+                                <strong>Time-Stop:</strong> {t?.rules?.time_stop_trading_days} pregões
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                    3. Boletas de Montagem — Cash-and-Carry Cripto Delta-Neutro (Δ = 0)
+                  </Typography>
+                  <Table size="small" sx={{ mb: 2 }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Ativo</TableCell>
+                        <TableCell align="right">Funding Anualizado</TableCell>
+                        <TableCell>Ponta 1: Compra Spot</TableCell>
+                        <TableCell>Ponta 2: Short Perpétuo (1x)</TableCell>
+                        <TableCell align="right">Carry Diário Est.</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {result.pillar_2_crypto_funding_carry?.map((c: any) => (
+                        <TableRow key={c.symbol}>
+                          <TableCell><strong>{c.symbol}</strong></TableCell>
+                          <TableCell align="right">
+                            <Chip size="small" color="success" label={`${c.annualized_funding_pct}% a.a.`} />
+                          </TableCell>
+                          <TableCell>
+                            <strong>BUY {c.order_ticket?.spot_leg?.quantity}</strong> @ {c.order_ticket?.spot_leg?.reference_price}
+                            <Typography variant="caption" display="block" color="text.secondary">
+                              Notional: R$ {c.order_ticket?.spot_leg?.notional?.toLocaleString('pt-BR')}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <strong>SHORT {c.order_ticket?.perp_leg?.quantity}</strong> ({c.order_ticket?.perp_leg?.venue})
+                            <Typography variant="caption" display="block" color="text.secondary">
+                              Margem 1x: R$ {c.order_ticket?.perp_leg?.margin_posted_1x?.toLocaleString('pt-BR')}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <strong>R$ {c.order_ticket?.expected_daily_carry?.toLocaleString('pt-BR')}/dia</strong>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <Divider sx={{ my: 2 }} />
+                </Box>
+              )}
               {result.math && <Alert severity="info" sx={{ mb: 2 }}>{result.math}</Alert>}
               {result.what_broke && (
                 <Alert severity="warning" sx={{ mb: 2 }}>

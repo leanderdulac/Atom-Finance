@@ -18,11 +18,12 @@ import logging
 import math
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.api.ai_report import _full_analysis
 from app.core.ai_factory import AIFactory
+from app.core.limiter import limiter
 from app.core.security import get_current_user
 from app.models.ibovespa import IBOVESPA_ASSETS
 
@@ -33,6 +34,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 _AUTOPILOT_CACHE: dict = {}
 _CACHE_TS: datetime | None = None
 _CACHE_TTL = 3600  # 1 hour
+_AUTOPILOT_LOCK = asyncio.Lock()
 
 
 # ── Request / Response Models ─────────────────────────────────────────────────
@@ -243,7 +245,8 @@ FOCO: Cenários hipotéticos e risco de capital. Não afirmar validação, alta 
 # ── Main Endpoint ─────────────────────────────────────────────────────────────
 
 @router.post("/generate")
-async def generate_autopilot(req: AutopilotRequest):
+@limiter.limit("5/minute")
+async def generate_autopilot(request: Request, req: AutopilotRequest):
     """
     The Autopilot Engine.
     1. Screens all 18 Ibovespa assets via multi-AI analysis
@@ -259,34 +262,41 @@ async def generate_autopilot(req: AutopilotRequest):
     r = 0.105  # SELIC proxy
 
     # ── Step 1: Screen all assets (cached) ────────────────────────────────
-    now = datetime.now()
-    if _CACHE_TS and (now - _CACHE_TS).total_seconds() < _CACHE_TTL and _AUTOPILOT_CACHE:
-        logger.info("Autopilot: using cached screening data.")
-        analyses = _AUTOPILOT_CACHE
-    else:
-        logger.info("Autopilot: running full AI screening for top 5 B3 assets to avoid API timeouts...")
-        # Limitar aos 5 ativos mais líquidos (Blue Chips) para resposta rápida
-        tickers = [a["ticker"] for a in IBOVESPA_ASSETS][:5]
-        tasks = [_full_analysis(t) for t in tickers]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    async with _AUTOPILOT_LOCK:
+        now = datetime.now()
+        if _CACHE_TS and (now - _CACHE_TS).total_seconds() < _CACHE_TTL and _AUTOPILOT_CACHE:
+            logger.info("Autopilot: using cached screening data.")
+            analyses = _AUTOPILOT_CACHE
+        else:
+            logger.info("Autopilot: running full AI screening for top 5 B3 assets to avoid API timeouts...")
+            # Limitar aos 5 ativos mais líquidos (Blue Chips) para resposta rápida
+            tickers = [a["ticker"] for a in IBOVESPA_ASSETS][:5]
+            tasks = [_full_analysis(t) for t in tickers]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        analyses = {}
-        for ticker, res in zip(tickers, results, strict=False):
-            if not isinstance(res, BaseException):
-                analyses[ticker] = res
-            else:
-                logger.warning(f"Autopilot: {ticker} failed: {res}")
+            analyses = {}
+            for ticker, res in zip(tickers, results, strict=False):
+                if not isinstance(res, BaseException):
+                    analyses[ticker] = res
+                else:
+                    logger.warning(f"Autopilot: {ticker} failed: {res}")
 
-        _AUTOPILOT_CACHE = analyses
-        _CACHE_TS = now
+            if analyses:
+                _AUTOPILOT_CACHE = analyses
+                _CACHE_TS = now
 
     if not analyses:
-        return {"error": "Nenhum ativo pôde ser analisado. Verifique as conexões de API."}
+        raise HTTPException(
+            status_code=503,
+            detail="Nenhum ativo pôde ser analisado. Verifique as conexões de API.",
+        )
 
     # ── Step 2: Rank by bull score ────────────────────────────────────────
     ranked = sorted(
         analyses.items(),
-        key=lambda kv: kv[1].get("model_scores", {}).get("bull_score", 50),
+        key=lambda kv: kv[1].get("model_scores", {}).get(
+            "bull_score", kv[1].get("recommendation", {}).get("bull_score", 50)
+        ),
         reverse=True,
     )
 
@@ -321,7 +331,7 @@ async def generate_autopilot(req: AutopilotRequest):
 
         spot = mkt.get("price", 0)
         iv = scores.get("iv_pct", 30) / 100.0  # convert from pct
-        bull_score = scores.get("bull_score", 50)
+        bull_score = scores.get("bull_score", rec.get("bull_score", 50))
 
         # Determine direction from the AI recommendation
         if bull_score >= 62:

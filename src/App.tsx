@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText,
   AppBar, Toolbar, Typography, IconButton, Divider, Tooltip, Chip, useMediaQuery,
@@ -301,6 +301,7 @@ function AppLayout() {
           <Route path="/earnings-predictor" element={<ProtectedRoute><EarningsPredictionPage /></ProtectedRoute>} />
           <Route path="/alpha-engine" element={<ProtectedRoute><AlphaCombinationPage /></ProtectedRoute>} />
           <Route path="/binance" element={<ProtectedRoute><BinanceDashboard /></ProtectedRoute>} />
+          <Route path="*" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
         </Routes>
         </Suspense>
       </Box>
@@ -344,7 +345,7 @@ function AppRouter() {
   }
   
   // Show app layout for all other routes
-  return <AppLayout />;
+  return <ProtectedRoute><AppLayout /></ProtectedRoute>;
 }
 
 export default function App() {

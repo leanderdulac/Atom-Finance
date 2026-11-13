@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { api, getAccessToken, setAccessToken } from '../services/api';
+import { api, getAccessToken, setAccessToken, subscribeAccessToken } from '../services/api';
 
 interface User {
   username: string;
@@ -25,6 +25,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(() => getAccessToken());
   const [loading, setLoading] = useState(true);
+
+  // Sync token changes triggered by automatic refresh or 401 session expiry
+  useEffect(() => {
+    return subscribeAccessToken((nextToken) => {
+      setToken(nextToken);
+      if (nextToken === null) {
+        setUser(null);
+      }
+    });
+  }, []);
 
   // Restore any existing session by refreshing through the HttpOnly cookie.
   useEffect(() => {

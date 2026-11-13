@@ -4,9 +4,10 @@ import asyncio
 from functools import partial
 
 import numpy as np
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
+from app.api._limits import Series
 from app.core.limiter import limiter
 from app.models.risk import StressTest, ValueAtRisk
 from app.models.volatility import EWMAVolatility, GARCHModel, HestonModel
@@ -15,7 +16,7 @@ router = APIRouter()
 
 
 class VaRRequest(BaseModel):
-    returns: list[float] = Field(..., min_length=30)
+    returns: Series = Field(..., min_length=30)
     confidence: float = Field(0.95, ge=0.9, le=0.999)
     portfolio_value: float = Field(1_000_000, gt=0)
     holding_period: int = Field(1, ge=1, le=30)
@@ -30,7 +31,7 @@ class StressTestRequest(BaseModel):
 
 
 class GARCHRequest(BaseModel):
-    returns: list[float] = Field(..., min_length=50)
+    returns: Series = Field(..., min_length=50)
     forecast_horizon: int = Field(30, ge=1, le=252)
 
 
@@ -110,5 +111,5 @@ async def simulate_heston(request: Request, req: HestonRequest):
 
 
 @router.post("/ewma")
-async def ewma_vol(returns: list[float], lambda_: float = 0.94):
-    return EWMAVolatility.compute(np.array(returns), lambda_)
+async def ewma_vol(returns: Series, lambda_: float = Query(0.94, gt=0.0, lt=1.0)):
+    return await _run_in_thread(EWMAVolatility.compute, np.array(returns), lambda_)

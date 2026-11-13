@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Box, Typography, Grid, Card, CardContent, Chip, Button, 
-  CircularProgress, LinearProgress, Divider, Fade, Zoom,
-  Tooltip, IconButton
+  CircularProgress, LinearProgress, Divider, Zoom,
+  Tooltip, Alert
 } from '@mui/material';
 import { 
-  AutoFixHigh, TrendingUp, TrendingDown, Info, 
+  AutoFixHigh, TrendingUp,
   Refresh, Analytics, Shield, Search
 } from '@mui/icons-material';
 import { api } from '../services/api';
@@ -84,6 +84,12 @@ const AIAlphaScreener: React.FC = () => {
         </Button>
       </Box>
 
+      {error && (
+        <Alert severity="error" sx={{ mb: 4 }}>
+          {error}
+        </Alert>
+      )}
+
       {loading && (
         <Box sx={{ mb: 4 }}>
           <LinearProgress sx={{ height: 10, borderRadius: 5, bgcolor: 'rgba(255,255,255,0.1)', '& .MuiLinearProgress-bar': { bgcolor: '#fbbf24' } }} />
@@ -94,13 +100,17 @@ const AIAlphaScreener: React.FC = () => {
       )}
 
       <Grid container spacing={3}>
-        {results.map((res, idx) => (
+        {results.map((res, idx) => {
+          const bullScore = res.model_scores?.bull_score ?? (res as any).recommendation?.bull_score ?? 50;
+          const actionEn = res.recommendation?.action_en ?? '';
+          const strike = res.recommendation?.suggested_strike ?? 0;
+          return (
           <Grid size={{ xs: 12, md: 6, lg: 4 }} key={res.ticker}>
             <Zoom in style={{ transitionDelay: `${idx * 100}ms` }}>
               <Card sx={{ 
                 bgcolor: 'rgba(30, 30, 50, 0.8)', 
                 backdropFilter: 'blur(10px)',
-                border: `1px solid ${res.recommendation.action_en.includes('BUY') ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                border: `1px solid ${actionEn.includes('BUY') ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
                 borderRadius: 4,
                 overflow: 'visible',
                 position: 'relative'
@@ -118,27 +128,27 @@ const AIAlphaScreener: React.FC = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                     <Box>
                       <Typography variant="h5" sx={{ fontWeight: 900, color: '#fff' }}>{res.ticker}</Typography>
-                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>{res.market_data.name}</Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>{res.market_data?.name}</Typography>
                     </Box>
                     <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>R$ {res.market_data.price.toFixed(2)}</Typography>
-                      <Typography variant="body2" sx={{ color: res.market_data.change_pct >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
-                        {res.market_data.change_pct >= 0 ? '+' : ''}{res.market_data.change_pct.toFixed(2)}%
+                      <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>R$ {(res.market_data?.price ?? 0).toFixed(2)}</Typography>
+                      <Typography variant="body2" sx={{ color: (res.market_data?.change_pct ?? 0) >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+                        {(res.market_data?.change_pct ?? 0) >= 0 ? '+' : ''}{(res.market_data?.change_pct ?? 0).toFixed(2)}%
                       </Typography>
                     </Box>
                   </Box>
 
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
                     <Box sx={{ flex: 1 }}>
-                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', mb: 0.5, display: 'block' }}>CONFIDÊNCI AI CONSENSUS</Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', mb: 0.5, display: 'block' }}>CONFIANÇA AI CONSENSUS</Typography>
                       <LinearProgress 
                         variant="determinate" 
-                        value={res.model_scores.bull_score} 
-                        sx={{ height: 8, borderRadius: 4, bgcolor: 'rgba(255,255,255,0.1)', '& .MuiLinearProgress-bar': { bgcolor: res.recommendation.color === 'success' ? '#22c55e' : '#ef4444' } }}
+                        value={bullScore} 
+                        sx={{ height: 8, borderRadius: 4, bgcolor: 'rgba(255,255,255,0.1)', '& .MuiLinearProgress-bar': { bgcolor: res.recommendation?.color === 'success' ? '#22c55e' : '#ef4444' } }}
                       />
                     </Box>
-                    <Typography variant="h6" sx={{ fontWeight: 900, color: res.recommendation.color === 'success' ? '#22c55e' : '#ef4444' }}>
-                      {res.model_scores.bull_score.toFixed(1)}
+                    <Typography variant="h6" sx={{ fontWeight: 900, color: res.recommendation?.color === 'success' ? '#22c55e' : '#ef4444' }}>
+                      {Number(bullScore).toFixed(1)}
                     </Typography>
                   </Box>
 
@@ -146,13 +156,13 @@ const AIAlphaScreener: React.FC = () => {
 
                   <Box sx={{ bgcolor: 'rgba(0,0,0,0.2)', p: 2, borderRadius: 2, mb: 2 }}>
                     <Typography variant="subtitle2" sx={{ color: '#fbbf24', fontWeight: 900, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {res.recommendation.emoji} OPERAÇÃO SUGERIDA
+                      {res.recommendation?.emoji} OPERAÇÃO SUGERIDA
                     </Typography>
                     <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800, mb: 0.5 }}>
-                      {res.recommendation.action}
+                      {res.recommendation?.action}
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem' }}>
-                      STRIKE: <strong>R$ {res.recommendation.suggested_strike.toFixed(2)}</strong> | EXPIRY: <strong>{res.recommendation.suggested_expiry_days}</strong>
+                      STRIKE: <strong>R$ {Number(strike).toFixed(2)}</strong> | EXPIRY: <strong>{res.recommendation?.suggested_expiry_days ?? (res.recommendation as any)?.holding?.days ?? '30d'}</strong>
                     </Typography>
                   </Box>
 
@@ -174,7 +184,8 @@ const AIAlphaScreener: React.FC = () => {
               </Card>
             </Zoom>
           </Grid>
-        ))}
+          );
+        })}
       </Grid>
 
       {results.length === 0 && !loading && (

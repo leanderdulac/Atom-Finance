@@ -37,6 +37,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      target: builder
     ports:
       - "5173:5173"
     volumes:

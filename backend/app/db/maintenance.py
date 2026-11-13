@@ -14,6 +14,7 @@ import getpass
 import os
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 
 def _database_url() -> str:
@@ -23,22 +24,43 @@ def _database_url() -> str:
     return url.replace("postgresql+asyncpg://", "postgresql://")
 
 
+def _pg_cli_target() -> tuple[str, dict[str, str]]:
+    """Return a password-scrubbed connection URI and environment with PGPASSWORD."""
+    raw = _database_url()
+    parts = urlsplit(raw)
+    env = os.environ.copy()
+    if parts.password is not None:
+        env["PGPASSWORD"] = parts.password
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        netloc = f"{parts.username}@{host}" if parts.username else host
+        clean_url = urlunsplit(parts._replace(netloc=netloc))
+    else:
+        clean_url = raw
+    return clean_url, env
+
+
 def backup(destination: Path) -> Path:
     destination = destination.absolute()
     if destination.exists():
         raise FileExistsError(f"{destination} already exists — refusing to overwrite.")
+    clean_url, env = _pg_cli_target()
     subprocess.run(
-        ["pg_dump", "--format=custom", "--file", str(destination), _database_url()],
+        ["pg_dump", "--format=custom", "--file", str(destination), clean_url],
         check=True,
+        env=env,
     )
     return destination
 
 
 def restore(source: Path) -> None:
     source = source.resolve(strict=True)
+    clean_url, env = _pg_cli_target()
     subprocess.run(
-        ["pg_restore", "--clean", "--if-exists", "--no-owner", "--dbname", _database_url(), str(source)],
+        ["pg_restore", "--clean", "--if-exists", "--no-owner", "--dbname", clean_url, str(source)],
         check=True,
+        env=env,
     )
 
 

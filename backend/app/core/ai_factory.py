@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import os
 from abc import ABC, abstractmethod
+from urllib.parse import urlparse
 
 import anthropic
 import openai
@@ -95,7 +96,7 @@ class GeminiProvider(LLMProvider):
     def __init__(self, api_key: str):
         self.client = genai.Client(api_key=api_key)
         # Using flash as it is more likely to be available on free/low-tier accounts
-        self.model = "gemini-3.5-flash"
+        self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         try:
@@ -174,6 +175,65 @@ class PerplexityProvider(LLMProvider):
             logger.error(f"Perplexity error: {e}")
             raise LLMException(str(e)) from e
 
+
+_ALLOWED_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "host.docker.internal", "ollama"})
+
+
+def _validate_local_llm_url(raw_url: str) -> str:
+    parsed = urlparse(raw_url.strip())
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError(f"Invalid LOCAL_LLM_BASE_URL: {raw_url!r}")
+    if parsed.scheme == "http" and parsed.hostname not in _ALLOWED_LOCAL_HOSTS:
+        raise ValueError("Plain HTTP LOCAL_LLM_BASE_URL is restricted to localhost / local container hosts")
+    return raw_url.strip()
+
+
+class LocalLLMProvider(LLMProvider):
+    """Local OpenAI-compatible provider (Ollama / MLX / vLLM / LM Studio) running on Apple Silicon MPS or local GPU."""
+
+    def __init__(self, base_url: str, model: str, api_key: str = "ollama"):
+        validated_url = _validate_local_llm_url(base_url)
+        self.client = openai.AsyncOpenAI(api_key=api_key or "ollama", base_url=validated_url)
+        self.model = model
+
+    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": compose_system(system_prompt)},
+                    {"role": "user", "content": prompt},
+                ],
+                **kwargs,
+            )
+            content = response.choices[0].message.content
+            if not content:
+                raise LLMException("Local LLM returned empty content.")
+            return content
+        except LLMException:
+            raise
+        except Exception as e:
+            logger.error("Local LLM (%s) error: %s", self.model, e)
+            raise LLMException(f"Local LLM error: {type(e).__name__}") from e
+
+
+def _build_local_provider() -> LocalLLMProvider | None:
+    enabled = os.getenv("LOCAL_LLM_ENABLED", "").strip().lower() in ("1", "true", "yes")
+    base_url = os.getenv("LOCAL_LLM_BASE_URL", "").strip()
+    model = os.getenv("LOCAL_LLM_MODEL", "").strip()
+    if not (enabled or base_url or model):
+        return None
+    try:
+        return LocalLLMProvider(
+            base_url=base_url or "http://localhost:11434/v1",
+            model=model or "qwen2.5-coder:32b",
+            api_key=os.getenv("LOCAL_LLM_API_KEY", "ollama"),
+        )
+    except Exception as exc:
+        logger.warning("Failed to initialize LocalLLMProvider: %s", exc)
+        return None
+
+
 class AIFactory:
     _instance = None
     
@@ -185,6 +245,7 @@ class AIFactory:
 
     def _init_providers(self):
         self.providers = {
+            "local": _build_local_provider(),
             "claude": ClaudeProvider(os.getenv("ANTHROPIC_API_KEY", "")) if os.getenv("ANTHROPIC_API_KEY") else None,
             "gpt": GPTProvider(os.getenv("OPENAI_API_KEY", "")) if os.getenv("OPENAI_API_KEY") else None,
             "gemini": GeminiProvider(os.getenv("GOOGLE_API_KEY", "")) if os.getenv("GOOGLE_API_KEY") else None,
@@ -207,7 +268,14 @@ class AIFactory:
         Fallbacks on QuotaException, CreditException, or other LLMExceptions.
         """
         if preferred_order is None:
-            preferred_order = ["claude", "gpt", "grok", "gemini", "perplexity"]
+            preferred_order = ["claude", "gpt", "grok", "gemini", "perplexity", "local"]
+        else:
+            preferred_order = list(preferred_order)
+            if "local" not in preferred_order:
+                preferred_order.append("local")
+
+        if os.getenv("LOCAL_LLM_PREFER", "").strip().lower() in ("1", "true", "yes"):
+            preferred_order = ["local"] + [p for p in preferred_order if p != "local"]
             
         errors = []
         for name in preferred_order:
@@ -249,7 +317,8 @@ class AIFactory:
                 prompt, system_prompt=system, preferred_order=["claude", "gpt", "gemini"]
             )
         except Exception as e:
-            return f"Erro na análise fundamental: {e}"
+            logger.error("Fundamental AI analysis failed for %s: %s", ticker, e)
+            return "Análise fundamental indisponível no momento (provedores de IA indisponíveis)."
 
     @classmethod
     async def analyze_quant(cls, strategy_name: str, parameters: dict) -> str:
@@ -266,7 +335,8 @@ class AIFactory:
                 prompt, system_prompt=system, preferred_order=["gpt", "claude", "grok"]
             )
         except Exception as e:
-            return f"Erro na análise quant: {e}"
+            logger.error("Quant AI analysis failed for %s: %s", strategy_name, e)
+            return "Análise quantitativa indisponível no momento (provedores de IA indisponíveis)."
 
     @classmethod
     async def monitor_news(cls, ticker: str, news_text: str) -> str:
@@ -282,7 +352,8 @@ class AIFactory:
                 prompt, system_prompt=system, preferred_order=["gemini", "perplexity", "gpt"]
             )
         except Exception as e:
-            return f"Erro no monitoramento de notícias: {e}"
+            logger.error("News AI monitoring failed for %s: %s", ticker, e)
+            return "Monitoramento de notícias indisponível no momento (provedores de IA indisponíveis)."
 
     @classmethod
     async def analyze_pulse(cls, ticker: str, data: str) -> str:
@@ -339,4 +410,5 @@ class AIFactory:
                 data_prompt, system_prompt=system, preferred_order=["claude", "gpt", "gemini"]
             )
         except Exception as e:
-            return f"Erro na análise quantitativa avançada: {e}"
+            logger.error("Directional earnings AI analysis failed: %s", e)
+            return "Erro na análise quantitativa avançada: provedores de IA indisponíveis no momento."

@@ -11,6 +11,10 @@ import numpy as np
 from scipy.optimize import minimize
 
 
+def _trapz(y: np.ndarray, x: np.ndarray) -> float:
+    return float(np.sum(0.5 * (y[1:] + y[:-1]) * np.diff(x)))
+
+
 class GARCHModel:
     """GARCH(1,1) volatility model: σ²_t = ω + α·ε²_{t-1} + β·σ²_{t-1}"""
 
@@ -81,10 +85,14 @@ class GARCHModel:
         # h-step forecast
         forecast_var = np.zeros(horizon)
         forecast_var[0] = self.omega + self.alpha * returns[-1]**2 + self.beta * sigma2[-1]
-        long_run = self.omega / (1 - self.alpha - self.beta)
-
-        for h in range(1, horizon):
-            forecast_var[h] = long_run + (self.alpha + self.beta)**h * (forecast_var[0] - long_run)
+        persistence = self.alpha + self.beta
+        if persistence < 0.9999:
+            long_run = self.omega / (1.0 - persistence)
+            for h in range(1, horizon):
+                forecast_var[h] = long_run + (persistence ** h) * (forecast_var[0] - long_run)
+        else:
+            for h in range(1, horizon):
+                forecast_var[h] = forecast_var[h - 1] + self.omega
 
         return {
             "forecast_volatility": (np.sqrt(forecast_var) * np.sqrt(252)).tolist(),
@@ -160,9 +168,8 @@ class HestonModel:
     def price_option(S0: float, K: float, v0: float, r: float, kappa: float,
                      theta: float, xi: float, rho: float, T: float,
                      option_type: str = "call", n_paths: int = 50000,
-                     seed: int | None = 42) -> dict:
-        if seed is not None:
-            np.random.seed(seed)
+                     seed: int | None = 42, q: float = 0.0) -> dict:
+        rng = np.random.default_rng(seed)
 
         n_steps = max(1, int(round(252 * T)))
         dt = T / n_steps
@@ -172,14 +179,14 @@ class HestonModel:
         v = np.full(n_paths, v0)
 
         for _ in range(n_steps):
-            z1_half = np.random.standard_normal(half)
-            z2_ind = np.random.standard_normal(half)
-            z1 = np.concatenate([z1_half, -z1_half] + ([np.random.standard_normal(remainder)] if remainder else []))
-            z2_raw = np.concatenate([z2_ind, -z2_ind] + ([np.random.standard_normal(remainder)] if remainder else []))
+            z1_half = rng.standard_normal(half)
+            z2_ind = rng.standard_normal(half)
+            z1 = np.concatenate([z1_half, -z1_half] + ([rng.standard_normal(remainder)] if remainder else []))
+            z2_raw = np.concatenate([z2_ind, -z2_ind] + ([rng.standard_normal(remainder)] if remainder else []))
             z2 = rho * z1 + np.sqrt(max(1 - rho**2, 0.0)) * z2_raw
             v_pos = np.maximum(v, 0)
             sqrt_v = np.sqrt(v_pos)
-            S = S * np.exp((r - 0.5 * v_pos) * dt + sqrt_v * np.sqrt(dt) * z1)
+            S = S * np.exp((r - q - 0.5 * v_pos) * dt + sqrt_v * np.sqrt(dt) * z1)
             v = v + kappa * (theta - v_pos) * dt + xi * sqrt_v * np.sqrt(dt) * z2
             v = np.maximum(v, 0)
 
@@ -242,7 +249,7 @@ class HestonModel:
                 np.linspace(1.0, 200.0, 192),
             ])
             integrand = np.real(np.exp(-1j * u * ln_k) * _cf(u, j) / (1j * u))
-            return float(0.5 + np.trapz(integrand, u) / np.pi)
+            return float(0.5 + _trapz(integrand, u) / np.pi)
 
         p1, p2 = _pj(1), _pj(2)
         call = S0 * np.exp(-q * T) * p1 - K * np.exp(-r * T) * p2
@@ -298,7 +305,7 @@ class HestonModel:
                 np.linspace(1.0, 150.0, n_far),
             ])
             integrand = np.real(np.exp(-1j * u * ln_k) * _cf(u, j) / (1j * u))
-            return float(0.5 + np.trapz(integrand, u) / np.pi)
+            return float(0.5 + _trapz(integrand, u) / np.pi)
 
         p1, p2 = _pj(1), _pj(2)
         call = S0 * np.exp(-q * T) * p1 - K * np.exp(-r * T) * p2
@@ -422,7 +429,10 @@ class EWMAVolatility:
 
     @staticmethod
     def compute(returns: np.ndarray, lambda_: float = 0.94) -> dict:
+        returns = np.asarray(returns, dtype=np.float64)
         T = len(returns)
+        if T == 0:
+            raise ValueError("returns must not be empty")
         var = np.zeros(T)
         var[0] = returns[0]**2
 

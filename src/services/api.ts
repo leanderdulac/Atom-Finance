@@ -1,5 +1,5 @@
 import type { PaperRecord, PaperSummary, SourceCheck, SourceSnapshotSummary } from '../types/paperTrading';
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 // The access token is short-lived and kept ONLY in memory. It is never written
 // to localStorage/sessionStorage, so a stored-XSS vector cannot steal a usable
@@ -7,9 +7,17 @@ const API_BASE = '/api';
 // (/auth/refresh), which JS cannot read.
 let accessToken: string | null = null;
 let refreshPromise: Promise<boolean> | null = null;
+const tokenListeners = new Set<(token: string | null) => void>();
 
 export function getAccessToken(): string | null { return accessToken; }
-export function setAccessToken(token: string | null): void { accessToken = token; }
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+  tokenListeners.forEach((fn) => fn(accessToken));
+}
+export function subscribeAccessToken(fn: (token: string | null) => void): () => void {
+  tokenListeners.add(fn);
+  return () => { tokenListeners.delete(fn); };
+}
 
 async function refreshAccessToken(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
@@ -20,12 +28,12 @@ async function refreshAccessToken(): Promise<boolean> {
         headers: { 'Content-Type': 'application/json' },
         // the HttpOnly refresh cookie is sent automatically (same-origin, SameSite=Lax)
       });
-      if (!res.ok) { accessToken = null; return false; }
+      if (!res.ok) { setAccessToken(null); return false; }
       const data = await res.json();
-      accessToken = data.access_token ?? null;
+      setAccessToken(data.access_token ?? null);
       return accessToken !== null;
     } catch {
-      accessToken = null;
+      setAccessToken(null);
       return false;
     }
   })().finally(() => { refreshPromise = null; });
@@ -42,8 +50,12 @@ const NO_REFRESH = new Set(['/auth/login', '/auth/register', '/auth/refresh', '/
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const doFetch = () => fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeader(),
+      ...(options?.headers as Record<string, string> | undefined),
+    },
   });
   let res = await doFetch();
   if (res.status === 401 && !NO_REFRESH.has(path)) {
@@ -93,10 +105,10 @@ export const api = {
   paperSourceCheck: (id:string,snapshotId:string) => request<SourceCheck>(`/paper-trades/${encodeURIComponent(id)}/source-check/${encodeURIComponent(snapshotId)}`),
   sourceStatus: () => request<Record<string,{configured?:boolean;access?:string;data_mode?:string}>>('/sources/status'),
   sourceExpirations: (ticker:string) => request<{expirations:string[]}>(`/sources/expirations?ticker=${encodeURIComponent(ticker)}`),
-  sourceChain: (provider:string,ticker:string,expiry:string) => request<unknown>(`/sources/chain?provider=${provider}&ticker=${encodeURIComponent(ticker)}${expiry?'&expiry='+encodeURIComponent(expiry):''}`),
+  sourceChain: (provider:string,ticker:string,expiry:string) => request<unknown>(`/sources/chain?provider=${encodeURIComponent(provider)}&ticker=${encodeURIComponent(ticker)}${expiry?'&expiry='+encodeURIComponent(expiry):''}`),
   sourceSnapshot: (id:string) => request<unknown>(`/sources/snapshots/${encodeURIComponent(id)}`),
   sourceSelic: () => request<{value:number;observed_date:string;annualized_252_pct:number;note:string}>('/sources/selic'),
-  sourceCvm: (kind:string) => request<{dataset:string;note:string;resources:{name:string;url:string;format:string}[]}>(`/sources/cvm?kind=${kind}`),
+  sourceCvm: (kind:string) => request<{dataset:string;note:string;resources:{name:string;url:string;format:string}[]}>(`/sources/cvm?kind=${encodeURIComponent(kind)}`),
   paperTrack: (plan_id:string,plan_index:number) => request<PaperRecord>('/paper-trades', {method:'POST',body:JSON.stringify({plan_id,plan_index})}),
   paperHistory: () => request<PaperSummary[]>('/paper-trades'),
   paperRecord: (id:string) => request<PaperRecord>(`/paper-trades/${encodeURIComponent(id)}`),
@@ -161,13 +173,13 @@ export const api = {
 
   // Market Data
   marketProviders: () => request('/market-data/providers'),
-  quote: (ticker: string, provider = 'auto') => request(`/market-data/quote/${ticker}?provider=${provider}`),
-  history: (ticker: string, days?: number, provider = 'auto') => request(`/market-data/history/${ticker}?days=${days || 252}&provider=${provider}`),
-  profile: (ticker: string) => request(`/market-data/profile/${ticker}`),
+  quote: (ticker: string, provider = 'auto') => request(`/market-data/quote/${encodeURIComponent(ticker)}?provider=${encodeURIComponent(provider)}`),
+  history: (ticker: string, days?: number, provider = 'auto') => request(`/market-data/history/${encodeURIComponent(ticker)}?days=${days || 252}&provider=${encodeURIComponent(provider)}`),
+  profile: (ticker: string) => request(`/market-data/profile/${encodeURIComponent(ticker)}`),
   search: (query: string) => request(`/market-data/search?query=${encodeURIComponent(query)}`),
-  optionsChain: (ticker: string, provider = 'auto') => request(`/market-data/options-chain/${ticker}?provider=${provider}`),
-  volatility: (ticker: string) => request(`/market-data/volatility/${ticker}`),
-  returns: (ticker: string, period = '1y') => request(`/market-data/returns/${ticker}?period=${period}`),
+  optionsChain: (ticker: string, provider = 'auto') => request(`/market-data/options-chain/${encodeURIComponent(ticker)}?provider=${encodeURIComponent(provider)}`),
+  volatility: (ticker: string) => request(`/market-data/volatility/${encodeURIComponent(ticker)}`),
+  returns: (ticker: string, period = '1y') => request(`/market-data/returns/${encodeURIComponent(ticker)}?period=${encodeURIComponent(period)}`),
 
   // Backtesting
   backtest: (data: any) => request('/backtesting/run', { method: 'POST', body: JSON.stringify(data) }),
@@ -190,6 +202,22 @@ export const api = {
   ibovespaSimulate: (data: any) => request('/ibovespa/simulate', { method: 'POST', body: JSON.stringify(data) }),
   ibovespaRLOptimize: (data: any) => request('/ibovespa/rl-optimize', { method: 'POST', body: JSON.stringify(data) }),
   ibovespaDemo: () => request('/ibovespa/demo'),
+  ibovespaExportExcel: async (data: { profile: string; n_paths: number; T: number; initial_capital: number }): Promise<Blob> => {
+    const doFetch = () => fetch(`${API_BASE}/ibovespa/export-excel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    });
+    let res = await doFetch();
+    if (res.status === 401 && (await refreshAccessToken())) {
+      res = await doFetch();
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Falha ao exportar Excel.');
+    }
+    return res.blob();
+  },
 
   // AI Analysis Report
   aiAnalysis: (ticker: string) => request('/reports/ai-analysis', { method: 'POST', body: JSON.stringify({ ticker }) }),
@@ -201,14 +229,20 @@ export const api = {
     onError: (msg: string) => void,
   ): (() => void) => {
     const controller = new AbortController();
-    fetch('/api/reports/ai-analysis/stream', {
+    const doStreamFetch = () => fetch(`${API_BASE}/reports/ai-analysis/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ ticker }),
       signal: controller.signal,
-    }).then(async (res) => {
-      if (!res.ok) { onError('Erro ao iniciar análise'); return; }
-      const reader = res.body!.getReader();
+    });
+    doStreamFetch().then(async (initialRes) => {
+      let res = initialRes;
+      if (res.status === 401 && (await refreshAccessToken())) {
+        res = await doStreamFetch();
+      }
+      if (!res.ok) { onError(`Erro ao iniciar análise (${res.status})`); return; }
+      if (!res.body) { onError('Stream indisponível'); return; }
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       // eslint-disable-next-line no-constant-condition
@@ -240,16 +274,16 @@ export const api = {
   },
 
   // Binance Crypto
-  binancePrice: (symbol: string) => request<any>(`/binance/price/${symbol}`),
+  binancePrice: (symbol: string) => request<any>(`/binance/price/${encodeURIComponent(symbol)}`),
   binanceTickers: () => request<any[]>('/binance/tickers'),
-  binanceDepth: (symbol: string, limit = 100) => request<any>(`/binance/depth/${symbol}?limit=${limit}`),
+  binanceDepth: (symbol: string, limit = 100) => request<any>(`/binance/depth/${encodeURIComponent(symbol)}?limit=${limit}`),
   binanceKellySizing: (data: any) => request<any>('/binance/kelly-sizing', { method: 'POST', body: JSON.stringify(data) }),
   binanceFuturesAccount: () => request<any>('/binance/futures/account'),
-  binanceFuturesPrice: (symbol: string) => request<any>(`/binance/futures/price/${symbol}`),
+  binanceFuturesPrice: (symbol: string) => request<any>(`/binance/futures/price/${encodeURIComponent(symbol)}`),
 
   // Report History
   reportHistory: (limit = 20) => request<any[]>(`/reports/history?limit=${limit}`),
-  reportHistoryTicker: (ticker: string, limit = 10) => request<any[]>(`/reports/history/${ticker}?limit=${limit}`),
+  reportHistoryTicker: (ticker: string, limit = 10) => request<any[]>(`/reports/history/${encodeURIComponent(ticker)}?limit=${limit}`),
   reportDetail: (id: number) => request<any>(`/reports/history/detail/${id}`),
 
   // AI Proxy (Perplexity via backend — key never exposed to client)
@@ -263,7 +297,7 @@ export const api = {
   earningsPrediction: (data: any) => request<{ analysis: string }>('/reports/earnings-prediction', { method: 'POST', body: JSON.stringify(data) }),
 
   // Fetch financials from ticker (yfinance)
-  getTickerFinancials: (ticker: string) => request<{ current: any, previous: any }>(`/reports/ticker-financials/${ticker}`),
+  getTickerFinancials: (ticker: string) => request<{ current: any, previous: any }>(`/reports/ticker-financials/${encodeURIComponent(ticker)}`),
 
   deskHestonPrice: (data: object) => request<any>('/desk/heston/price', { method: 'POST', body: JSON.stringify(data) }),
   deskHestonCalibrate: (data: object) => request<any>('/desk/heston/calibrate', { method: 'POST', body: JSON.stringify(data) }),
@@ -290,5 +324,7 @@ export const api = {
     request<any>('/desk/target-choice/evaluate', { method: 'POST', body: JSON.stringify(data) }),
   deskErrorMaximizer: (data: object) =>
     request<any>('/desk/error-maximizer/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskPlaybookScan: (data: object = {}) =>
+    request<any>('/desk/playbook/scan', { method: 'POST', body: JSON.stringify(data) }),
   deskDoctrine: () => request<any>('/desk/doctrine'),
 };

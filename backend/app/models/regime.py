@@ -375,9 +375,9 @@ def resize(
                 action = "flatten"
                 reason = f"{sid} tagged kill_in={strat.get('kill_in')} under {regime}"
             elif strat["status"] == "standby":
-                target = min(target, 0.0)
-                action = "cut"
-                reason = f"{sid} not live in {regime}"
+                target = min(target, current)
+                action = "cut" if target < current - 1e-6 else "hold"
+                reason = f"{sid} not live in {regime} (standby cap {target:.3f})"
             elif target > current + 0.01:
                 action = "scale_up"
                 reason = f"{sid} favored in {regime}; half-Kelly {half * raw_k:.3f}"

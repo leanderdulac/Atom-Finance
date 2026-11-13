@@ -168,18 +168,21 @@ class BacktestEngine:
 
     @staticmethod
     def _rsi_strategy(prices: np.ndarray, params: dict) -> np.ndarray:
-        period = params.get("period", 14)
+        period = max(int(params.get("period", 14)), 2)
         oversold = params.get("oversold", 30)
         overbought = params.get("overbought", 70)
         n = len(prices)
         signals = np.zeros(n)
 
-        for i in range(period + 1, n):
+        for i in range(period, n):
             changes = np.diff(prices[i - period:i + 1])
-            gains = np.mean(changes[changes > 0]) if np.any(changes > 0) else 0
-            losses = -np.mean(changes[changes < 0]) if np.any(changes < 0) else 0.001
-            rs = gains / max(losses, 0.001)
-            rsi = 100 - (100 / (1 + rs))
+            gains = float(np.sum(np.maximum(changes, 0.0)) / period)
+            losses = float(np.sum(np.maximum(-changes, 0.0)) / period)
+            if losses < 1e-12:
+                rsi = 100.0 if gains > 0 else 50.0
+            else:
+                rs = gains / losses
+                rsi = 100.0 - (100.0 / (1.0 + rs))
             if rsi < oversold:
                 signals[i] = 1
             elif rsi > overbought:
@@ -214,9 +217,12 @@ class BacktestEngine:
         # Calmar Ratio
         calmar = ann_return / abs(max_drawdown) if max_drawdown != 0 else 0
 
-        # Win rate
-        winning_days = np.sum(pv_returns > 0)
-        win_rate = float(winning_days / max(len(pv_returns), 1) * 100)
+        # Win rate on active market days (exclude flat cash days where return == 0)
+        active_returns = pv_returns[np.abs(pv_returns) > 1e-12]
+        if len(active_returns) > 0:
+            win_rate = float(np.sum(active_returns > 0) / len(active_returns) * 100)
+        else:
+            win_rate = 0.0
 
         return {
             "performance": {

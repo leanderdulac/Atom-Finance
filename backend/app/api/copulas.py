@@ -7,12 +7,15 @@ entender como portfólios colapsam em momentos de crise sistêmica.
 """
 
 import asyncio
+import logging
 from functools import partial
 
 import numpy as np
+import scipy.stats as stats
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api._limits import Matrix
 from app.models.copulas import (
     ClaytonCopula,
     FrankCopula,
@@ -22,6 +25,8 @@ from app.models.copulas import (
     empirical_copula,
     fit_best_copula,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -37,7 +42,7 @@ COPULA_MAP = {
 # ── Request schemas ───────────────────────────────────────────────────────────
 
 class CopulaFitRequest(BaseModel):
-    returns: list[list[float]] = Field(
+    returns: Matrix = Field(
         ...,
         description="Matriz n×d de retornos (n observações, d ativos). Ex: [[r1_a1, r1_a2], [r2_a1, r2_a2], ...]"
     )
@@ -54,20 +59,46 @@ class CopulaSimulateRequest(BaseModel):
 
 
 class TailDependenceRequest(BaseModel):
-    returns: list[list[float]] = Field(..., description="Matriz n×2 de retornos bivariados")
+    returns: Matrix = Field(..., description="Matriz n×2 de retornos bivariados")
     quantile: float = Field(0.05, ge=0.01, le=0.20, description="Quantil de cauda (ex: 0.05 = 5%)")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _tail_dependence_empirical(u: np.ndarray, q: float) -> dict:
-    """Coeficientes de dependência de cauda empíricos."""
+    """Coeficientes de dependência de cauda finita empíricos chi(q) = P(U1 <= q | U2 <= q).
+
+    Para uma cópula gaussiana, no limite q -> 0, lambda_L = 0. No entanto, em quantis
+    finitos como q=0.05, a co-queda condicional teórica gaussiana é positiva e depende
+    da correlação linear de Pearson. Comparamos chi(q) empírico com a referência gaussiana.
+    """
     u1, u2 = u[:, 0], u[:, 1]
     lower = float(np.mean((u1 <= q) & (u2 <= q)) / q)
     upper = float(np.mean((u1 > 1 - q) & (u2 > 1 - q)) / q)
+
+    # Reference Gaussian conditional probability with matching linear correlation
+    z1 = stats.norm.ppf(np.clip(u1, 1e-6, 1 - 1e-6))
+    z2 = stats.norm.ppf(np.clip(u2, 1e-6, 1 - 1e-6))
+    rho = float(np.corrcoef(z1, z2)[0, 1]) if len(z1) > 1 else 0.0
+    if np.isnan(rho):
+        rho = 0.0
+    rho_clamped = max(-0.999, min(0.999, rho))
+
+    z_q = float(stats.norm.ppf(q))
+    cov = np.array([[1.0, rho_clamped], [rho_clamped, 1.0]], dtype=float)
+    p_gaussian_joint = float(
+        stats.multivariate_normal(mean=np.zeros(2), cov=cov).cdf([z_q, z_q])  # pyright: ignore[reportArgumentType]
+    )
+    gaussian_conditional = p_gaussian_joint / q
+    excess_lower = lower - gaussian_conditional
+
     return {
         "lower_tail_dependence_empirical": round(lower, 4),
         "upper_tail_dependence_empirical": round(upper, 4),
+        "chi_q_lower": round(lower, 4),
+        "chi_q_upper": round(upper, 4),
+        "gaussian_benchmark_lower": round(gaussian_conditional, 4),
+        "tail_excess_over_gaussian": round(excess_lower, 4),
         "quantile_used": q,
     }
 
@@ -114,8 +145,11 @@ async def fit_copula(req: CopulaFitRequest):
                 },
                 "best_copula": req.copula_type,
             }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("Unexpected error fitting copula")
+        raise HTTPException(status_code=500, detail="Erro interno ao ajustar cópula.") from exc
 
     # Empirical tail dependence (always computed)
     emp_td = {}
@@ -175,8 +209,11 @@ async def simulate_copula(req: CopulaSimulateRequest):
             cop.theta = float(params.get("theta", 3.0))
             samples = await loop.run_in_executor(None, partial(cop.simulate, req.n_samples))
 
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("Unexpected error simulating copula")
+        raise HTTPException(status_code=500, detail="Erro interno ao simular cópula.") from exc
 
     corr_sample = float(np.corrcoef(samples.T)[0, 1]) if samples.shape[1] == 2 else None
     td_emp = _tail_dependence_empirical(samples, q=0.05) if samples.shape[1] == 2 else {}

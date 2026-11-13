@@ -19,6 +19,14 @@ _LAST_SCREEN_TIME: datetime | None = None
 # the cache is stale can each kick off their own 108-call AI batch concurrently.
 _SCREEN_LOCK = asyncio.Lock()
 
+def _bull_score_of(item: dict) -> float:
+    return float(
+        item.get("model_scores", {}).get(
+            "bull_score", item.get("recommendation", {}).get("bull_score", 50.0)
+        )
+    )
+
+
 @router.get("/top-picks")
 @limiter.limit("2/hour")
 async def get_top_picks(request: Request, max_tickers: int = 6):
@@ -32,9 +40,13 @@ async def get_top_picks(request: Request, max_tickers: int = 6):
     async with _SCREEN_LOCK:
         now = datetime.now()
         # Simple 1-hour cache to avoid massive API costs and wait times
-        if _LAST_SCREEN_TIME and (now - _LAST_SCREEN_TIME).total_seconds() < 3600:
+        if (
+            _LAST_SCREEN_TIME
+            and (now - _LAST_SCREEN_TIME).total_seconds() < 3600
+            and len(_SCREENER_CACHE) >= max_tickers
+        ):
             logger.info("Returning cached AI Screener results.")
-            return sorted(_SCREENER_CACHE.values(), key=lambda x: x["model_scores"]["bull_score"], reverse=True)[:6]
+            return sorted(_SCREENER_CACHE.values(), key=_bull_score_of, reverse=True)[:max_tickers]
 
         logger.info("Starting Global AI Screener for 18 B3 assets...")
 
@@ -58,6 +70,6 @@ async def get_top_picks(request: Request, max_tickers: int = 6):
 
         _LAST_SCREEN_TIME = now
 
-        # Return Top 6 high conviction picks
-        top_picks = sorted(valid_results, key=lambda x: x["model_scores"]["bull_score"], reverse=True)[:6]
+        # Return Top high conviction picks
+        top_picks = sorted(valid_results, key=_bull_score_of, reverse=True)[:max_tickers]
         return top_picks

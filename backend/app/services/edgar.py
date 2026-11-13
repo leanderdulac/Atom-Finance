@@ -46,6 +46,11 @@ def _find(node: ET.Element, name: str) -> ET.Element | None:
 
 def parse_form4_xml(xml_text: str) -> list[dict]:
     """Extract open-market buy/sell lots from a Form 4 ownershipDocument."""
+    if len(xml_text) > 2_000_000:
+        raise ValueError("Form 4 XML exceeds maximum allowed size")
+    upper_head = xml_text[:4096].upper()
+    if "<!DOCTYPE" in upper_head or "<!ENTITY" in upper_head or "<!ENTITY" in xml_text.upper():
+        raise ValueError("XML DTD/entity declarations are not permitted")
     root = ET.fromstring(xml_text)
     ticker_el = _find(root, "issuerTradingSymbol")
     ticker = _text(ticker_el).upper() or "UNKNOWN"

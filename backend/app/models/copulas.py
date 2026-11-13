@@ -304,17 +304,16 @@ class GumbelCopula:
                 lu1, lu2 = -np.log(u1), -np.log(u2)
                 # Let x=-ln u, y=-ln v, B=x^θ+y^θ, A=B^(1/θ). Then
                 #   c(u,v) = exp(-A) (xy)^{θ-1}/(uv) [ A^{2-2θ} + (θ-1) A^{1-2θ} ].
-                # The A-exponents are 2-2θ and 1-2θ (not 2-2/θ / 1-2/θ), and there
-                # is no separate `-(2-1/θ)·ln B` term. The old code was exact only at θ=2.
-                A = (lu1 ** theta + lu2 ** theta) ** (1.0 / theta)
+                # Factoring A^{1-2θ} out of the log avoids float64 overflow at large θ:
+                #   ln(A^{2-2θ} + (θ-1)A^{1-2θ}) = (1-2θ) ln A + ln(A + θ - 1).
+                log_A = (1.0 / theta) * np.log(lu1 ** theta + lu2 ** theta)
+                A = np.exp(log_A)
                 log_c = (
                     -A
                     + (theta - 1.0) * (np.log(lu1) + np.log(lu2))
                     - np.log(u1) - np.log(u2)
-                    + np.log(
-                        A ** (2.0 - 2.0 * theta)
-                        + (theta - 1.0) * A ** (1.0 - 2.0 * theta)
-                    )
+                    + (1.0 - 2.0 * theta) * log_A
+                    + np.log(np.maximum(A + theta - 1.0, 1e-300))
                 )
                 return -float(np.sum(log_c))
             except Exception:

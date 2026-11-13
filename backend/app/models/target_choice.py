@@ -156,9 +156,9 @@ def evaluate(n: int = 504, seed: int = 5) -> dict[str, Any]:
     # Same return path: applying the return model to itself is the control.
     transfer_return_rmse = _rmse(yr[min_train:], model_r.predict(xr[min_train:]))
 
-    adf_petr = float(_adf_tstat(petr, lags=1))
-    adf_btc = float(_adf_tstat(btc, lags=1))
-    adf_r = float(_adf_tstat(r, lags=1))
+    adf_petr = float(_adf_tstat(petr, lags=1, include_const=True))
+    adf_btc = float(_adf_tstat(btc, lags=1, include_const=True))
+    adf_r = float(_adf_tstat(r, lags=1, include_const=True))
     step = max(1, n // 160)
     path = [
         {

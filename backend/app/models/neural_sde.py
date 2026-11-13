@@ -26,6 +26,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from app.core.accelerator import device_info, select_torch_device
+
 logger = logging.getLogger(__name__)
 
 # torchsde is an optional dependency — fail gracefully so the rest of the app
@@ -36,9 +38,6 @@ try:
 except ImportError:
     _TORCHSDE_AVAILABLE = False
     logger.warning("torchsde not installed. NeuralSDE model will be unavailable.")
-
-
-_DEVICE = torch.device("cpu")   # ATOM runs on CPU by default
 
 
 class _SDEFunc(nn.Module):
@@ -76,6 +75,10 @@ class NeuralSDE:
         return _TORCHSDE_AVAILABLE
 
     @staticmethod
+    def hardware_status() -> dict:
+        return device_info()
+
+    @staticmethod
     def simulate(
         y0: float = 0.1,
         t_start: float = 0.0,
@@ -86,6 +89,7 @@ class NeuralSDE:
         hidden_size: int = 32,
         method: str = "euler",
         seed: int | None = 42,
+        device: str | None = None,
     ) -> dict:
         """
         Simulate N trajectories of a Neural SDE on CPU.
@@ -119,25 +123,34 @@ class NeuralSDE:
         if seed is not None:
             torch.manual_seed(seed)
 
-        sde = _SDEFunc(state_size=state_size, hidden=hidden_size).to(_DEVICE)
+        target_device = select_torch_device(n_paths, min_gpu_batch=128, requested=device)
 
-        # y0 shape: (batch, state_size)
-        y0_tensor = torch.full(
-            (n_paths, state_size), fill_value=float(y0), device=_DEVICE
-        )
-        ts = torch.linspace(t_start, t_end, steps=n_steps, device=_DEVICE)
+        def _integrate(dev: torch.device):
+            if seed is not None:
+                torch.manual_seed(seed)
+            sde = _SDEFunc(state_size=state_size, hidden=hidden_size).to(dev)
+            y0_tensor = torch.full(
+                (n_paths, state_size), fill_value=float(y0), device=dev, dtype=torch.float32
+            )
+            ts_tensor = torch.linspace(t_start, t_end, steps=n_steps, device=dev, dtype=torch.float32)
+            with torch.no_grad():
+                traj = torchsde.sdeint(sde, y0_tensor, ts_tensor, method=method)  # pyright: ignore[reportPossiblyUnboundVariable]
+            return traj, ts_tensor
 
-        with torch.no_grad():
-            # trajectories shape: (n_steps, batch, state_size)
-            # torchsde is a hard dependency (see requirements.txt); the
-            # _TORCHSDE_AVAILABLE guard above is defensive, but the type
-            # checker can't correlate that flag with this name's binding.
-            trajectories = torchsde.sdeint(sde, y0_tensor, ts, method=method)  # pyright: ignore[reportPossiblyUnboundVariable]
+        try:
+            trajectories, ts = _integrate(target_device)
+        except Exception as exc:
+            if target_device.type != "cpu":
+                logger.warning("NeuralSDE on %s failed (%s); falling back to CPU.", target_device, exc)
+                target_device = torch.device("cpu")
+                trajectories, ts = _integrate(target_device)
+            else:
+                raise
 
         # Extract first state dimension → (n_steps, n_paths)
-        traj_np: np.ndarray = trajectories[:, :, 0].cpu().numpy()  # pyright: ignore[reportCallIssue,reportArgumentType]
+        traj_np: np.ndarray = trajectories[:, :, 0].detach().cpu().numpy()  # pyright: ignore[reportCallIssue,reportArgumentType]
 
-        time_list = ts.cpu().numpy().tolist()
+        time_list = ts.detach().cpu().numpy().tolist()
 
         # Per-time-step statistics across paths
         mean_  = traj_np.mean(axis=1).tolist()
@@ -152,6 +165,7 @@ class NeuralSDE:
             "model": "neural_sde",
             "sde_type": "ito",
             "solver": method,
+            "device": str(target_device),
             "trajectories": sample_paths,          # [n_sample_paths][n_steps]
             "time": time_list,
             "statistics": {

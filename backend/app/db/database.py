@@ -161,21 +161,15 @@ async def list_users(limit: int = 100) -> list[dict]:
 
 
 async def readiness() -> None:
-    """Verify writable database with a rolled-back write, without external API calls.
-
-    DDL is transactional in Postgres: CREATE TABLE must commit on its own, in
-    a separate transaction from the probe write, or rolling back the probe
-    would undo the table too.
-    """
+    """Verify writable database without external API calls or DDL lock contention."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute("CREATE TABLE IF NOT EXISTS health_probe (id INTEGER PRIMARY KEY)")
-        tx = conn.transaction()
+        tx = conn.transaction(readonly=False)
         await tx.start()
         try:
-            await conn.execute(
-                "INSERT INTO health_probe (id) VALUES (1) ON CONFLICT (id) DO UPDATE SET id = 1"
-            )
+            in_recovery = await conn.fetchval("SELECT pg_is_in_recovery()")
+            if in_recovery:
+                raise RuntimeError("Database is in recovery mode (read-only)")
         finally:
             await tx.rollback()
 

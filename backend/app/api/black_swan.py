@@ -4,17 +4,18 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api._limits import Series
 from app.models.black_swan import BlackSwanDetector
 
 router = APIRouter()
 
 
 class TailRiskRequest(BaseModel):
-    returns: list[float] = Field(..., min_length=30)
+    returns: Series = Field(..., min_length=30)
 
 
 class CombinedAnalysisRequest(BaseModel):
-    returns: list[float] = Field(..., min_length=30)
+    returns: Series = Field(..., min_length=30)
 
 
 @router.post("/tail-risk")

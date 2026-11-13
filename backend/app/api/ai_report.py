@@ -11,7 +11,7 @@ from datetime import date
 from functools import partial
 
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -328,15 +328,15 @@ async def _full_analysis(ticker: str) -> dict:
 
     # ── 1. Fetch market data ─────────────────────────────────────────────
     if is_br:
-        quote = BrapiService.get_quote(ticker) or {}
-        history = BrapiService.get_history(ticker, 252) or {}
+        quote = (await _run(BrapiService.get_quote, ticker)) or {}
+        history = (await _run(BrapiService.get_history, ticker, 252)) or {}
         if not history.get("close"):
             history = await _run(_fetch_history_sync, f"{ticker}.SA")
             if not quote.get("price"):
-                quote = DataFetcher.get_quote(f"{ticker}.SA") or {}
+                quote = (await _run(DataFetcher.get_quote, f"{ticker}.SA")) or {}
     else:
         # Try OpenBB → yfinance
-        quote = OpenBBService.get_quote(ticker, provider="yfinance") or DataFetcher.get_quote(ticker) or {}
+        quote = (await _run(OpenBBService.get_quote, ticker, "yfinance")) or (await _run(DataFetcher.get_quote, ticker)) or {}
         history = await _run(_fetch_history_sync, ticker)
 
     closes = [float(x) for x in (history.get("close") or []) if x]
@@ -348,6 +348,7 @@ async def _full_analysis(ticker: str) -> dict:
 
     # ── 2. Run all models in parallel ────────────────────────────────────
     rets = _log_returns(closes)
+    simple_rets = np.expm1(rets)
 
     # Market benchmark returns (SPY or IBOV proxy)
     benchmark_ticker = "^BVSP" if is_br else "SPY"
@@ -356,7 +357,7 @@ async def _full_analysis(ticker: str) -> dict:
 
     # Run models concurrently
     ml_task = _run(ExponentialSmoothingForecast().predict, np.array(closes), 30)
-    var_task = _run(RiskCalculator.historical, rets, 0.95)
+    var_task = _run(RiskCalculator.historical, simple_rets, 0.95)
     swan_task = _run(BlackSwanDetector.analyze_tail_risk, rets)
 
     ml_result, var_result, swan_result = await asyncio.gather(
@@ -393,17 +394,17 @@ async def _full_analysis(ticker: str) -> dict:
     # CAPM / Beta
     beta_val, alpha_val = 1.0, 0.0
     if bench_closes and len(bench_closes) >= 30:
-        n = min(len(rets), len(bench_closes) - 1)
-        bench_rets = _log_returns(bench_closes[-n - 1:])
+        n = min(len(simple_rets), len(bench_closes) - 1)
+        bench_rets = np.expm1(_log_returns(bench_closes[-n - 1:]))
         try:
-            beta_res = CAPMAnalyzer.compute_beta(rets[-n:], bench_rets[-n:])
+            beta_res = CAPMAnalyzer.compute_beta(simple_rets[-n:], bench_rets[-n:])
             beta_val = beta_res.get("beta", 1.0)
             alpha_val = beta_res.get("alpha_annual", 0.0)
         except Exception as exc:
             logger.warning("CAPM failed for %s: %s", ticker, exc)
 
     # Black-Scholes — ATM options
-    vol_data = DataFetcher.get_volatility_data(ticker)
+    vol_data = await _run(DataFetcher.get_volatility_data, ticker)
     iv = vol_data.get("iv_avg", 0.0) if vol_data else 0.0
     if iv <= 0 or iv > 3:
         iv = float(np.std(rets) * math.sqrt(252))  # historical vol fallback
@@ -420,7 +421,7 @@ async def _full_analysis(ticker: str) -> dict:
     # ── 3. Build scores ──────────────────────────────────────────────────
     ml_return_pct = float(ml_result.get("predicted_return", 0) or 0) if isinstance(ml_result, dict) else 0
     var_pct = float(var_result.get("var_percentage", 2.0)) if isinstance(var_result, dict) else 2.0
-    swan_score = float(swan_result.get("combined_score", 50.0)) if isinstance(swan_result, dict) else 50.0
+    swan_score = float(swan_result.get("black_swan_score", swan_result.get("combined_score", 50.0))) if isinstance(swan_result, dict) else 50.0
     momentum = _momentum_score(closes)
     bull_score = _build_bull_score(
         ml_return_pct, alpha_val, swan_score, var_pct, momentum, iv
@@ -453,7 +454,7 @@ async def _full_analysis(ticker: str) -> dict:
     news_task = NewsMonitor.analyze_sentiment(ticker)
     
     # b. Fundamental Deep-Dive (Claude)
-    profile = OpenBBService.get_profile(ticker) or {}
+    profile = (await _run(OpenBBService.get_profile, ticker)) or {}
     fundamental_task = AIFactory.analyze_fundamental(ticker, str(profile))
     
     # c. Quant Strategy (GPT-5/OpenAI)
@@ -512,6 +513,7 @@ async def _full_analysis(ticker: str) -> dict:
             "name": quote.get("name") or ticker,
         },
         "model_scores": {
+            "bull_score": round(bull_score, 1),
             "ml_return_pct": round(ml_return_pct, 2),
             "beta": round(beta_val, 4),
             "alpha_annual_pct": round(alpha_val * 100, 2),
@@ -539,7 +541,7 @@ async def _full_analysis(ticker: str) -> dict:
             "quant_strategy_gpt": quant_res if not isinstance(quant_res, BaseException) else "Erro GPT",
             "pulse_grok": pulse_res if not isinstance(pulse_res, BaseException) else "Erro Grok",
             "search_perplexity": search_res if not isinstance(search_res, BaseException) else "Erro Perplexity",
-            "bridgewise_b3": bridgewise_res
+            "bridgewise_b3": bridgewise_res if not isinstance(bridgewise_res, BaseException) else None,
         },
         "generated_at": date.today().isoformat(),
     }
@@ -667,26 +669,31 @@ async def earnings_prediction(request: Request, req: EarningsPredictionRequest):
     return {"analysis": result}
 
 @router.get("/ticker-financials/{ticker}")
-async def get_ticker_financials(ticker: str):
+@limiter.limit("20/minute")
+async def get_ticker_financials(
+    request: Request,
+    ticker: str = Path(..., pattern=r"^[A-Za-z0-9._\-\^=]{1,20}$"),
+):
     """
     Fetches the last 2 years of financial statements (Income Stmt, Balance Sheet, Cash Flow)
     via yfinance and maps them to the 14 required metrics.
     """
     import pandas as pd
     import yfinance as yf
-    
+
     # Heuristic for B3
     symbol = ticker.upper()
     if len(symbol) >= 5 and symbol[:4].isalpha() and symbol[4:].isdigit():
         if not symbol.endswith(".SA"):
             symbol += ".SA"
-            
+
+    def _fetch_statements(sym: str):
+        t = yf.Ticker(sym)
+        return t.income_stmt, t.balance_sheet, t.cash_flow
+
     try:
-        t = yf.Ticker(symbol)
-        income = t.income_stmt
-        bs = t.balance_sheet
-        cf = t.cash_flow
-        
+        income, bs, cf = await _run(_fetch_statements, symbol)
+
         if income.empty or bs.empty or cf.empty:
             raise HTTPException(status_code=404, detail="Dados financeiros não encontrados para este ticker.")
 
@@ -771,7 +778,9 @@ async def ai_analysis_stream(request: Request, req: AnalysisRequest, owner: str 
                                 report = None
                 yield chunk
         except Exception as e:
-            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+            logger.exception("Error in ai_analysis_stream for %s", req.ticker)
+            msg = str(e) if isinstance(e, ValueError) else "Erro ao processar análise."
+            yield f"event: error\ndata: {json.dumps({'message': msg})}\n\n"
         if report is not None:
             try:
                 await _db_save(req.ticker.upper(), report, owner=owner)
@@ -821,14 +830,14 @@ async def _full_analysis_streaming(ticker: str):
     is_br = _is_br_ticker(ticker)
 
     if is_br:
-        quote = BrapiService.get_quote(ticker) or {}
-        history = BrapiService.get_history(ticker, 252) or {}
+        quote = (await _run(BrapiService.get_quote, ticker)) or {}
+        history = (await _run(BrapiService.get_history, ticker, 252)) or {}
         if not history.get("close"):
             history = await _run(_fetch_history_sync, f"{ticker}.SA")
             if not quote.get("price"):
-                quote = DataFetcher.get_quote(f"{ticker}.SA") or {}
+                quote = (await _run(DataFetcher.get_quote, f"{ticker}.SA")) or {}
     else:
-        quote = OpenBBService.get_quote(ticker, provider="yfinance") or DataFetcher.get_quote(ticker) or {}
+        quote = (await _run(OpenBBService.get_quote, ticker, "yfinance")) or (await _run(DataFetcher.get_quote, ticker)) or {}
         history = await _run(_fetch_history_sync, ticker)
 
     closes = [float(x) for x in (history.get("close") or []) if x]
@@ -840,6 +849,7 @@ async def _full_analysis_streaming(ticker: str):
     yield sse("progress", {"step": 2, "total": 7, "message": "Calculando retornos e benchmark..."})
 
     rets = _log_returns(closes)
+    simple_rets = np.expm1(rets)
     benchmark_ticker = "^BVSP" if is_br else "SPY"
     bench_history = await _run(_fetch_history_sync, benchmark_ticker)
     bench_closes = [float(x) for x in (bench_history.get("close") or []) if x]
@@ -847,7 +857,7 @@ async def _full_analysis_streaming(ticker: str):
     yield sse("progress", {"step": 3, "total": 7, "message": "Rodando modelos quantitativos (ML, VaR, Black Swan)..."})
 
     ml_task = _run(ExponentialSmoothingForecast().predict, np.array(closes), 30)
-    var_task = _run(RiskCalculator.historical, rets, 0.95)
+    var_task = _run(RiskCalculator.historical, simple_rets, 0.95)
     swan_task = _run(BlackSwanDetector.analyze_tail_risk, rets)
     ml_result, var_result, swan_result = await asyncio.gather(ml_task, var_task, swan_task, return_exceptions=True)
 
@@ -865,10 +875,10 @@ async def _full_analysis_streaming(ticker: str):
 
     beta_val, alpha_val = 1.0, 0.0
     if bench_closes and len(bench_closes) >= 30:
-        n = min(len(rets), len(bench_closes) - 1)
-        bench_rets = _log_returns(bench_closes[-n - 1:])
+        n = min(len(simple_rets), len(bench_closes) - 1)
+        bench_rets = np.expm1(_log_returns(bench_closes[-n - 1:]))
         try:
-            beta_res = CAPMAnalyzer.compute_beta(rets[-n:], bench_rets[-n:])
+            beta_res = CAPMAnalyzer.compute_beta(simple_rets[-n:], bench_rets[-n:])
             beta_val = beta_res.get("beta", 1.0)
             alpha_val = beta_res.get("alpha_annual", 0.0)
         except Exception as exc:
@@ -889,7 +899,7 @@ async def _full_analysis_streaming(ticker: str):
         except Exception as exc:
             logger.warning("EVT failed (stream) for %s: %s", ticker, exc)
 
-    vol_data = DataFetcher.get_volatility_data(ticker)
+    vol_data = await _run(DataFetcher.get_volatility_data, ticker)
     iv = vol_data.get("iv_avg", 0.0) if vol_data else 0.0
     if iv <= 0 or iv > 3:
         iv = float(np.std(rets) * math.sqrt(252))
@@ -902,7 +912,7 @@ async def _full_analysis_streaming(ticker: str):
 
     ml_return_pct = float(ml_result.get("predicted_return", 0) or 0) if isinstance(ml_result, dict) else 0
     var_pct = float(var_result.get("var_percentage", 2.0)) if isinstance(var_result, dict) else 2.0
-    swan_score = float(swan_result.get("combined_score", 50.0)) if isinstance(swan_result, dict) else 50.0
+    swan_score = float(swan_result.get("black_swan_score", swan_result.get("combined_score", 50.0))) if isinstance(swan_result, dict) else 50.0
     momentum = _momentum_score(closes)
     currency = quote.get("currency", "BRL" if is_br else "USD")
 
@@ -922,7 +932,7 @@ async def _full_analysis_streaming(ticker: str):
     }
 
     # Parallel Dream Team & Agents
-    profile = OpenBBService.get_profile(ticker) or {}
+    profile = (await _run(OpenBBService.get_profile, ticker)) or {}
     tasks = {
         "agents": _run(run_all_agents, quant_data_for_agents),
         "news": NewsMonitor.analyze_sentiment(ticker),
@@ -940,7 +950,19 @@ async def _full_analysis_streaming(ticker: str):
 
     # Process agents
     agents_res = results.get("agents")
-    consensus = aggregate_signals(agents_res) if isinstance(agents_res, list) else {"consensus": "Erro", "consensus_pct": 0}
+    consensus = (
+        aggregate_signals(agents_res)
+        if isinstance(agents_res, list)
+        else {
+            "consensus": "Erro",
+            "consensus_pct": 0,
+            "bullish_count": 0,
+            "bearish_count": 0,
+            "neutral_count": 0,
+            "avg_confidence": 0,
+            "signals": [],
+        }
+    )
 
     yield sse("progress", {"step": 6, "total": 7, "message": "Gerando narrativa com IA (Claude)..."})
 
@@ -956,6 +978,7 @@ async def _full_analysis_streaming(ticker: str):
             "name": quote.get("name") or ticker,
         },
         "model_scores": {
+            "bull_score": round(bull_score, 1),
             "ml_return_pct": round(ml_return_pct, 2), "beta": round(beta_val, 4),
             "alpha_annual_pct": round(alpha_val * 100, 2), "var_pct": round(var_pct, 4),
             "black_swan_score": round(swan_score, 1), "iv_pct": round(iv * 100, 1),

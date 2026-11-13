@@ -18,9 +18,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
 FRONTEND_DIR="$SCRIPT_DIR"
 
-BACKEND_PYTHON="$BACKEND_DIR/venv/bin/python"
+if [[ -f "$SCRIPT_DIR/.venv/bin/python" ]]; then
+  BACKEND_PYTHON="$SCRIPT_DIR/.venv/bin/python"
+else
+  BACKEND_PYTHON="$BACKEND_DIR/venv/bin/python"
+fi
 BACKEND_PORT=8000
-FRONTEND_PORT=5174
+FRONTEND_PORT=5173
 
 LOG_DIR="$SCRIPT_DIR/logs"
 BACKEND_LOG="$LOG_DIR/backend.log"
@@ -45,13 +49,21 @@ header() {
 }
 
 port_free() {
-  ! ss -tlnp 2>/dev/null | grep -q ":$1 "
+  if command -v lsof >/dev/null 2>&1; then
+    ! lsof -iTCP:"$1" -sTCP:LISTEN -t >/dev/null 2>&1
+  else
+    ! ss -tlnp 2>/dev/null | grep -q ":$1 "
+  fi
 }
 
 kill_port() {
   local port=$1
-  local pid
-  pid=$(ss -tlnp 2>/dev/null | grep ":$port " | grep -oP 'pid=\K[0-9]+' | head -1)
+  local pid=""
+  if command -v lsof >/dev/null 2>&1; then
+    pid=$(lsof -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)
+  else
+    pid=$(ss -tlnp 2>/dev/null | grep ":$port " | grep -oP 'pid=\K[0-9]+' | head -1 || true)
+  fi
   if [[ -n "$pid" ]]; then
     warn "Porta $port em uso pelo PID $pid — encerrando..."
     kill "$pid" 2>/dev/null || true

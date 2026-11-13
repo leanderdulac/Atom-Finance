@@ -11,6 +11,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api._limits import Series
 from app.models.evt import (
     GeneralizedExtremeValue,
     compute_evt_risk,
@@ -20,10 +21,14 @@ from app.models.evt import (
 router = APIRouter()
 
 
+def _finite_or_none(val: float, ndigits: int = 6) -> float | None:
+    return round(float(val), ndigits) if np.isfinite(val) else None
+
+
 # ── Request schemas ───────────────────────────────────────────────────────────
 
 class EVTAnalyzeRequest(BaseModel):
-    returns: list[float] = Field(..., description="Série de retornos diários")
+    returns: Series = Field(..., description="Série de retornos diários")
     confidence: float = Field(0.99, ge=0.90, le=0.9999)
     threshold_quantile: float = Field(
         0.90, ge=0.80, le=0.99,
@@ -33,7 +38,7 @@ class EVTAnalyzeRequest(BaseModel):
 
 
 class GEVRequest(BaseModel):
-    returns: list[float] = Field(..., description="Série de retornos diários")
+    returns: Series = Field(..., description="Série de retornos diários")
     block_size: int = Field(
         63, ge=5, le=252,
         description="Tamanho do bloco em dias (63 ≈ trimestral, 21 ≈ mensal)"
@@ -41,7 +46,7 @@ class GEVRequest(BaseModel):
 
 
 class HillRequest(BaseModel):
-    returns: list[float] = Field(..., description="Série de retornos diários")
+    returns: Series = Field(..., description="Série de retornos diários")
     k: int | None = Field(None, description="Número de estatísticas de ordem superiores")
 
 
@@ -85,14 +90,15 @@ async def evt_analyze(req: EVTAnalyzeRequest):
         "method": "GPD / Peaks Over Threshold",
         "confidence": req.confidence,
         "threshold_quantile": req.threshold_quantile,
-        "var_evt": round(result.var_evt, 6),
-        "cvar_evt": round(result.cvar_evt, 6),
-        "normal_var": round(result.normal_var, 6),
-        "evt_premium_pct": round(result.evt_premium_pct, 2),
-        "tail_index_xi": round(result.tail_index, 4),
-        "return_level_10y": round(result.return_level_10y, 6),
-        "return_level_100y": round(result.return_level_100y, 6),
-        "threshold": round(result.threshold, 6),
+        "var_evt": _finite_or_none(result.var_evt, 6),
+        "cvar_evt": _finite_or_none(result.cvar_evt, 6),
+        "normal_var": _finite_or_none(result.normal_var, 6),
+        "evt_premium_pct": _finite_or_none(result.evt_premium_pct, 2),
+        "tail_index_xi": _finite_or_none(result.tail_index, 4),
+        "return_level_10y": _finite_or_none(result.return_level_10y, 6),
+        "return_level_100y": _finite_or_none(result.return_level_100y, 6),
+        "return_level_error": result.return_level_error,
+        "threshold": _finite_or_none(result.threshold, 6),
         "n_exceedances": result.n_exceedances,
         "exceedance_rate": round(result.exceedance_rate, 4),
         "interpretation": {
@@ -201,13 +207,13 @@ async def evt_demo():
         "synthetic_distribution": f"Student-t com ν={df} graus de liberdade (caudas pesadas)",
         "n_observations": 1000,
         "results": {
-            "evt_var_99pct": round(result.var_evt, 6),
-            "normal_var_99pct": round(result.normal_var, 6),
-            "evt_premium_pct": round(result.evt_premium_pct, 2),
-            "evt_cvar_99pct": round(result.cvar_evt, 6),
-            "tail_index_xi": round(result.tail_index, 4),
-            "return_level_10y": round(result.return_level_10y, 6),
-            "return_level_100y": round(result.return_level_100y, 6),
+            "evt_var_99pct": _finite_or_none(result.var_evt, 6),
+            "normal_var_99pct": _finite_or_none(result.normal_var, 6),
+            "evt_premium_pct": _finite_or_none(result.evt_premium_pct, 2),
+            "evt_cvar_99pct": _finite_or_none(result.cvar_evt, 6),
+            "tail_index_xi": _finite_or_none(result.tail_index, 4),
+            "return_level_10y": _finite_or_none(result.return_level_10y, 6),
+            "return_level_100y": _finite_or_none(result.return_level_100y, 6),
         },
         "insight": (
             f"O EVT-VaR é {result.evt_premium_pct:.1f}% mais conservador que o VaR Normal, "

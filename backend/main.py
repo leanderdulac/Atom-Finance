@@ -8,7 +8,7 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -208,8 +208,8 @@ def live():
 
 
 @app.get("/api/health")
-@limiter.exempt
-async def health_check():
+@limiter.limit("60/minute")
+async def health_check(request: Request):
     try:
         await readiness()
     except Exception:

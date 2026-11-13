@@ -287,15 +287,15 @@ class DeltaHedgeEngine:
             deviation_pct = |delta_net / eth_in_pool| × 100
         """
         eth_in_pool = UniswapV3Inventory.from_position(lp_position, current_price)
-        short_size  = perp_position.abs_size
-
-        delta_net = eth_in_pool - short_size
+        # perp_position.size is signed (negative = short, positive = long)
+        short_size  = -perp_position.size
+        delta_net   = eth_in_pool + perp_position.size
 
         if eth_in_pool > 0:
             deviation_pct = abs(delta_net / eth_in_pool) * 100
         else:
-            # Position is fully in stablecoin — any short is over-hedged
-            deviation_pct = 100.0 if short_size > 0 else 0.0
+            # Position is fully in stablecoin — any non-zero perp is unhedged exposure
+            deviation_pct = 100.0 if abs(perp_position.size) > 0 else 0.0
 
         state = HedgeState(
             eth_in_pool       = eth_in_pool,

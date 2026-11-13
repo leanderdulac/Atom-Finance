@@ -53,12 +53,12 @@ def kelly_derivatives(win_prob: float, payout_ratio: float, bankroll: float, fra
 
 def simular_caminhos_kelly_derivativos(win_prob: float, payout_ratio: float, bankroll_inicial: float = 10000,
                                        num_apostas: int = 100, num_simulacoes: int = 10000,
-                                       fraction: float = 1.0, seed: int = 42,
+                                       fraction: float = 1.0, seed: int | None = 42,
                                        include_results: bool = False) -> dict:
     """
     Simulação Monte Carlo dos retornos de opções para evidenciar o efeito Taleb.
     """
-    np.random.seed(seed)
+    rng = np.random.default_rng(seed)
     resultados = np.zeros(num_simulacoes)
     
     q = 1.0 - win_prob
@@ -72,7 +72,7 @@ def simular_caminhos_kelly_derivativos(win_prob: float, payout_ratio: float, ban
     for i in range(num_simulacoes):
         bankroll = bankroll_inicial
         for _ in range(num_apostas):
-            ganhou = np.random.rand() < win_prob
+            ganhou = rng.random() < win_prob
             if ganhou:
                 # Ganha e recebe o prêmio original de volta (1) + lucro líquido pelo payout ratio
                 bankroll *= (1 + kelly_frac * payout_ratio)

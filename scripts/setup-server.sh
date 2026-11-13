@@ -102,6 +102,7 @@ if [[ -f "$PROD_ENV" ]]; then
     warn ".env.prod already exists — skipping generation. Edit manually if needed."
 else
     SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    QM_TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 
     cat > "$PROD_ENV" << EOF
 # ── ATOM Production Environment ──────────────────────────────────
@@ -112,6 +113,7 @@ ATOM_ENV=production
 
 # Security (auto-generated — do NOT change after first start)
 SECRET_KEY=${SECRET}
+QUANTMIND_SERVICE_TOKEN=${QM_TOKEN}
 
 # Managed Postgres — this compose stack does not run its own database.
 # Provision one first (scripts/provision-digitalocean.sh, or manually — see
@@ -134,11 +136,14 @@ ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 XAI_API_KEY=
 PERPLEXITY_API_KEY=
+GOOGLE_API_KEY=
 BRIDGEWISE_TOKEN=
+ATOM_SEC_USER_AGENT=
 
 # Redis (auto-configured via docker internal network)
 REDIS_URL=redis://redis:6379/0
-ACCESS_TOKEN_EXPIRE_HOURS=24
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=45
 EOF
 
     chmod 600 "$PROD_ENV"
@@ -165,8 +170,8 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${PROD_ENV}
-ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml --env-file ${PROD_ENV} up -d --build
-ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+ExecStart=/usr/bin/docker compose --project-name atom -f docker-compose.prod.yml --env-file ${PROD_ENV} up -d --build
+ExecStop=/usr/bin/docker compose --project-name atom -f docker-compose.prod.yml down
 TimeoutStartSec=300
 User=${APP_USER}
 

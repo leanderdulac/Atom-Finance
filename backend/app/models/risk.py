@@ -48,7 +48,7 @@ def _estimate_student_t_df(returns: np.ndarray) -> float:
     if not np.isfinite(df) or df <= 1.0:
         return 5.0
     # Keep finite variance (df > 2) and a tractable tail; above ~30 the t ≈ normal.
-    return float(np.clip(df, 2.0, 30.0))
+    return float(np.clip(df, 2.05, 30.0))
 
 
 class ValueAtRisk:
@@ -98,14 +98,13 @@ class ValueAtRisk:
             cvar_pct = -(mu_h - sigma_h * float(norm.pdf(z)) / alpha)
         elif distribution == "t":
             # df is estimated (MLE) from the standardized returns, not fabricated.
-            df_est = _estimate_student_t_df(returns)
+            # Standard Student-t has variance df/(df-2), so scale = sigma_h * sqrt((df-2)/df).
+            df_est = max(_estimate_student_t_df(returns), 2.05)
+            scale_h = sigma_h * np.sqrt((df_est - 2.0) / df_est)
             z = float(t_dist.ppf(alpha, df_est))
-            var_pct = -(mu_h + z * sigma_h)
-            if df_est <= 1:
-                cvar_pct = float("inf")
-            else:
-                tail_factor = float(t_dist.pdf(z, df_est)) / alpha * (df_est + z ** 2) / (df_est - 1)
-                cvar_pct = -mu_h + sigma_h * tail_factor
+            var_pct = -(mu_h + z * scale_h)
+            tail_factor = float(t_dist.pdf(z, df_est)) / alpha * (df_est + z ** 2) / (df_est - 1)
+            cvar_pct = -mu_h + scale_h * tail_factor
             extra["df"] = df_est
             extra["df_estimation"] = "mle_standardized"
         else:

@@ -1,11 +1,13 @@
 """Market Data API with OpenBB, Yahoo Finance and synthetic fallbacks."""
 
+import asyncio
+import re
 from datetime import date, timedelta
 from typing import Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.core.limiter import limiter
 from app.models.pricing import BlackScholes
@@ -14,6 +16,15 @@ from app.services.data_fetcher import DataFetcher
 from app.services.openbb_service import OpenBBService
 
 router = APIRouter()
+
+_TICKER_RE = re.compile(r"^[A-Za-z0-9._\-\^=]{1,20}$")
+
+
+def _clean_ticker(ticker: str) -> str:
+    clean = ticker.strip().upper()
+    if not _TICKER_RE.fullmatch(clean):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+    return clean
 
 # Market data endpoints hit external APIs — limit to 30 req/min per IP.
 # (Using shared limiter from app.core.limiter)
@@ -64,12 +75,12 @@ def _normalise_df_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def _generate_synthetic_prices(ticker: str, days: int = 252) -> dict:
     """Generate synthetic OHLCV data for demo purposes."""
-    np.random.seed(hash(ticker) % 2**31)
+    rng = np.random.default_rng(hash(ticker) % 2**31)
     base = _SYNTHETIC_BASE_PRICES.get(ticker.upper(), 100.0)
 
-    returns = np.random.normal(0.0004, 0.018, days)
+    returns = rng.normal(0.0004, 0.018, days)
     prices = base * np.cumprod(1 + returns)
-    volumes = np.random.lognormal(15, 0.5, days).astype(int)
+    volumes = rng.lognormal(15, 0.5, days).astype(int)
 
     dates: list[str] = []
     start = date.today()
@@ -81,13 +92,13 @@ def _generate_synthetic_prices(ticker: str, days: int = 252) -> dict:
     n = len(dates)
     prices = prices[:n]
     volumes = volumes[:n]
-    highs = prices * (1 + np.abs(np.random.normal(0, 0.01, n)))
-    lows = prices * (1 - np.abs(np.random.normal(0, 0.01, n)))
+    highs = prices * (1 + np.abs(rng.normal(0, 0.01, n)))
+    lows = prices * (1 - np.abs(rng.normal(0, 0.01, n)))
 
     return {
         "ticker": ticker.upper(),
         "dates": dates,
-        "open": [round(float(p * (1 + np.random.normal(0, 0.002))), 2) for p in prices],
+        "open": [round(float(p * (1 + rng.normal(0, 0.002))), 2) for p in prices],
         "high": [round(float(h), 2) for h in highs],
         "low": [round(float(l), 2) for l in lows],
         "close": [round(float(p), 2) for p in prices],
@@ -187,7 +198,7 @@ def _options_from_yfinance(ticker: str) -> dict | None:
 
 
 def _synthetic_options(ticker: str) -> dict:
-    np.random.seed(hash(ticker) % 2**31)
+    rng = np.random.default_rng(hash(ticker) % 2**31)
     spot_data = _generate_synthetic_prices(ticker, 5)
     spot = spot_data["close"][-1]
     strikes = [round(spot * m, 2) for m in np.arange(0.85, 1.16, 0.025)]
@@ -210,8 +221,8 @@ def _synthetic_options(ticker: str) -> dict:
                     "put_price": put.price,
                     "put_delta": put.delta,
                     "put_iv": round(sigma, 4),
-                    "volume": int(np.random.exponential(500)),
-                    "open_interest": int(np.random.exponential(2000)),
+                    "volume": int(rng.exponential(500)),
+                    "open_interest": int(rng.exponential(2000)),
                 }
             )
 
@@ -251,15 +262,17 @@ async def get_provider_status():
 @router.get("/b3/tickers")
 async def list_b3_tickers():
     """List all available B3 tickers via brapi."""
-    tickers = BrapiService.list_tickers()
+    tickers = await asyncio.to_thread(BrapiService.list_tickers)
     return {"exchange": "BVMF", "count": len(tickers), "tickers": tickers}
 
 
 @router.get("/b3/macro")
 async def b3_macro():
     """Brazilian macro rates — SELIC, CDI, IPCA inflation."""
-    inflation = BrapiService.get_inflation()
-    prime = BrapiService.get_prime_rate()
+    inflation, prime = await asyncio.gather(
+        asyncio.to_thread(BrapiService.get_inflation),
+        asyncio.to_thread(BrapiService.get_prime_rate),
+    )
     return {
         "inflation": inflation,
         "prime_rate": prime,
@@ -271,21 +284,22 @@ async def b3_macro():
 @limiter.limit("30/minute")
 async def get_quote(request: Request, ticker: str, provider: ProviderName = Query(default="auto")):
     """Get quote — brapi (BR tickers) → OpenBB → Yahoo Finance → synthetic fallback."""
+    ticker = _clean_ticker(ticker)
     is_br = _is_br_ticker(ticker)
 
     # brapi first for Brazilian tickers
     if provider in {"auto", "brapi"} and (is_br or provider == "brapi"):
-        quote = BrapiService.get_quote(ticker)
+        quote = await asyncio.to_thread(BrapiService.get_quote, ticker)
         if quote:
             return quote
 
     if provider in {"auto", "openbb", "openbb_yfinance"}:
-        quote = OpenBBService.get_quote(ticker, provider="yfinance")
+        quote = await asyncio.to_thread(OpenBBService.get_quote, ticker, provider="yfinance")
         if quote:
             return quote
 
     if provider in {"auto", "yfinance"}:
-        quote = _quote_from_yfinance(ticker)
+        quote = await asyncio.to_thread(_quote_from_yfinance, ticker)
         if quote:
             return quote
 
@@ -297,22 +311,24 @@ async def get_quote(request: Request, ticker: str, provider: ProviderName = Quer
 async def get_history(
     request: Request,
     ticker: str,
-    days: int = 252,
-    period: str = "1y",
+    days: int = Query(default=252, ge=5, le=2520),
+    period: str = Query(default="1y", max_length=10),
     provider: ProviderName = Query(default="auto"),
 ):
     """Get historical OHLCV data with provider fallbacks."""
+    ticker = _clean_ticker(ticker)
     is_br = _is_br_ticker(ticker)
 
     # brapi first for Brazilian tickers
     if provider in {"auto", "brapi"} and (is_br or provider == "brapi"):
-        history = BrapiService.get_history(ticker, days)
+        history = await asyncio.to_thread(BrapiService.get_history, ticker, days)
         if history:
             return history
 
     if provider in {"auto", "openbb", "openbb_yfinance"}:
         start_date = (date.today() - timedelta(days=days)).isoformat()
-        df = OpenBBService.get_historical_data(
+        df = await asyncio.to_thread(
+            OpenBBService.get_historical_data,
             ticker,
             provider="yfinance",
             interval="1d",
@@ -337,7 +353,7 @@ async def get_history(
                 }
 
     if provider in {"auto", "yfinance"}:
-        history = _history_from_yfinance(ticker, days, period)
+        history = await asyncio.to_thread(_history_from_yfinance, ticker, days, period)
         if history:
             return history
 
@@ -347,11 +363,12 @@ async def get_history(
 @router.get("/profile/{ticker}")
 async def get_profile(ticker: str):
     """Get company profile — OpenBB → Yahoo Finance → synthetic fallback."""
-    profile = OpenBBService.get_profile(ticker, provider="yfinance")
+    ticker = _clean_ticker(ticker)
+    profile = await asyncio.to_thread(OpenBBService.get_profile, ticker, provider="yfinance")
     if profile:
         return profile
 
-    quote = _quote_from_yfinance(ticker) or _synthetic_quote(ticker)
+    quote = await asyncio.to_thread(_quote_from_yfinance, ticker) or _synthetic_quote(ticker)
     return {
         "symbol": ticker.upper(),
         "name": ticker.upper(),
@@ -364,9 +381,9 @@ async def get_profile(ticker: str):
 
 
 @router.get("/search")
-async def search_market(query: str):
+async def search_market(query: str = Query(..., min_length=1, max_length=64)):
     """Search symbols through OpenBB."""
-    results = OpenBBService.search_equity(query, provider="sec")
+    results = await asyncio.to_thread(OpenBBService.search_equity, query, provider="sec")
     if results:
         return {"query": query, "results": results, "source": "openbb"}
     return {
@@ -379,13 +396,14 @@ async def search_market(query: str):
 @router.get("/volatility/{ticker}")
 async def get_volatility(ticker: str):
     """Get implied volatility metrics — options → historical → synthetic."""
-    vol_data = DataFetcher.get_volatility_data(ticker)
+    ticker = _clean_ticker(ticker)
+    vol_data = await asyncio.to_thread(DataFetcher.get_volatility_data, ticker)
     if vol_data:
         vol_data["provider"] = "yfinance"
         vol_data["source"] = "yfinance"
         return vol_data
 
-    returns_data = DataFetcher.calculate_returns(ticker, period="1y")
+    returns_data = await asyncio.to_thread(DataFetcher.calculate_returns, ticker, period="1y")
     if returns_data:
         iv = returns_data["annual_volatility"] / 100
         return {
@@ -410,9 +428,10 @@ async def get_volatility(ticker: str):
 
 
 @router.get("/returns/{ticker}")
-async def get_returns(ticker: str, period: str = "1y"):
+async def get_returns(ticker: str, period: str = Query(default="1y", max_length=10)):
     """Get returns and risk metrics."""
-    returns_data = DataFetcher.calculate_returns(ticker, period=period)
+    ticker = _clean_ticker(ticker)
+    returns_data = await asyncio.to_thread(DataFetcher.calculate_returns, ticker, period=period)
     if returns_data:
         returns_data["provider"] = "yfinance"
         returns_data["source"] = "yfinance"
@@ -435,13 +454,14 @@ async def get_returns(ticker: str, period: str = "1y"):
 @limiter.limit("10/minute")
 async def get_options_chain(request: Request, ticker: str, provider: ProviderName = Query(default="auto")):
     """Get options chain with provider fallbacks."""
+    ticker = _clean_ticker(ticker)
     if provider in {"auto", "openbb", "openbb_cboe"}:
-        chain = OpenBBService.get_options_chain(ticker, provider="cboe")
+        chain = await asyncio.to_thread(OpenBBService.get_options_chain, ticker, provider="cboe")
         if chain and chain.get("chain"):
             return chain
 
     if provider in {"auto", "yfinance", "openbb_yfinance"}:
-        chain = _options_from_yfinance(ticker)
+        chain = await asyncio.to_thread(_options_from_yfinance, ticker)
         if chain and chain.get("chain"):
             return chain
 

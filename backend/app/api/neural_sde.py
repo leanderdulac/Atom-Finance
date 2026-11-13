@@ -20,11 +20,12 @@ class NeuralSDERequest(BaseModel):
     t_start: float = Field(0.0, description="Simulation start time")
     t_end: float = Field(1.0, gt=0, description="Simulation end time")
     n_steps: int = Field(100, ge=10, le=1000, description="Number of time steps")
-    n_paths: int = Field(10, ge=1, le=200, description="Number of trajectories")
+    n_paths: int = Field(10, ge=1, le=5000, description="Number of trajectories")
     state_size: int = Field(1, ge=1, le=4, description="State dimensionality")
     hidden_size: int = Field(32, ge=8, le=128, description="Hidden units in μ/σ networks")
     method: str = Field("euler", pattern="^(euler|milstein)$", description="SDE solver method")
     seed: int | None = Field(42, description="Random seed (null for random)")
+    device: str | None = Field(None, pattern="^(auto|cpu|mps|cuda)$", description="Compute device override")
 
 
 async def _run_in_thread(func, *args, **kwargs):
@@ -34,12 +35,13 @@ async def _run_in_thread(func, *args, **kwargs):
 
 @router.get("/status")
 async def sde_status():
-    """Check whether the Neural SDE model (torchsde) is available."""
+    """Check whether the Neural SDE model (torchsde) and GPU/MPS accelerators are available."""
     NeuralSDE = _engine()
     return {
         "available": NeuralSDE.is_available(),
         "model": "neural_sde",
         "description": "Neural Stochastic Differential Equation via torchsde (Itô / Euler-Maruyama)",
+        "hardware": NeuralSDE.hardware_status(),
     }
 
 
@@ -72,6 +74,7 @@ async def simulate_sde(req: NeuralSDERequest):
         req.hidden_size,
         req.method,
         req.seed,
+        req.device,
     )
 
 

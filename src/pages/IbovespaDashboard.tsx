@@ -10,12 +10,12 @@ import {
   TrendingUp, TrendingDown, ShowChart,
 } from '@mui/icons-material';
 import {
-  ComposedChart, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid,
+  AreaChart, Area, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend, ResponsiveContainer, ReferenceLine,
   LineChart, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts';
-import { api, getAccessToken } from '../services/api';
+import { api } from '../services/api';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -137,25 +137,29 @@ function downsample<T>(arr: T[], max = 200): T[] {
   return arr.filter((_, i) => i % step === 0 || i === arr.length - 1);
 }
 
-function downloadExcel(initial: number, profile: ProfileKey, nPaths: number, T: number) {
-  const token = getAccessToken();
-  fetch('/api/ibovespa/export-excel', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ profile, n_paths: nPaths, T, initial_capital: initial }),
-  })
-    .then((r) => r.blob())
-    .then((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `b3_18ativos_${profile}_R${initial}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+async function downloadExcel(
+  initial: number,
+  profile: ProfileKey,
+  nPaths: number,
+  T: number,
+  onError: (msg: string) => void,
+) {
+  try {
+    const blob = await api.ibovespaExportExcel({
+      profile,
+      n_paths: nPaths,
+      T,
+      initial_capital: initial,
     });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `b3_18ativos_${profile}_R${initial}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e: any) {
+    onError(e?.message ?? 'Erro ao baixar Excel.');
+  }
 }
 
 // ── Tooltip components ────────────────────────────────────────────────────────
@@ -195,7 +199,7 @@ function AssetTooltip({ active, payload, label }: any) {
   );
 }
 
-function PieLabelCustom({ cx, cy, midAngle, innerRadius, outerRadius, sector, value }: any) {
+function PieLabelCustom({ cx, cy, midAngle, innerRadius, outerRadius, value }: any) {
   const RADIAN = Math.PI / 180;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
@@ -373,7 +377,7 @@ export default function IbovespaDashboard() {
               </Button>
               {result && (
                 <Button variant="outlined" fullWidth startIcon={<Download />}
-                  onClick={() => downloadExcel(capital, profile, nPaths, horizon)}>
+                  onClick={() => downloadExcel(capital, profile, nPaths, horizon, setError)}>
                   Baixar Excel
                 </Button>
               )}

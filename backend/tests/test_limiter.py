@@ -31,11 +31,34 @@ def test_no_trust_uses_peer_ip(monkeypatch):
     assert rate_limit_key(req) == "ip:192.168.1.50"
 
 
-def test_trusted_proxy_keys_on_first_xff(monkeypatch):
+def test_trusted_proxy_keys_on_entry_nginx_appended(monkeypatch):
     monkeypatch.setenv("ATOM_TRUST_X_FORWARDED_FOR", "1")
-    req = _make_request({"X-Forwarded-For": "203.0.113.42, 192.168.1.50"}, client=("192.168.1.50", 5000))
-    # leftmost is the real client as appended by nginx
+    # nginx ($proxy_add_x_forwarded_for) appends the peer it saw on the RIGHT.
+    req = _make_request({"X-Forwarded-For": "203.0.113.42"}, client=("172.18.0.5", 5000))
     assert rate_limit_key(req) == "ip:203.0.113.42"
+
+
+def test_spoofed_xff_cannot_rotate_the_bucket(monkeypatch):
+    monkeypatch.setenv("ATOM_TRUST_X_FORWARDED_FOR", "1")
+    # Attacker sends a fresh fake header each attempt; nginx appends the real peer.
+    keys = {
+        rate_limit_key(_make_request({"X-Forwarded-For": f"10.9.9.{i}, 198.51.100.7"}, client=("172.18.0.5", 5000)))
+        for i in range(20)
+    }
+    assert keys == {"ip:198.51.100.7"}
+
+
+def test_two_hops_edge_then_nginx(monkeypatch):
+    monkeypatch.setenv("ATOM_TRUST_X_FORWARDED_FOR", "2")
+    # spoofed, client (added by Caddy), caddy (added by nginx)
+    req = _make_request({"X-Forwarded-For": "6.6.6.6, 203.0.113.42, 172.18.0.9"}, client=("172.18.0.5", 5000))
+    assert rate_limit_key(req) == "ip:203.0.113.42"
+
+
+def test_too_few_entries_falls_back_to_peer(monkeypatch):
+    monkeypatch.setenv("ATOM_TRUST_X_FORWARDED_FOR", "2")
+    req = _make_request({"X-Forwarded-For": "203.0.113.42"}, client=("172.18.0.5", 5000))
+    assert rate_limit_key(req) == "ip:172.18.0.5"
 
 
 def test_trusted_proxy_falls_back_when_no_xff(monkeypatch):

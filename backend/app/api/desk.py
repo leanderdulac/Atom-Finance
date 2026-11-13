@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from functools import partial
-from typing import Literal
+from typing import Annotated, Literal
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from app.api._limits import Matrix, Series
 from app.core.limiter import limiter
 from app.core.quant_doctrine import payload as doctrine_payload
 from app.core.security import get_current_user
@@ -21,7 +22,8 @@ from app.models.insider_clusters import detect as detect_insiders
 from app.models.market_making import avellaneda_stoikov_quotes, simulate_inventory
 from app.models.mean_reversion import scan as mr_scan
 from app.models.perp_arb import scan as perp_scan
-from app.models.regime import demo_payload
+from app.models.playbook_scanner import run_playbook_scan
+from app.models.regime import RegimeName, demo_payload
 from app.models.regime import evaluate as regime_evaluate
 from app.models.target_choice import evaluate as target_choice_evaluate
 from app.models.volatility import HestonModel
@@ -58,8 +60,8 @@ class HestonPriceRequest(BaseModel):
 
 
 class PairRequest(BaseModel):
-    y: list[float] = Field(..., min_length=60)
-    x: list[float] = Field(..., min_length=60)
+    y: Series = Field(..., min_length=60)
+    x: Series = Field(..., min_length=60)
     entry_z: float = Field(2.0, gt=0, le=5)
     exit_z: float = Field(0.5, gt=0, le=2)
     commission: float = Field(0.0005, ge=0, le=0.01)
@@ -83,20 +85,20 @@ class MMSimRequest(QuotesRequest):
 
 
 class FFRequest(BaseModel):
-    excess_returns: list[float] = Field(..., min_length=36)
-    mkt_rf: list[float] = Field(..., min_length=36)
-    smb: list[float] = Field(..., min_length=36)
-    hml: list[float] = Field(..., min_length=36)
-    rmw: list[float] = Field(..., min_length=36)
-    cma: list[float] = Field(..., min_length=36)
+    excess_returns: Series = Field(..., min_length=36)
+    mkt_rf: Series = Field(..., min_length=36)
+    smb: Series = Field(..., min_length=36)
+    hml: Series = Field(..., min_length=36)
+    rmw: Series = Field(..., min_length=36)
+    cma: Series = Field(..., min_length=36)
 
 
 class MRScanRequest(BaseModel):
-    universe: dict[str, list[float]]
+    universe: dict[Annotated[str, Field(max_length=32)], Series] = Field(..., max_length=50)
 
 
 class VenueQuoteIn(BaseModel):
-    venue: str
+    venue: str = Field(..., max_length=64)
     bid: float = Field(..., gt=0)
     ask: float = Field(..., gt=0)
     taker_fee_bps: float = Field(..., ge=0)
@@ -104,21 +106,21 @@ class VenueQuoteIn(BaseModel):
 
 
 class PerpArbRequest(BaseModel):
-    quotes: list[VenueQuoteIn] = Field(..., min_length=2)
+    quotes: list[VenueQuoteIn] = Field(..., min_length=2, max_length=500)
     notional: float = Field(10_000, gt=0)
 
 
 class InsiderEvent(BaseModel):
-    ticker: str
-    insider_id: str
+    ticker: str = Field(..., max_length=16)
+    insider_id: str = Field(..., max_length=64)
     side: Literal["buy", "sell"]
     shares: float = Field(..., gt=0)
-    date: str
+    date: str = Field(..., max_length=32)
     notional: float | None = None
 
 
 class InsiderRequest(BaseModel):
-    events: list[InsiderEvent] = Field(..., min_length=3)
+    events: list[InsiderEvent] = Field(..., min_length=3, max_length=2000)
     window_days: int = Field(7, ge=1, le=60)
     min_insiders: int = Field(3, ge=2, le=20)
 
@@ -131,7 +133,7 @@ class HestonCalibrateRequest(BaseModel):
 
 
 class JohansenRequest(BaseModel):
-    series: dict[str, list[float]]
+    series: dict[Annotated[str, Field(max_length=32)], Series] = Field(..., max_length=20)
     k_ar: int = Field(2, ge=1, le=8)
 
 
@@ -142,35 +144,42 @@ class EdgarRequest(BaseModel):
     min_insiders: int = Field(3, ge=2, le=20)
 
 
+_SAFE_ID = r"^[A-Za-z0-9_.:\-]{1,64}$"
+_RegimeLabel = RegimeName
+
+
 class RegimePositionIn(BaseModel):
-    id: str
-    strategy_id: str | None = None
+    id: str = Field(..., pattern=_SAFE_ID)
+    strategy_id: str | None = Field(None, pattern=_SAFE_ID)
     weight: float = Field(..., ge=0, le=1)
     book_corr: float | None = Field(None, ge=-1, le=1)
 
 
 class RegimeStrategyIn(BaseModel):
-    id: str
-    name: str | None = None
-    live_in: list[str]
-    standby_in: list[str] = Field(default_factory=list)
-    kill_in: list[str] = Field(default_factory=list)
+    id: str = Field(..., pattern=_SAFE_ID)
+    name: str | None = Field(None, max_length=120, pattern=r"^[^|\r\n`<>]*$")
+    live_in: list[_RegimeLabel] = Field(..., max_length=8)
+    standby_in: list[_RegimeLabel] = Field(default_factory=list, max_length=8)
+    kill_in: list[_RegimeLabel] = Field(default_factory=list, max_length=8)
     half_kelly: float = Field(0.5, gt=0, le=1)
-    kelly_by_regime: dict[str, float] = Field(default_factory=dict)
+    kelly_by_regime: dict[_RegimeLabel, float] = Field(default_factory=dict, max_length=8)
+
+
+_Series = Annotated[list[float], Field(max_length=5_000)]
 
 
 class RegimeEvaluateRequest(BaseModel):
     demo: Literal["calm", "trending", "crisis"] | None = None
-    equity_prices: dict[str, list[float]] | None = None
-    vix_front: list[float] | None = None
-    vix_back: list[float] | None = None
-    implied_vol: list[float] | None = None
-    credit_spread: list[float] | None = None
-    yield_2y: list[float] | None = None
-    yield_10y: list[float] | None = None
+    equity_prices: dict[Annotated[str, Field(max_length=32)], _Series] | None = Field(None, max_length=50)
+    vix_front: _Series | None = None
+    vix_back: _Series | None = None
+    implied_vol: _Series | None = None
+    credit_spread: _Series | None = None
+    yield_2y: _Series | None = None
+    yield_10y: _Series | None = None
     window: int = Field(90, ge=30, le=252)
-    strategies: list[RegimeStrategyIn] | None = None
-    positions: list[RegimePositionIn] | None = None
+    strategies: list[RegimeStrategyIn] | None = Field(None, max_length=50)
+    positions: list[RegimePositionIn] | None = Field(None, max_length=200)
     persist: bool = False
 
 
@@ -185,7 +194,7 @@ async def heston_price(req: HestonPriceRequest):
     return await _run(
         HestonModel.price_option,
         req.S0, req.K, req.v0, req.r, req.kappa, req.theta, req.xi, req.rho, req.T,
-        req.option_type, req.n_paths,
+        req.option_type, req.n_paths, req.q,
     )
 
 
@@ -557,7 +566,7 @@ class ErrorMaximizerRequest(BaseModel):
     t_oos: int = Field(63, ge=20, le=500)
     seed: int = Field(7, ge=0)
     rebalance_every: int = Field(21, ge=5, le=63)
-    returns: list[list[float]] | None = None
+    returns: Matrix | None = None
 
 
 @router.post("/error-maximizer/evaluate")
@@ -572,6 +581,32 @@ async def error_maximizer_eval(request: Request, req: ErrorMaximizerRequest):
             t_oos=req.t_oos,
             seed=req.seed,
             rebalance_every=req.rebalance_every,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class PlaybookScanRequest(BaseModel):
+    mode: Literal["synthetic", "live"] = "synthetic"
+    regime_demo: Literal["calm", "trending", "crisis"] = "calm"
+    capital: float = Field(100_000.0, gt=0, le=100_000_000.0)
+    entry_z: float = Field(1.8, gt=0.5, le=4.0)
+    exit_z: float = Field(0.5, gt=0.05, le=2.0)
+    seed: int = Field(42, ge=0)
+
+
+@router.post("/playbook/scan")
+@limiter.limit("20/minute")
+async def playbook_scan(request: Request, req: PlaybookScanRequest):
+    try:
+        return await _run(
+            run_playbook_scan,
+            mode=req.mode,
+            regime_demo=req.regime_demo,
+            capital=req.capital,
+            entry_z=req.entry_z,
+            exit_z=req.exit_z,
+            seed=req.seed,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

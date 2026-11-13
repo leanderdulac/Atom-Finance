@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, ShowChart, Diamond, Shield, VisibilityOff } from '@mui/icons-material';
+import { TrendingUp, Diamond, Shield, VisibilityOff } from '@mui/icons-material';
 
 // --- B3 ASSETS (GHOST DIMENSION INTEGRATED) ---
 const B3_ASSETS = [
@@ -68,8 +68,10 @@ export default function ClientOptionsHub() {
   const daysToExp = 30; // 1 month to expiry
 
   // Temporal Setup
+  const safeCapital = Math.max(0, Number.isFinite(capital) ? capital : 0);
+  const safeSpot = Math.max(0.01, Number.isFinite(spotPrice) && spotPrice > 0 ? spotPrice : selectedAsset.price);
   const T_initial = daysToExp / 365;
-  const targetSpot = spotPrice * (1 + targetMovePct / 100);
+  const targetSpot = Math.max(0.01, safeSpot * (1 + targetMovePct / 100));
   const T_sim = Math.max(0.001, (daysToExp - 10) / 365); // Expectation: move hits 10 days before expiry
   
   // Strike Matrix (ATM, 5% OTM, 10% OTM)
@@ -80,19 +82,20 @@ export default function ClientOptionsHub() {
   ];
 
   const scenarios = levels.map(lvl => {
-    const K = optType === "call" ? spotPrice * (1 + lvl.otmPct/100) : spotPrice * (1 - lvl.otmPct/100);
+    const K = optType === "call" ? safeSpot * (1 + lvl.otmPct/100) : safeSpot * (1 - lvl.otmPct/100);
     // Minimum option price in B3 is 0.01 (1 cent)
-    const initialOptPrice = Math.max(0.01, blackScholes(spotPrice, K, T_initial, r, iv, optType)); 
+    const initialOptPrice = Math.max(0.01, blackScholes(safeSpot, K, T_initial, r, iv, optType)); 
     const targetOptPrice = Math.max(0.00, blackScholes(targetSpot, K, T_sim, r, iv, optType));
     
     // Fokker-Planck Base Probability of Expiry ITM
-    const pop = kolmogorovProbability(spotPrice, K, T_initial, r, iv, optType) * 100;
+    const pop = kolmogorovProbability(safeSpot, K, T_initial, r, iv, optType) * 100;
 
-    const optionsBought = Math.floor(capital / initialOptPrice); // Comprar lotes inteiros
-    const finalCapital = optionsBought * targetOptPrice;
+    const optionsBought = Math.floor(safeCapital / initialOptPrice); // Comprar lotes inteiros
+    const unspentCash = safeCapital - optionsBought * initialOptPrice;
+    const finalCapital = unspentCash + optionsBought * targetOptPrice;
     
-    const profit = finalCapital - capital;
-    const profitPct = (profit / capital) * 100;
+    const profit = finalCapital - safeCapital;
+    const profitPct = safeCapital > 0 ? (profit / safeCapital) * 100 : 0;
 
     return { ...lvl, K, initialOptPrice, targetOptPrice, optionsBought, finalCapital, profit, profitPct, pop };
   });

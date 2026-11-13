@@ -2,17 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, Button, TextField,
   Table, TableBody, TableCell, TableHead, TableRow, LinearProgress,
-  Chip, Divider, IconButton, Tooltip, Zoom, Fade, Alert
+  Chip, IconButton, Tooltip, Fade, Alert
 } from '@mui/material';
 import {
-  CurrencyExchange, TrendingUp, TrendingDown, Refresh,
+  CurrencyExchange, Refresh,
   Calculate, Assessment, AccountBalanceWallet, Speed, 
-  BarChart, History, InfoOutlined
+  BarChart, History
 } from '@mui/icons-material';
-import { 
-  BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip as ReTooltip, ResponsiveContainer, Cell, AreaChart, Area
-} from 'recharts';
 import { api } from '../services/api';
 
 const BINANCE_YELLOW = '#F3BA2F';
@@ -56,19 +52,6 @@ const BinanceDashboard: React.FC = () => {
     }
   };
 
-  const loadSymbolData = async (symbol: string) => {
-    try {
-      const [priceData, depthData] = await Promise.all([
-        api.binancePrice(symbol),
-        api.binanceDepth(symbol, 15)
-      ]);
-      setCurrentPrice(priceData.price);
-      setOrderBook(depthData);
-    } catch (e) {
-      console.error('Failed to load symbol data', e);
-    }
-  };
-
   const handleCalculateKelly = async () => {
     setCalculatingKelly(true);
     setKellyError('');
@@ -98,14 +81,30 @@ const BinanceDashboard: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
-    loadSymbolData(selectedSymbol).finally(() => setLoading(false));
+    Promise.all([
+      api.binancePrice(selectedSymbol),
+      api.binanceDepth(selectedSymbol, 15),
+    ])
+      .then(([priceData, depthData]) => {
+        if (!active) return;
+        setCurrentPrice(priceData.price);
+        setOrderBook(depthData);
+      })
+      .catch((e) => {
+        if (active) console.error('Failed to load symbol data', e);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
   }, [selectedSymbol]);
 
   // Order Book Visual Data
   const depthData = orderBook ? [
-    ...orderBook.bids.slice(0, 10).map(b => ({ type: 'bid', price: parseFloat(b[0]), amount: parseFloat(b[1]) })),
-    ...orderBook.asks.slice(0, 10).map(a => ({ type: 'ask', price: parseFloat(a[0]), amount: parseFloat(a[1]) }))
+    ...(orderBook.bids || []).slice(0, 10).map(b => ({ type: 'bid', price: parseFloat(b[0]), amount: parseFloat(b[1]) })),
+    ...(orderBook.asks || []).slice(0, 10).map(a => ({ type: 'ask', price: parseFloat(a[0]), amount: parseFloat(a[1]) }))
   ].sort((a, b) => b.price - a.price) : [];
 
   const maxAmount = Math.max(...depthData.map(d => d.amount), 1);
@@ -341,7 +340,7 @@ const BinanceDashboard: React.FC = () => {
                   </Typography>
                   <Box sx={{ borderLeft: '2px solid #6366f1', pl: 2, py: 1 }}>
                     <Typography variant="body2" sx={{ mb: 1 }}>
-                      • Spread do Book: <strong>{orderBook ? (parseFloat(orderBook.asks[0][0]) - parseFloat(orderBook.bids[0][0])).toFixed(2) : '—'}</strong> USDT
+                      • Spread do Book: <strong>{orderBook?.asks?.[0]?.[0] != null && orderBook?.bids?.[0]?.[0] != null ? (parseFloat(orderBook.asks[0][0]) - parseFloat(orderBook.bids[0][0])).toFixed(2) : '—'}</strong> USDT
                     </Typography>
                     <Typography variant="body2" sx={{ mb: 1 }}>
                       • Alvo Volatilidade: <strong>Alta</strong> (Baseado em Klines 24h)

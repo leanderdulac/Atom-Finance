@@ -5,22 +5,41 @@ from slowapi.util import get_remote_address
 from starlette.requests import Request
 
 
+def _trusted_hops() -> int:
+    """Number of reverse proxies in front of the backend that APPEND to X-Forwarded-For.
+
+    ATOM_TRUST_X_FORWARDED_FOR:
+      unset/0/false → ignore the header (backend exposed directly)
+      1/true/yes    → one proxy (the frontend nginx)
+      N             → N chained proxies (e.g. 2 = Caddy edge → nginx)
+    """
+    raw = os.getenv("ATOM_TRUST_X_FORWARDED_FOR", "").strip().lower()
+    if raw in ("1", "true", "yes"):
+        return 1
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
 def _client_ip(request: Request) -> str:
-    """Real client IP, honouring X-Forwarded-For only when explicitly trusted.
+    """Real client IP, honouring X-Forwarded-For only for explicitly trusted hops.
 
     Behind nginx, `get_remote_address` returns the proxy's IP, so *every*
     unauthenticated attempt (login/register) would share ONE nginx bucket —
-    collapsing the brute-force limit to a single global cap. When the operator
-    sets ATOM_TRUST_X_FORWARDED_FOR=1 (the deployment runs the backend behind
-    its own nginx), the leftmost X-Forwarded-For entry (the real client, as set
-    by nginx) is used instead. It defaults to OFF so a backend that is exposed
-    directly cannot be bypassed by a client spoofing the header.
+    collapsing the brute-force limit to a single global cap.
+
+    nginx's `$proxy_add_x_forwarded_for` APPENDS the peer it saw to whatever the
+    client sent, so the LEFTMOST entries are attacker-controlled: keying on them
+    lets a brute-forcer rotate a fake X-Forwarded-For per request and never hit
+    the limit. Only the entries added by our own proxies are trustworthy, i.e.
+    the N rightmost ones; the client is the Nth entry from the right.
     """
-    if os.getenv("ATOM_TRUST_X_FORWARDED_FOR", "").strip().lower() in ("1", "true", "yes"):
-        xfwd = request.headers.get("X-Forwarded-For", "")
-        first = xfwd.split(",")[0].strip() if xfwd else ""
-        if first:
-            return first
+    hops = _trusted_hops()
+    if hops:
+        parts = [p.strip() for p in request.headers.get("X-Forwarded-For", "").split(",") if p.strip()]
+        if len(parts) >= hops:
+            return parts[-hops]
     return get_remote_address(request)
 
 

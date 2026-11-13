@@ -207,23 +207,20 @@ class BinanceService:
             return {"error": str(e)}
 
     @classmethod
-    async def calculate_kelly_sizing(cls, symbol: str, win_prob: float, payout_ratio: float, bankroll_override: float | None = None, fraction: float = 0.25):
+    async def calculate_kelly_sizing(
+        cls,
+        symbol: str,
+        win_prob: float,
+        payout_ratio: float,
+        bankroll_override: float | None = None,
+        fraction: float = 0.25,
+    ):
         """Integrates current Binance price with Kelly Sizing."""
         ticker = await cls.get_ticker_price(symbol)
         if not ticker:
             return {"error": f"Could not fetch price for {symbol}"}
         price = ticker["price"]
-        bankroll = bankroll_override
-        if bankroll is None:
-            acc = await cls.get_account_info()
-            if acc and "balances" in acc:
-                usdt_balance = next((b for b in acc["balances"] if b["asset"] == "USDT"), None)
-                if usdt_balance:
-                    bankroll = float(usdt_balance["free"])
-                else:
-                    bankroll = 0.0
-            else:
-                bankroll = 10000.0
+        bankroll = bankroll_override if bankroll_override is not None and bankroll_override > 0 else 10000.0
         from app.models.kelly_derivatives import kelly_derivatives
         sizing = kelly_derivatives(win_prob, payout_ratio, bankroll, fraction)
         if "erro" in sizing:

@@ -86,17 +86,17 @@ def deflated_sharpe(
         raise ValueError("Need ≥2 trials and ≥3 observations")
     sr_d = observed_sharpe / np.sqrt(252.0)
     # Lo (2002) + Bailey non-normal terms, then scale to annualized
-    se_d = np.sqrt(
-        (
-            1.0
-            - skew * sr_d
-            + ((excess_kurtosis + 3.0) - 1.0) / 4.0 * sr_d**2
-        )
-        / (n_obs - 1)
+    var_factor = max(
+        1.0
+        - skew * sr_d
+        + ((excess_kurtosis + 3.0) - 1.0) / 4.0 * sr_d**2,
+        1e-8,
     )
-    se_hat = float(max(se_d, 0.0) * np.sqrt(252.0))
+    se_d = np.sqrt(var_factor / (n_obs - 1))
+    se_hat = float(se_d * np.sqrt(252.0))
+    se_null = sharpe_sampling_se(n_obs, 0.0)
     z_blp = _z_blp(n_trials)
-    sr_star = se_hat * z_blp
+    sr_star = se_null * z_blp
     z = 0.0 if se_hat < 1e-16 else (observed_sharpe - sr_star) / se_hat
     dsr = float(norm.cdf(z))
     return {

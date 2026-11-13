@@ -99,11 +99,13 @@ async def login(request: Request, req: LoginRequest, response: Response):
     # opaque refresh token carried in an HttpOnly, SameSite=Lax cookie.
     access_token = create_access_token(user["username"])
     refresh_token = create_refresh_token()
-    await db_create_refresh(
+    rt_id = await db_create_refresh(
         user["id"],
         hash_token(refresh_token),
         datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     )
+    if rt_id is None:
+        raise HTTPException(status_code=503, detail="Unable to initialize session.")
     set_refresh_cookie(response, refresh_token)
 
     return {
@@ -117,6 +119,7 @@ async def login(request: Request, req: LoginRequest, response: Response):
 
 
 @router.post("/refresh")
+@limiter.limit("20/minute")
 async def refresh(request: Request, response: Response):
     """Rotates the HttpOnly refresh cookie and returns a fresh short access token."""
     token = request.cookies.get(REFRESH_COOKIE)
