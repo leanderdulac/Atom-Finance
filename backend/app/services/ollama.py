@@ -22,7 +22,9 @@ _WHY_SYSTEM = (
     "recomendação, sem ordem. Diga que é cenário/simulação. Se o bloco disser "
     "que o arsenal recusou, explique a recusa sem inventar uma tese. "
     "Proibido citar nomes de variáveis ou jargão interno "
-    "(z_score, EWMA, GARCH, Hurst, eligible_for_live_trading, kill_switch)."
+    "(z_score, EWMA, GARCH, Hurst, eligible_for_live_trading, kill_switch). "
+    "Não use as palavras trade nem pontos. Fale em reais, dólares ou %. "
+    "Preços no formato pt-BR (77.640,12), sem notação científica."
 )
 
 

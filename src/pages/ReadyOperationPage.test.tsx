@@ -131,14 +131,14 @@ describe('ReadyOperationPage', () => {
       horizon_label: 'Algumas semanas',
       direction: 'bullish',
       structure: { strategy: 'long_perp', legs: [{ side: 'buy', symbol: 'BTC', strike: 95000, quantity: 0.01 }], expiry: '2026-12-01' },
-      spot: 95000,
-      entry: 95190,
-      invalidation: 86000,
-      target: 110000,
+      spot: 77640.12,
+      entry: 77641.2,
+      invalidation: 69185.36198,
+      target: 86000.5,
       quantity: 0.01,
       suggested_size: { quantity: 0.01, risk_budget_brl: 100, can_register_paper: true },
       confidence: 'média',
-      invalidation_reason: 'A tese cai abaixo de 86000.',
+      invalidation_reason: 'A tese cai se o preço cruzar 69.185,36.',
       why: 'Cenário de alta em Bitcoin. Simulação, não recomendação.',
       disclaimer: 'Cenário/simulação.',
       eligible_for_live_trading: false,
@@ -150,6 +150,10 @@ describe('ReadyOperationPage', () => {
     await user.click(screen.getByRole('button', { name: /futuro \/ perpétuo/i }));
     expect(clientReadyOperation).toHaveBeenCalledWith({ ticker: 'BTC', instrument: 'future', horizon: 'weeks' });
     expect((await screen.findAllByText(/compra de perpétuo/i)).length).toBeGreaterThan(0);
+    expect(screen.getByText('77.640,12')).toBeInTheDocument();
+    expect(screen.getByText('69.185,36')).toBeInTheDocument();
+    expect(screen.queryByText(/e\+0/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/69185,36198/)).not.toBeInTheDocument();
   });
 
   it('renders an option structure', async () => {

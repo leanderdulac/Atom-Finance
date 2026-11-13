@@ -7,6 +7,7 @@ import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider,
   Stack, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
+import { formatPricePtBr } from '../lib/moneyPtBr';
 import { api } from '../services/api';
 import { useClientConfig, type ClientAsset } from '../contexts/ClientModeContext';
 import {
@@ -40,8 +41,8 @@ type ReadyBody = {
   eligible_for_live_trading?: boolean;
 };
 
-const money = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 });
-const num = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const money = (n: number) => `R$ ${formatPricePtBr(n)}`;
+const num = (n: number) => formatPricePtBr(n, 8).replace(/0+$/, '').replace(/,$/, '');
 const pct = (n: number) => `${(n * 100).toFixed(1).replace('.', ',')}%`;
 
 const directionLabel: Record<string, string> = { bullish: 'Alta', bearish: 'Baixa' };
@@ -324,10 +325,10 @@ export default function ReadyOperationPage() {
             <Typography sx={{ mt: 1 }}>{result.why}</Typography>
             <Divider sx={{ my: 2 }} />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2 }}>
-              <Metric label="Preço agora" value={result.spot != null ? num(result.spot) : '—'} />
-              <Metric label="Entrada / gatilho" value={result.entry != null ? num(result.entry) : '—'} />
-              <Metric label="Invalidação (stop)" value={result.invalidation != null ? num(result.invalidation) : '—'} />
-              <Metric label="Alvo" value={result.target != null ? num(result.target) : '—'} />
+              <Metric label="Preço agora" value={result.spot != null ? formatPricePtBr(result.spot) : '—'} />
+              <Metric label="Entrada / gatilho" value={result.entry != null ? formatPricePtBr(result.entry) : '—'} />
+              <Metric label="Invalidação (stop)" value={result.invalidation != null ? formatPricePtBr(result.invalidation) : '—'} />
+              <Metric label="Alvo" value={result.target != null ? formatPricePtBr(result.target) : '—'} />
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{result.invalidation_reason}</Typography>
             {result.suggested_size && (
