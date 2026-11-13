@@ -126,6 +126,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Prometheus instrumentação ────────────────────────────────────────────────
+# Registered after CORS and before the guard middlewares below so the metrics
+# middleware also records 413s — outermost of the function middlewares. Route
+# labels are templates (bounded cardinality); /api/metrics fails closed.
+from app.api.metrics import metrics_middleware
+from app.api.metrics import router as metrics_router
+
+app.middleware("http")(metrics_middleware)
+app.include_router(metrics_router, prefix="/api", tags=["Observability"])
+
 protected = APIRouter(dependencies=[Depends(get_current_user)])
 from app.api.market_sources import router as market_sources_router
 
