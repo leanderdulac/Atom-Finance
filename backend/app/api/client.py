@@ -6,11 +6,13 @@ of trade state — this module saves a plan and calls the same INSERT as track()
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime
+from math import isfinite
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.core.client_mode import client_mode_enabled, is_operator_role
 from app.core.compute import compute_workers, db_pool_max, io_workers, torch_device
@@ -23,8 +25,10 @@ from app.models.ready_operation import (
     Horizon,
     Instrument,
     assemble,
+    assemble_basket,
     client_facing_why,
     facts_for_llm,
+    unique_tickers,
     universe_public,
 )
 from app.services.client_arsenal import load_market
@@ -33,10 +37,49 @@ from app.services.ollama import draft_why, ollama_configured
 router = APIRouter()
 
 
+_TICKER_RE = re.compile(r"^[A-Za-z0-9.\-]{3,20}$")
+
+
 class ReadyRequest(StrictModel):
     ticker: str = Field(min_length=3, max_length=20, pattern=r"^[A-Za-z0-9.\-]{3,20}$")
     instrument: Instrument
     horizon: Horizon
+    tickers: list[str] | None = Field(default=None, max_length=8)
+    weights: list[float] | None = Field(default=None, max_length=8)
+
+    @field_validator("tickers")
+    @classmethod
+    def _clean_tickers(cls, value: list[str] | None) -> list[str] | None:
+        if not value:
+            return None
+        seen: list[str] = []
+        for raw in value:
+            token = (raw or "").strip()
+            if not token:
+                continue
+            if not _TICKER_RE.fullmatch(token):
+                raise ValueError("ticker inválido na carteira mista")
+            if token not in seen:
+                seen.append(token)
+            if len(seen) >= 8:
+                break
+        return seen or None
+
+    @field_validator("weights")
+    @classmethod
+    def _clean_weights(cls, value: list[float] | None) -> list[float] | None:
+        if not value:
+            return None
+        cleaned: list[float] = []
+        for raw in value:
+            number = float(raw)
+            if number < 0 or not isfinite(number):
+                raise ValueError("peso inválido")
+            cleaned.append(number)
+        return cleaned[:8]
+
+    def resolved_tickers(self) -> list[str]:
+        return unique_tickers(self.tickers or [self.ticker])
 
 
 def _public_config() -> dict:
@@ -109,9 +152,19 @@ async def _decorate_why(payload: dict) -> dict:
 
 
 async def build_ready_operation(req: ReadyRequest) -> dict:
-    market = await asyncio.to_thread(load_market, req.ticker)
+    tickers = req.resolved_tickers()
+    if len(tickers) <= 1:
+        ticker = tickers[0] if tickers else req.ticker
+        market = await asyncio.to_thread(load_market, ticker)
+        payload = await asyncio.to_thread(
+            assemble, ticker, req.instrument, req.horizon, market=market,
+        )
+        return await _decorate_why(payload)
+    loaded = await asyncio.gather(*[asyncio.to_thread(load_market, ticker) for ticker in tickers])
+    markets = dict(zip(tickers, loaded, strict=True))
     payload = await asyncio.to_thread(
-        assemble, req.ticker, req.instrument, req.horizon, market=market,
+        assemble_basket, tickers, req.instrument, req.horizon,
+        markets=markets, weights=req.weights,
     )
     return await _decorate_why(payload)
 

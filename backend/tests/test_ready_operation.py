@@ -14,12 +14,15 @@ from app.db import database
 from app.models.ready_operation import (
     MarketView,
     assemble,
+    assemble_basket,
+    basket_weights,
     client_facing_why,
     facts_for_llm,
     format_date_ptbr,
     format_money_ptbr,
     format_price_ptbr,
     resolve_asset,
+    unique_tickers,
 )
 from app.services.ollama import draft_why
 
@@ -433,3 +436,150 @@ async def test_api_option_paper(monkeypatch):
     )
     assert tracked.status_code == 201, tracked.text
     assert tracked.json()["trade"]["status"] == "watching"
+
+
+def test_unique_tickers_and_weights():
+    assert unique_tickers(["PETR4", "petr4", "BTC", "btc-usd"]) == ["PETR4", "BTC"]
+    assert unique_tickers(["PETR4"] * 12) == ["PETR4"]
+    assert basket_weights(2, [0.2, 0.3]) == [0.4, 0.6]
+    assert basket_weights(2, None) == [0.5, 0.5]
+
+
+def test_mixed_basket_one_leg_per_asset_caps_total_risk():
+    petr_hist = _history(start=40, daily=0.005)
+    eth_hist = _crypto_downtrend()
+    markets = {
+        "PETR4": MarketView(
+            quote=_quote(petr_hist["close"][-1]),
+            history=petr_hist,
+            regime={"regime": "trending", "kill_switch": {"armed": False}},
+        ),
+        "ETH": MarketView(
+            quote={"ticker": "ETH", "price": 1956.0, "provider": "binance", "source": "binance"},
+            history=eth_hist,
+            regime={"regime": "trending", "kill_switch": {"armed": False}},
+            fx_usd_brl=_fx(5.5),
+        ),
+    }
+    out = assemble_basket(
+        ["PETR4", "ETH"], "spot", "weeks",
+        markets=markets, capital=10000, risk_pct=1, weights=[0.6, 0.4],
+    )
+    assert out["status"] == "ready", out.get("reason")
+    assert out["structure"]["strategy"] == "mixed_book"
+    assert out["eligible_for_live_trading"] is False
+    symbols = {leg["symbol"] for leg in out["structure"]["legs"]}
+    assert symbols == {"PETR4", "ETH"}
+    assert len(out["basket"]) == 2
+    petr = next(row for row in out["basket"] if row["ticker"] == "PETR4")
+    eth = next(row for row in out["basket"] if row["ticker"] == "ETH")
+    assert petr["status"] == "ready"
+    assert eth["status"] == "ready"
+    assert petr["weight"] == pytest.approx(0.6)
+    assert eth["weight"] == pytest.approx(0.4)
+    assert petr["suggested_size"]["risk_budget_brl"] == pytest.approx(60, rel=0.08)
+    assert eth["suggested_size"]["risk_budget_brl"] == pytest.approx(40, rel=0.08)
+    risks = [row["suggested_size"]["risk_budget_brl"] for row in out["basket"] if row["status"] == "ready"]
+    assert sum(risks) == pytest.approx(100, rel=0.08)
+    assert out["suggested_size"]["risk_budget_brl"] == pytest.approx(sum(risks), rel=0.01)
+    assert "carteira mista" in out["why"].lower()
+    facts = facts_for_llm(out)
+    assert "PETR4" in facts or "Petrobras" in facts
+    assert "Ethereum" in facts or "ETH" in facts
+    assert "eligible_for_live_trading" not in out["why"].lower()
+
+
+def test_basket_of_one_matches_single_assemble():
+    hist = _history(start=40, daily=0.005)
+    view = MarketView(
+        quote=_quote(hist["close"][-1]),
+        history=hist,
+        regime={"regime": "trending", "kill_switch": {"armed": False}},
+    )
+    single = assemble("PETR4", "spot", "days", market=view, capital=10000, risk_pct=1)
+    basket = assemble_basket(["PETR4"], "spot", "days", markets={"PETR4": view}, capital=10000, risk_pct=1)
+    assert basket["status"] == single["status"]
+    assert basket["ticker"] == "PETR4"
+    assert "basket" not in basket or not basket.get("basket")
+
+
+def test_mixed_basket_falls_back_instrument_per_asset():
+    petr_hist = _history(start=40, daily=0.005)
+    btc_hist = _history(start=90000, daily=0.004)
+    markets = {
+        "PETR4": MarketView(
+            quote=_quote(petr_hist["close"][-1]),
+            history=petr_hist,
+            regime={"regime": "trending", "kill_switch": {"armed": False}},
+        ),
+        "BTC": MarketView(
+            quote={"ticker": "BTC", "price": btc_hist["close"][-1], "provider": "binance", "source": "binance"},
+            history={**btc_hist, "provider": "binance", "source": "binance"},
+            regime={"regime": "trending", "kill_switch": {"armed": False}},
+            fx_usd_brl=_fx(5.5),
+        ),
+    }
+    out = assemble_basket(["PETR4", "BTC"], "future", "weeks", markets=markets, capital=10000, risk_pct=1)
+    assert out["status"] == "ready", out.get("reason")
+    petr = next(row for row in out["basket"] if row["ticker"] == "PETR4")
+    btc = next(row for row in out["basket"] if row["ticker"] == "BTC")
+    assert petr["instrument"] == "spot"
+    assert btc["instrument"] == "future"
+
+
+@pytest.mark.asyncio
+async def test_api_mixed_basket(monkeypatch):
+    await database.create_user("alice", "alice@example.test", hash_password("a-secure-test-password"))
+    petr_hist = _history(start=40, daily=0.005)
+    eth_hist = _crypto_downtrend()
+    petr_view = MarketView(
+        quote=_quote(petr_hist["close"][-1]),
+        history=petr_hist,
+        regime={"regime": "trending", "kill_switch": {"armed": False}},
+    )
+    eth_view = MarketView(
+        quote={"ticker": "ETH", "price": 1956.0, "provider": "binance", "source": "binance"},
+        history=eth_hist,
+        regime={"regime": "trending", "kill_switch": {"armed": False}},
+        fx_usd_brl=_fx(5.5),
+    )
+
+    def fake_load(ticker: str):
+        return eth_view if ticker in {"ETH", "BTC", "SOL"} else petr_view
+
+    monkeypatch.setattr("app.api.client.load_market", fake_load)
+
+    from app.api.client import router as client_router
+
+    limiter.reset()
+    app = FastAPI()
+    app.state.limiter = limiter
+    app.include_router(client_router, prefix="/api/client")
+    app.dependency_overrides[get_current_user] = lambda: "alice"
+    client = TestClient(app)
+
+    ready = client.post("/api/client/ready-operation", json={
+        "ticker": "PETR4",
+        "tickers": ["PETR4", "ETH"],
+        "instrument": "spot",
+        "horizon": "weeks",
+        "weights": [0.5, 0.5],
+    })
+    assert ready.status_code == 200, ready.text
+    body = ready.json()
+    assert body["status"] == "ready"
+    assert body["structure"]["strategy"] == "mixed_book"
+    assert {leg["symbol"] for leg in body["structure"]["legs"]} == {"PETR4", "ETH"}
+    assert body["eligible_for_live_trading"] is False
+    assert len(body["basket"]) == 2
+
+    tracked = client.post("/api/client/ready-operation/paper", json={
+        "ticker": "PETR4",
+        "tickers": ["PETR4", "ETH"],
+        "instrument": "spot",
+        "horizon": "weeks",
+        "weights": [0.5, 0.5],
+    })
+    assert tracked.status_code == 201, tracked.text
+    assert tracked.json()["trade"]["status"] == "watching"
+    assert tracked.json()["eligible_for_live_trading"] is False

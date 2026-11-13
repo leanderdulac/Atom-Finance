@@ -15,9 +15,38 @@ import {
   SLEEVES,
   profileFor,
   recommendedProfile,
+  weightsForTickers,
   type ProfileAnswers,
   type Sleeve,
 } from '../data/investorProfiles';
+
+type SuggestedSize = {
+  quantity: number;
+  risk_budget_brl: number;
+  notional_brl?: number | null;
+  notional_usd?: number | null;
+  can_register_paper: boolean;
+  paper_block?: string | null;
+};
+
+type Structure = { strategy: string; legs: { side: string; symbol: string; strike: number; quantity: number }[]; expiry?: string | null };
+
+type BasketLeg = {
+  ticker?: string;
+  label?: string;
+  status: 'ready' | 'insufficient';
+  weight?: number;
+  instrument?: string;
+  direction?: 'bullish' | 'bearish';
+  spot?: number;
+  entry?: number;
+  invalidation?: number;
+  target?: number;
+  quote_currency?: 'BRL' | 'USD';
+  structure?: Structure;
+  suggested_size?: SuggestedSize;
+  reason?: string;
+};
 
 type ReadyBody = {
   status: 'ready' | 'insufficient';
@@ -25,29 +54,31 @@ type ReadyBody = {
   label?: string;
   instrument?: string;
   horizon_label?: string;
-  direction?: 'bullish' | 'bearish';
-  structure?: { strategy: string; legs: { side: string; symbol: string; strike: number; quantity: number }[]; expiry: string };
-  spot?: number;
-  entry?: number;
-  invalidation?: number;
-  target?: number;
+  direction?: 'bullish' | 'bearish' | null;
+  structure?: Structure;
+  basket?: BasketLeg[];
+  spot?: number | null;
+  entry?: number | null;
+  invalidation?: number | null;
+  target?: number | null;
   quantity?: number;
   quote_currency?: 'BRL' | 'USD';
   fx_usd_brl?: { rate: number; source?: string; stale?: boolean };
-  suggested_size?: {
-    quantity: number;
-    risk_budget_brl: number;
-    notional_brl?: number | null;
-    notional_usd?: number | null;
-    can_register_paper: boolean;
-    paper_block?: string | null;
-  };
+  suggested_size?: SuggestedSize;
   confidence?: string;
   invalidation_reason?: string;
   why?: string;
   reason?: string;
   disclaimer?: string;
   eligible_for_live_trading?: boolean;
+};
+
+type ReadyPayload = {
+  ticker: string;
+  instrument: string;
+  horizon: string;
+  tickers?: string[];
+  weights?: number[];
 };
 
 const money = (n: number, ccy: 'BRL' | 'USD' = 'BRL') =>
@@ -65,6 +96,7 @@ const strategyLabel: Record<string, string> = {
   long_put: 'Compra de put',
   bull_call_spread: 'Trava de alta com calls',
   bear_put_spread: 'Trava de baixa com puts',
+  mixed_book: 'Carteira mista (simulação)',
 };
 
 export default function ReadyOperationPage() {
@@ -75,6 +107,7 @@ export default function ReadyOperationPage() {
 
   const [sleeve, setSleeve] = useState<Sleeve>('equities');
   const [ticker, setTicker] = useState('PETR4');
+  const [tickers, setTickers] = useState<string[]>(['PETR4']);
   const [instrument, setInstrument] = useState('spot');
   const [horizon, setHorizon] = useState('weeks');
   const [answers, setAnswers] = useState<ProfileAnswers>({ horizon: null, drop: null, goal: null });
@@ -96,13 +129,36 @@ export default function ReadyOperationPage() {
     () => universe.find((row) => row.id === ticker) as ClientAsset | undefined,
     [universe, ticker],
   );
-  const allowed = asset?.instruments ?? ['spot'];
+  const selectedAssets = useMemo(() => {
+    if (sleeve === 'mixed') return visibleAssets.filter((row) => tickers.includes(row.id));
+    return asset ? [asset] : [];
+  }, [sleeve, visibleAssets, tickers, asset]);
+  const allowed = useMemo(() => {
+    if (!selectedAssets.length) return ['spot'];
+    return selectedAssets
+      .map((row) => row.instruments)
+      .reduce((acc, insts) => acc.filter((id) => insts.includes(id)));
+  }, [selectedAssets]);
   const answered = answers.horizon !== null && answers.drop !== null && answers.goal !== null;
   const profile = answered ? recommendedProfile(answers, sleeve) : profileFor('moderado', sleeve);
+  const isBasket = Boolean(result?.basket?.length);
   const notionalBrl = result?.suggested_size?.notional_brl
     ?? (result?.quantity != null && result?.entry != null
       ? Math.abs(result.quantity * result.entry)
       : null);
+
+  function readyPayload(): ReadyPayload {
+    if (sleeve === 'mixed' && tickers.length > 1) {
+      return {
+        ticker: tickers[0],
+        tickers,
+        instrument,
+        horizon,
+        weights: weightsForTickers(tickers, profile),
+      };
+    }
+    return { ticker, instrument, horizon };
+  }
 
   function dropInFlight() {
     abortRef.current?.abort();
@@ -116,20 +172,33 @@ export default function ReadyOperationPage() {
 
   useEffect(() => {
     if (!visibleAssets.length) return;
+    if (sleeve === 'mixed') {
+      const keep = tickers.filter((id) => visibleAssets.some((row) => row.id === id));
+      if (keep.length === 0) {
+        dropInFlight();
+        setTickers([visibleAssets[0].id]);
+        setTicker(visibleAssets[0].id);
+        setResult(null);
+      } else if (keep.length !== tickers.length) {
+        setTickers(keep);
+        if (!keep.includes(ticker)) setTicker(keep[0]);
+      }
+      return;
+    }
     if (!visibleAssets.some((row) => row.id === ticker)) {
       dropInFlight();
       setTicker(visibleAssets[0].id);
       setResult(null);
     }
-  }, [visibleAssets, ticker]);
+  }, [visibleAssets, ticker, sleeve, tickers]);
 
   useEffect(() => {
-    if (asset && !asset.instruments.includes(instrument)) {
+    if (!allowed.includes(instrument)) {
       dropInFlight();
-      setInstrument(asset.instruments[0] || 'spot');
+      setInstrument(allowed[0] || 'spot');
       setResult(null);
     }
-  }, [asset, instrument]);
+  }, [allowed, instrument]);
 
   async function assemble() {
     abortRef.current?.abort();
@@ -143,7 +212,7 @@ export default function ReadyOperationPage() {
     setResult(null);
     try {
       const body = await api.clientReadyOperation(
-        { ticker, instrument, horizon },
+        readyPayload(),
         { signal: ac.signal },
       ) as ReadyBody;
       if (seq !== seqRef.current) return;
@@ -164,7 +233,7 @@ export default function ReadyOperationPage() {
   async function registerPaper() {
     setBusy(true); setError(''); setPaperMsg('');
     try {
-      const body = await api.clientReadyPaper({ ticker, instrument, horizon }) as { message?: string; status?: string };
+      const body = await api.clientReadyPaper(readyPayload()) as { message?: string; status?: string };
       setPaperMsg(body.message || 'Registrada como operação paper, aguardando gatilho.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível registrar no diário.');
@@ -200,6 +269,11 @@ export default function ReadyOperationPage() {
               dropInFlight();
               setSleeve(v);
               setResult(null);
+              if (v === 'mixed') {
+                const current = visibleAssets.some((row) => row.id === ticker) ? ticker : (visibleAssets[0]?.id || ticker);
+                setTickers([current]);
+                setTicker(current);
+              }
             }}
             sx={{ flexWrap: 'wrap', gap: 1, mt: 1 }}
           >
@@ -211,15 +285,32 @@ export default function ReadyOperationPage() {
             {SLEEVES.find((row) => row.id === sleeve)?.hint}
           </Typography>
           <ToggleButtonGroup
-            exclusive
-            value={ticker}
-            onChange={(_, v) => { if (v) { dropInFlight(); setTicker(v); setResult(null); } }}
+            exclusive={sleeve !== 'mixed'}
+            value={sleeve === 'mixed' ? tickers : ticker}
+            onChange={(_, v) => {
+              if (sleeve === 'mixed') {
+                const next = (v as string[] | null) || [];
+                if (!next.length) return;
+                dropInFlight();
+                setTickers(next);
+                setTicker(next[next.length - 1]);
+                setResult(null);
+                return;
+              }
+              if (v) { dropInFlight(); setTicker(v as string); setResult(null); }
+            }}
             sx={{ flexWrap: 'wrap', gap: 1, mt: 2 }}
           >
             {visibleAssets.map((row) => (
               <ToggleButton key={row.id} value={row.id} aria-label={row.label}>{row.label}</ToggleButton>
             ))}
           </ToggleButtonGroup>
+          {sleeve === 'mixed' && (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.5 }}>
+              Clique para marcar vários (B3 e cripto). Cada um vira uma perna da carteira;
+              o risco total não passa do limite. {tickers.length} marcado{tickers.length === 1 ? '' : 's'}.
+            </Typography>
+          )}
         </CardContent>
       </Card>
 
@@ -300,7 +391,9 @@ export default function ReadyOperationPage() {
         <CardContent>
           <Typography variant="overline" color="text.secondary">4 · O tipo de operação</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Como operar o ativo acima (à vista, opção ou futuro/perpétuo — só o que o arsenal realmente cobre).
+            {sleeve === 'mixed'
+              ? 'Tipo pedido para a carteira. Se um ativo não tiver esse veículo, a perna usa o que o arsenal cobre.'
+              : 'Como operar o ativo acima (à vista, opção ou futuro/perpétuo — só o que o arsenal realmente cobre).'}
           </Typography>
           <ToggleButtonGroup
             exclusive
@@ -330,7 +423,7 @@ export default function ReadyOperationPage() {
           size="large"
           variant="contained"
           onClick={assemble}
-          disabled={busy || !allowed.includes(instrument)}
+          disabled={busy || !allowed.includes(instrument) || (sleeve === 'mixed' && tickers.length < 1)}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           Montar operação
@@ -360,8 +453,12 @@ export default function ReadyOperationPage() {
         <Card>
           <CardContent>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-              <Chip label={result.label || result.ticker} />
-              <Chip label={directionLabel[result.direction || ''] || result.direction} color={result.direction === 'bullish' ? 'success' : 'warning'} />
+              <Chip label={isBasket ? 'Carteira mista' : (result.label || result.ticker)} />
+              {result.direction ? (
+                <Chip label={directionLabel[result.direction] || result.direction} color={result.direction === 'bullish' ? 'success' : 'warning'} />
+              ) : isBasket ? (
+                <Chip label="Mista" />
+              ) : null}
               <Chip label={strategyLabel[result.structure?.strategy || ''] || result.structure?.strategy} />
               <Chip label={`Confiança ${result.confidence}`} />
               <Chip label="Paper only" variant="outlined" />
@@ -371,16 +468,56 @@ export default function ReadyOperationPage() {
             </Typography>
             <Typography sx={{ mt: 1 }}>{result.why}</Typography>
             <Divider sx={{ my: 2 }} />
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2 }}>
-              <Metric label="Preço agora" value={result.spot != null ? money(result.spot, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
-              <Metric label="Entrada / gatilho" value={result.entry != null ? money(result.entry, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
-              <Metric label="Invalidação (stop)" value={result.invalidation != null ? money(result.invalidation, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
-              <Metric label="Alvo" value={result.target != null ? money(result.target, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
-            </Box>
+            {isBasket ? (
+              <Stack spacing={1.5}>
+                {result.basket!.map((leg) => {
+                  const ccy = leg.quote_currency === 'USD' ? 'USD' : 'BRL';
+                  return (
+                    <Box key={leg.ticker} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        <Chip size="small" label={leg.label || leg.ticker} />
+                        {leg.weight != null && <Chip size="small" label={`peso ${pct(leg.weight)}`} />}
+                        {leg.status === 'ready' && leg.direction && (
+                          <Chip
+                            size="small"
+                            label={directionLabel[leg.direction]}
+                            color={leg.direction === 'bullish' ? 'success' : 'warning'}
+                          />
+                        )}
+                        {leg.status === 'ready' && (
+                          <Chip size="small" label={strategyLabel[leg.structure?.strategy || ''] || leg.instrument} />
+                        )}
+                      </Stack>
+                      {leg.status === 'ready' ? (
+                        <Typography variant="body2" sx={{ mt: 1 }}>
+                          {leg.spot != null ? `agora ${money(leg.spot, ccy)}` : ''}
+                          {leg.entry != null ? ` · gatilho ${money(leg.entry, ccy)}` : ''}
+                          {leg.invalidation != null ? ` · stop ${money(leg.invalidation, ccy)}` : ''}
+                          {leg.suggested_size ? ` · risco ${money(leg.suggested_size.risk_budget_brl)}` : ''}
+                        </Typography>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{leg.reason}</Typography>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Stack>
+            ) : (
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2 }}>
+                <Metric label="Preço agora" value={result.spot != null ? money(result.spot, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
+                <Metric label="Entrada / gatilho" value={result.entry != null ? money(result.entry, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
+                <Metric label="Invalidação (stop)" value={result.invalidation != null ? money(result.invalidation, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
+                <Metric label="Alvo" value={result.target != null ? money(result.target, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
+              </Box>
+            )}
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{result.invalidation_reason}</Typography>
             {result.suggested_size && (
               <Typography sx={{ mt: 2 }}>
-                Tamanho sugerido: <strong>{num(result.suggested_size.quantity)}</strong>
+                {isBasket ? (
+                  <>Carteira com <strong>{result.suggested_size.quantity}</strong> perna{result.suggested_size.quantity === 1 ? '' : 's'}</>
+                ) : (
+                  <>Tamanho sugerido: <strong>{num(result.suggested_size.quantity)}</strong></>
+                )}
                 {' · risco máximo de '}
                 {money(result.suggested_size.risk_budget_brl)}
                 {notionalBrl != null ? ` · nocional da posição ${money(notionalBrl)}` : (

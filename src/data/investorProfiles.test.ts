@@ -4,6 +4,7 @@ import {
   scoreProfile,
   recommendedProfile,
   tickersForSleeve,
+  weightsForTickers,
   type ProfileId,
 } from './investorProfiles';
 
@@ -89,5 +90,15 @@ describe('profileFor sleeve', () => {
     expect(profile.id).toBe('arrojado');
     expect(profile.label).toBe('Arrojado');
     expect(profile.assets.map((row) => row.ticker)).toEqual(['SOL', 'ETH', 'BTC']);
+  });
+
+  it('renormalizes mixed-profile weights when every marked ticker is in the book', () => {
+    const profile = profileFor('moderado', 'mixed');
+    expect(weightsForTickers(['PETR4', 'BTC'], profile)).toEqual([0.4, 0.6]);
+  });
+
+  it('uses equal weights when a marked ticker is outside the profile mix', () => {
+    const profile = profileFor('moderado', 'mixed');
+    expect(weightsForTickers(['PETR4', 'VALE3'], profile)).toEqual([0.5, 0.5]);
   });
 });

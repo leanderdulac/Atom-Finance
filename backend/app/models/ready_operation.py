@@ -302,11 +302,70 @@ def client_facing_why(text: str | None, fallback: str) -> str:
     return text
 
 
+MAX_BASKET = 8
+
+
+def unique_tickers(tickers: list[str] | None) -> list[str]:
+    """Dedupe, resolve aliases, cap at MAX_BASKET. Unknown names are kept for a honest refusal."""
+    seen: list[str] = []
+    for raw in tickers or []:
+        token = (raw or "").strip()
+        if not token:
+            continue
+        asset = resolve_asset(token)
+        key = asset["id"] if asset else token.upper()
+        if key not in seen:
+            seen.append(key)
+        if len(seen) >= MAX_BASKET:
+            break
+    return seen
+
+
+def basket_weights(n: int, weights: list[float] | None) -> list[float]:
+    if n <= 0:
+        return []
+    if weights and len(weights) == n:
+        cleaned = [max(0.0, float(w)) for w in weights]
+        total = sum(cleaned)
+        if total > 0:
+            return [w / total for w in cleaned]
+    return [1.0 / n] * n
+
+
+def _instrument_for(asset: dict[str, Any], requested: Instrument) -> Instrument:
+    raw = asset.get("instruments") or ["spot"]
+    if requested in raw:
+        return requested
+    first = raw[0] if raw else "spot"
+    if first == "option":
+        return "option"
+    if first == "future":
+        return "future"
+    return "spot"
+
+
 def _why_fallback(payload: dict[str, Any]) -> str:
     if payload.get("status") == "insufficient":
         return (
             f"{payload.get('reason')} Isto é um recado do arsenal, não uma recomendação. "
             "Nenhuma ordem foi enviada."
+        )
+    if payload.get("basket") or (payload.get("structure") or {}).get("strategy") == "mixed_book":
+        ready = [row for row in (payload.get("basket") or []) if row.get("status") == "ready"]
+        names = ", ".join((row.get("label") or row.get("ticker") or "") for row in ready)
+        refused = [row for row in (payload.get("basket") or []) if row.get("status") != "ready"]
+        extra = ""
+        if refused:
+            extra = " Recusas: " + "; ".join(
+                f"{row.get('ticker')}: {row.get('reason')}" for row in refused
+            ) + "."
+        size = payload.get("suggested_size") or {}
+        return (
+            f"Carteira mista no horizonte {payload.get('horizon_label')} com {len(ready)} perna(s) "
+            f"({names}). Risco total limitado a "
+            f"{format_money_ptbr(float(size.get('risk_budget_brl') or 0))}, "
+            f"dividido pelos pesos marcados. Cada ativo tem o próprio gatilho e stop.{extra} "
+            "Simulação paper, não recomendação. Nenhuma ordem vai à corretora."
         )
     direction = "alta" if payload["direction"] == "bullish" else "baixa"
     label = payload.get("label") or payload.get("ticker")
@@ -825,12 +884,268 @@ def assemble(
     return payload
 
 
+def assemble_basket(
+    tickers: list[str],
+    instrument: Instrument,
+    horizon: Horizon,
+    *,
+    markets: dict[str, MarketView | None] | None = None,
+    weights: list[float] | None = None,
+    now: datetime | None = None,
+    capital: float | None = None,
+    risk_pct: float | None = None,
+) -> dict[str, Any]:
+    """One paper leg per marked asset. Total risk stays inside `risk_pct` of capital.
+
+    Single-ticker lists fall through to `assemble` so the client path stays unchanged.
+    Instrument is requested once; each asset falls back to what the arsenal actually has.
+    """
+    import os
+
+    ids = unique_tickers(tickers)
+    if not ids:
+        return _insufficient(
+            "Marque ao menos um ativo do universo (B3 ou cripto) para montar a carteira mista.",
+            [],
+        )
+    now = now or datetime.now(UTC)
+    capital = float(capital if capital is not None else os.getenv("ATOM_CLIENT_PAPER_CAPITAL", "10000"))
+    risk_pct = float(risk_pct if risk_pct is not None else os.getenv("ATOM_CLIENT_RISK_PCT", "1"))
+    market_map = markets or {}
+    if len(ids) == 1:
+        return assemble(
+            ids[0], instrument, horizon,
+            market=market_map.get(ids[0]), now=now, capital=capital, risk_pct=risk_pct,
+        )
+
+    wts = basket_weights(len(ids), weights)
+    rows: list[dict[str, Any]] = []
+    contributions: list[dict[str, Any]] = []
+    for ticker, weight in zip(ids, wts, strict=True):
+        asset = resolve_asset(ticker)
+        if asset is None:
+            row = _insufficient(
+                "Este ativo não está no universo que o arsenal serve ao cliente "
+                "(PETR4, VALE3, ITUB4, BBDC4, WEGE3, BTC, ETH, SOL).",
+                [],
+                extra={"ticker": ticker},
+            )
+            row["weight"] = weight
+            rows.append(row)
+            continue
+        inst = _instrument_for(asset, instrument)
+        row = assemble(
+            asset["id"], inst, horizon,
+            market=market_map.get(asset["id"]),
+            now=now, capital=capital, risk_pct=risk_pct * weight,
+        )
+        row["weight"] = weight
+        row["requested_instrument"] = instrument
+        rows.append(row)
+        contributions.extend(row.get("arsenal") or [])
+
+    ready = [row for row in rows if row.get("status") == "ready"]
+    refused = [row for row in rows if row.get("status") != "ready"]
+    if not ready:
+        detail = "; ".join(f"{row.get('ticker')}: {row.get('reason')}" for row in refused)
+        return _insufficient(
+            "Nenhuma perna da carteira mista teve sinal ou dado suficiente. " + detail,
+            contributions,
+            extra={"basket": [_basket_row(row) for row in rows], "tickers": ids},
+        )
+
+    legs: list[dict[str, Any]] = []
+    notionals: list[float] = []
+    for row in ready:
+        legs.extend((row.get("structure") or {}).get("legs") or [])
+        notional = (row.get("suggested_size") or {}).get("notional_brl")
+        if notional is not None:
+            notionals.append(float(notional))
+
+    registerable = [
+        row for row in ready
+        if (row.get("suggested_size") or {}).get("can_register_paper") and row.get("paper_plan")
+    ]
+    directions = {row.get("direction") for row in ready}
+    direction = next(iter(directions)) if len(directions) == 1 else None
+    close_bys = [
+        (row.get("structure") or {}).get("expiry") or (row.get("paper_plan") or {}).get("close_by")
+        for row in ready
+    ]
+    close_bys = [item for item in close_bys if item]
+    close_by = min(close_bys) if close_bys else None
+    risk_budget = round(sum(
+        float((row.get("suggested_size") or {}).get("risk_budget_brl") or 0) for row in ready
+    ), 2)
+    refuse_note = None
+    if refused:
+        refuse_note = "Pernas recusadas: " + "; ".join(
+            f"{row.get('ticker')}: {row.get('reason')}" for row in refused
+        )
+    paper_blocks = [
+        (row.get("suggested_size") or {}).get("paper_block")
+        for row in ready
+        if not (row.get("suggested_size") or {}).get("can_register_paper")
+    ]
+    paper_block = next((item for item in paper_blocks if item), refuse_note)
+    first_plan = (registerable[0].get("paper_plan") if registerable else None) or {}
+    combined_plan = None
+    if registerable:
+        plan_legs = []
+        for row in registerable:
+            plan_legs.extend((row.get("paper_plan") or {}).get("legs") or [])
+        if direction == "bullish":
+            plan_direction = "long_bias"
+        elif direction == "bearish":
+            plan_direction = "short_bias"
+        else:
+            plan_direction = first_plan.get("direction") or "long_bias"
+        combined_plan = {
+            **first_plan,
+            "ticker": "MIX",
+            "strategy": "mixed_book",
+            "instrument": instrument,
+            "direction": plan_direction,
+            "rationale": (
+                f"Carteira mista paper com {len(registerable)} perna(s). "
+                "Cada perna tem o próprio gatilho. Simulação, não recomendação."
+            ),
+            "legs": plan_legs,
+            "expiry": close_by,
+            "close_by": close_by,
+            "modeled_max_loss_brl": risk_budget,
+            "quantity_per_leg": 1,
+            "eligible_for_live_trading": False,
+            "entry": {
+                **(first_plan.get("entry") or {}),
+                "instruction": (
+                    "Carteira mista: cada perna espera o próprio gatilho. "
+                    "Paper only — o diário registra a simulação; nenhuma ordem vai à corretora."
+                ),
+            },
+        }
+
+    first = ready[0]
+    payload = {
+        "status": "ready",
+        "ticker": "MIX",
+        "label": "Carteira mista",
+        "tickers": ids,
+        "instrument": instrument,
+        "horizon": horizon,
+        "horizon_label": HORIZONS[horizon]["label"],
+        "holding_days": int(HORIZONS[horizon]["holding_days"]),
+        "direction": direction,
+        "structure": {"strategy": "mixed_book", "legs": legs, "expiry": close_by},
+        "spot": None,
+        "entry": None,
+        "invalidation": None,
+        "target": None,
+        "quantity": len(ready),
+        "quote_currency": "BRL",
+        "fx_usd_brl": next((row.get("fx_usd_brl") for row in ready if row.get("fx_usd_brl")), None),
+        "suggested_size": {
+            "quantity": len(ready),
+            "capital_brl": capital,
+            "risk_budget_brl": risk_budget,
+            "notional_brl": round(sum(notionals), 2) if notionals else None,
+            "notional_usd": None,
+            "risk_per_trade_pct": risk_pct,
+            "can_register_paper": bool(combined_plan),
+            "paper_block": paper_block,
+        },
+        "basket": [_basket_row(row) for row in rows],
+        "greeks": None,
+        "heston": None,
+        "confidence": "média" if len(ready) == len(rows) else "baixa",
+        "invalidation_reason": (
+            "Cada perna cai no próprio stop ou se o regime da mesa virar crise."
+            + (f" {refuse_note}" if refuse_note else "")
+        ),
+        "regime": {"local": "mixed_book", "desk": (first.get("regime") or {}).get("desk")},
+        "paper_plan": combined_plan,
+        "plan_inputs": first.get("plan_inputs") or {
+            "source": "ATOM cliente · operação pronta",
+            "provenance": "user_supplied",
+            "capital": capital,
+            "total_risk_pct": 3,
+            "existing_risk_brl": 0,
+            "fee_per_contract_side": 0.05,
+            "risk_per_trade_pct": risk_pct,
+        },
+        "eligible_for_live_trading": False,
+        "mode": "paper_only",
+        "as_of": now.isoformat(),
+        "arsenal": contributions,
+        "disclaimer": (
+            "Cenário/simulação montado pelo arsenal. Não é recomendação, não é ordem, "
+            "não promete retorno. Nenhuma ordem vai à corretora."
+        ),
+    }
+    payload["why_fallback"] = _why_fallback(payload)
+    payload["why"] = client_facing_why(payload["why_fallback"], payload["why_fallback"])
+    return payload
+
+
+def _basket_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ticker": row.get("ticker"),
+        "label": row.get("label") or row.get("ticker"),
+        "status": row.get("status"),
+        "weight": row.get("weight"),
+        "instrument": row.get("instrument"),
+        "direction": row.get("direction"),
+        "spot": row.get("spot"),
+        "entry": row.get("entry"),
+        "invalidation": row.get("invalidation"),
+        "target": row.get("target"),
+        "quote_currency": row.get("quote_currency"),
+        "structure": row.get("structure"),
+        "suggested_size": row.get("suggested_size"),
+        "reason": row.get("reason"),
+        "confidence": row.get("confidence"),
+        "invalidation_reason": row.get("invalidation_reason"),
+    }
+
+
 def facts_for_llm(payload: dict[str, Any]) -> str:
     if payload.get("status") == "insufficient":
         return (
             f"O arsenal recusou montar a operação. Motivo em português: {payload.get('reason')}. "
             "Explique a recusa sem inventar tese e sem nomes de variáveis."
         )
+    if payload.get("basket"):
+        size = payload.get("suggested_size") or {}
+        lines = [
+            "Carteira mista (B3 e/ou cripto).",
+            f"Horizonte: {payload.get('horizon_label')}",
+            f"Risco total: {format_money_ptbr(float(size.get('risk_budget_brl') or 0), 'BRL')}",
+        ]
+        notional = size.get("notional_brl")
+        if notional is not None:
+            lines.append(f"Nocional: {format_money_ptbr(float(notional), 'BRL')}")
+        for row in payload["basket"]:
+            if row.get("status") == "ready":
+                ccy = row.get("quote_currency") or "BRL"
+                weight = round(float(row.get("weight") or 0) * 100, 1)
+                direction = "alta" if row.get("direction") == "bullish" else "baixa"
+                lines.append(
+                    f"- {row.get('label') or row.get('ticker')} peso {weight}% {direction} "
+                    f"preço agora {format_money_ptbr(float(row.get('spot') or 0), ccy)} "
+                    f"gatilho {format_money_ptbr(float(row.get('entry') or 0), ccy)} "
+                    f"stop {format_money_ptbr(float(row.get('invalidation') or 0), ccy)} "
+                    f"risco {format_money_ptbr(float((row.get('suggested_size') or {}).get('risk_budget_brl') or 0), 'BRL')}"
+                )
+            else:
+                lines.append(f"- {row.get('ticker')} recusado: {row.get('reason')}")
+        lines.append(
+            "Redija em português simples. Copie os preços exatamente como estão "
+            "(pt-BR, sem ISO aaaa-mm-dd, sem notação científica). "
+            "Não trate o preço agora como o gatilho de entrada. "
+            "Proibido citar nomes técnicos (z_score, EWMA, GARCH, Hurst, eligible_for_live_trading) "
+            "e as palavras trade e pontos. Preços de cripto em dólares (US$); risco e nocional em reais (R$)."
+        )
+        return "\n".join(lines)
     direction = "alta" if payload.get("direction") == "bullish" else "baixa"
     local = _REGIME_PT.get((payload.get("regime") or {}).get("local", ""), "no mercado recente")
     ccy = payload.get("quote_currency") or "BRL"
