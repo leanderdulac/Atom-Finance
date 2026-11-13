@@ -14,7 +14,7 @@ scipy~=1.14.1
 pandas~=2.2.3
 
 # Data Sources
-yfinance>=0.2.58
+yfinance>=1.8.0
 requests>=2.33.0,<3
 
 # Machine Learning
