@@ -176,6 +176,21 @@ async def response_security(request, call_next):
     return response
 
 
+# Backstop for request-buffering DoS: Starlette buffers the whole body before
+# the route schema validates it, and this app runs single-worker. Reverse
+# proxies should cap bodies first (nginx client_max_body_size); this guards a
+# directly-exposed backend. Oversize → 413 before the body is read.
+_MAX_BODY_BYTES = int(os.getenv("ATOM_MAX_BODY_BYTES", str(5 * 1024 * 1024)))
+
+
+@app.middleware("http")
+async def body_size_guard(request, call_next):
+    raw = request.headers.get("content-length")
+    if raw is not None and raw.isdigit() and int(raw) > _MAX_BODY_BYTES:
+        return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+    return await call_next(request)
+
+
 @app.get("/api/live")
 @limiter.exempt
 def live():

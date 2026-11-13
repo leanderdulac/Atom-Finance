@@ -125,6 +125,39 @@ async def test_backup_restore_preserves_identity_and_ownership(isolated, tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_oversized_body_is_rejected(isolated, monkeypatch):
+    """Direct-exposure backstop: bodies above ATOM_MAX_BODY_BYTES get 413 before
+    Starlette buffers them into memory."""
+    import main
+
+    monkeypatch.setattr(main, "_MAX_BODY_BYTES", 100)
+    token = create_access_token('alice')
+    client = TestClient(app)
+    response = client.post(
+        '/api/reports/export',
+        headers={'Authorization': f'Bearer {token}'},
+        json={'title': 'big', 'data': {'k': 'x' * 500}},
+    )
+    assert response.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_normal_request_body_passes(isolated, monkeypatch):
+    """The size guard must stay invisible to normal traffic."""
+    import main
+
+    monkeypatch.setattr(main, "_MAX_BODY_BYTES", 100)
+    token = create_access_token('alice')
+    client = TestClient(app)
+    response = client.post(
+        '/api/reports/export',
+        headers={'Authorization': f'Bearer {token}'},
+        json={'title': 'ok', 'data': {'k': 'v'}},
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_exclusive_runtime_recovers_unfinished_runs(isolated):
     """The old SQLite runtime also refused a second concurrent process
     (single-writer constraint); Postgres has no such constraint and that
