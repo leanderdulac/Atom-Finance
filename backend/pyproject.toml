@@ -1,3 +1,8 @@
+[tool.pytest.ini_options]
+markers = [
+    "ollama: optional integration against a local Ollama daemon (skipped in CI)",
+]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"

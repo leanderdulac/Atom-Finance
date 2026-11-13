@@ -1,0 +1,14 @@
+# Local SearXNG for ATOM context agents. JSON API is required.
+# Start: docker compose -f docker-compose.searxng.yml up -d
+use_default_settings: true
+server:
+  secret_key: "atom-searxng-local-not-a-secret"
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0"
+  port: 8080
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json

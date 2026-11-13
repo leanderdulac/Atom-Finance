@@ -12,6 +12,7 @@ O acesso público é **só pelo túnel**. Backend e UI escutam em `127.0.0.1` po
 | `com.atom.worker` | `python -m app.services.client_worker` — regime + cache dos ativos do cliente |
 | `com.atom.frontend` | `ops/macos/serve.py` em `ATOM_UI_HOST:ATOM_UI_PORT` (default `127.0.0.1:4173`): `dist/` + **proxy `/api`** |
 | `com.atom.tunnel` | Cloudflare: token → túnel nomeado; sem token → **quick tunnel** |
+| `com.atom.searxng` | **Opcional** (`ATOM_SEARXNG=1`): `docker compose -f docker-compose.searxng.yml up` na porta 8888 |
 
 Logs: `~/Library/Logs/atom/`. URL pública: `~/Library/Logs/atom/public-url.txt`. Reinício automático (`KeepAlive`). Login/boot: `RunAtLoad`.
 
@@ -49,6 +50,12 @@ cd backend && alembic upgrade head
 #    ATOM_VENV=/caminho/.venv    # se o venv não for backend/venv
 #    OLLAMA_HOST=http://127.0.0.1:11434
 #    OLLAMA_MODEL=llama3.2:3b
+#    OLLAMA_AGENT_MODEL=gpt-oss:20b
+#    ATOM_AGENT_LLM=ollama          # padrão; cloud só com chave (ver abaixo)
+#    SEARXNG_URL=                   # vazio = sem busca web; ver «Contexto»
+#    BRAVE_API_KEY=
+#    TAVILY_API_KEY=
+#    ATOM_SEARXNG=                  # 1 → launchd sobe SearXNG na 8888 (precisa Docker)
 #    ATOM_COMPUTE_WORKERS=8
 #    ATOM_IO_WORKERS=12
 #    ATOM_DB_POOL_MIN=4
@@ -105,7 +112,35 @@ sudo pmset -c sleep 0 disksleep 0 disablesleep 0
 
 Isso não é revertido pelo `uninstall.sh`. Confira com `pmset -g`. Na bateria o Mac pode dormir — deixe ligado na tomada quando o túnel estiver público.
 
-Ollama (`http://127.0.0.1:11434`) e Postgres/Redis nativos precisam estar no ar (brew services ou os próprios launchd). Redis é o cache compartilhado entre o worker e o uvicorn — sem ele cada processo cai no dicionário em memória e o pré-aquecimento não chega na API. Se o Ollama cair, a operação pronta continua: o «por quê» vira o texto-padrão.
+Ollama (`http://127.0.0.1:11434`) e Postgres/Redis nativos precisam estar no ar (brew services ou os próprios launchd). Redis é o cache compartilhado entre o worker e o uvicorn — sem ele cada processo cai no dicionário em memória e o pré-aquecimento não chega na API. Se o Ollama cair, a operação pronta continua: o «por quê» vira o texto-padrão. Sem fonte de busca, o contexto some — o arsenal ainda monta entrada/stop/alvo.
+
+## Contexto em tempo real (agentes locais)
+
+O arsenal continua decidindo direção, entrada, stop, alvo e tamanho. Agentes locais só leem notícias/macro/funding e podem **reduzir** tamanho/confiança ou **recusar** o paper. Nunca movem preço.
+
+O worker (`com.atom.worker`) pré-aquece PETR4/VALE3/ITUB4/BTC/ETH no Redis (`ATOM_WORKER_CONTEXT=1` por omissão no processo worker). `ATOM_CONTEXT_JOB=1` no uvicorn só se você não usar o worker.
+
+### Provedores de busca (degradação silenciosa)
+
+| Ligar | Como |
+| --- | --- |
+| SearXNG local (padrão se a URL existir) | `docker compose -f docker-compose.searxng.yml up -d` e `SEARXNG_URL=http://127.0.0.1:8888`. No Mac: `ATOM_SEARXNG=1` no `.env` e rode de novo `install.sh` (precisa Docker). |
+| Brave News | `BRAVE_API_KEY=…` |
+| Tavily | `TAVILY_API_KEY=…` |
+
+RSS (Google News pt-BR/en, CoinDesk, BBC Business), calendário (Copom BCB + FOMC/CPI/payroll com URL da fonte) e funding/OI (Binance/OKX públicos; mempool.space no BTC) não precisam de chave. Timeout curto (`ATOM_CONTEXT_TIMEOUT=4`), cache Redis (`ATOM_CONTEXT_TTL=300`). Sem fonte = sem contexto, nunca inventa.
+
+### LLM dos agentes
+
+| Ligar | Como |
+| --- | --- |
+| Ollama (padrão) | `ATOM_AGENT_LLM=ollama` (ou omita). `OLLAMA_ENABLED=1`, `OLLAMA_HOST=http://127.0.0.1:11434`, `OLLAMA_AGENT_MODEL=gpt-oss:20b` (tool calling). `OLLAMA_MODEL` continua no texto do «por quê». |
+| xAI / Grok | `ATOM_AGENT_LLM=grok` **e** `XAI_API_KEY=…` |
+| Anthropic | `ATOM_AGENT_LLM=anthropic` **e** `ANTHROPIC_API_KEY=…` |
+| OpenAI | `ATOM_AGENT_LLM=openai` **e** `OPENAI_API_KEY=…` |
+| Perplexity | `ATOM_AGENT_LLM=perplexity` **e** `PERPLEXITY_API_KEY=…` |
+
+Sem a chave, o stub recusa a chamada. JSON inválido ou notícia sem `fontes` é descartado. O cliente vê o resultado e as fontes; objeções ficam no diário (`GET /api/desk/context-audits`, modo operador).
 
 ## Desinstalar
 

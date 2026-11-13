@@ -108,6 +108,7 @@ describe('ReadyOperationPage', () => {
       why: 'Cenário de alta em PETR4 montado com cotação e volatilidade. Simulação, não recomendação.',
       disclaimer: 'Cenário/simulação. Não é recomendação.',
       eligible_for_live_trading: false,
+      sources: [{ title: 'Comunicado Copom', url: 'https://www.bcb.gov.br/copom', date: '2026-11-12' }],
     });
     clientReadyPaper.mockResolvedValue({
       message: 'Registrada como operação paper, aguardando gatilho. O diário é o único escritor.',
@@ -125,6 +126,10 @@ describe('ReadyOperationPage', () => {
     expect(screen.getByText('01/12/2026')).toBeInTheDocument();
     expect(screen.queryByText(/2026-12-01/)).not.toBeInTheDocument();
     expect(screen.queryByText(/orçamento paper/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /comunicado copom/i })).toHaveAttribute(
+      'href',
+      'https://www.bcb.gov.br/copom',
+    );
     expect(screen.getAllByText(/aguardando gatilho/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/eligible_for_live_trading/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /registrar como operação paper/i }));

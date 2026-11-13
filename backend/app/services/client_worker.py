@@ -1,10 +1,10 @@
-"""Standalone scheduler for launchd: regime + client arsenal cache.
+"""Standalone scheduler for launchd: regime + client arsenal + context prewarm.
 
     python -m app.services.client_worker
 
 Disabled when ATOM_ENV=test. The FastAPI process can run the same loops;
-use ATOM_CLIENT_JOB=0 / ATOM_REGIME_JOB=0 on uvicorn when this worker is
-the one holding the timers (see ops/macos).
+use ATOM_CLIENT_JOB=0 / ATOM_REGIME_JOB=0 / ATOM_CONTEXT_JOB=0 on uvicorn
+when this worker is the one holding the timers (see ops/macos).
 """
 from __future__ import annotations
 
@@ -35,6 +35,8 @@ async def main() -> None:
     from app.db.postgres import close_pool, get_pool
     from app.services.client_arsenal import job_enabled as client_on
     from app.services.client_arsenal import loop as client_loop
+    from app.services.context_job import job_enabled as context_on
+    from app.services.context_job import loop as context_loop
     from app.services.regime_job import job_enabled as regime_on
     from app.services.regime_job import loop as regime_loop
 
@@ -45,6 +47,8 @@ async def main() -> None:
         tasks.append(asyncio.create_task(regime_loop(), name="regime-job"))
     if client_on() or os.getenv("ATOM_WORKER_CLIENT", "1") == "1":
         tasks.append(asyncio.create_task(client_loop(), name="client-arsenal"))
+    if context_on() or os.getenv("ATOM_WORKER_CONTEXT", "1") == "1":
+        tasks.append(asyncio.create_task(context_loop(), name="context-prewarm"))
     if not tasks:
         logger.error("No jobs enabled — set ATOM_REGIME_JOB=1 and/or ATOM_CLIENT_JOB=1")
         sys.exit(1)

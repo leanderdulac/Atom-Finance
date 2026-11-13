@@ -16,6 +16,38 @@ os.environ.setdefault("ATOM_DATABASE_URL", "postgresql+asyncpg://atom:atom_dev@l
 os.environ.setdefault("OLLAMA_ENABLED", "0")
 os.environ.setdefault("ATOM_CLIENT_MODE", "false")
 os.environ.setdefault("ATOM_CLIENT_JOB", "0")
+os.environ.setdefault("ATOM_CONTEXT_JOB", "0")
+os.environ.setdefault("ATOM_WORKER_CONTEXT", "0")
+os.environ.setdefault("ATOM_AGENT_LLM", "ollama")
+os.environ.setdefault("SEARXNG_URL", "")
+os.environ.setdefault("BRAVE_API_KEY", "")
+os.environ.setdefault("TAVILY_API_KEY", "")
+
+@pytest.fixture(autouse=True)
+def _silence_context_http(monkeypatch, request):
+    """Unit tests never hit SearXNG/Brave/exchanges. Live Ollama tests opt out."""
+    if request.node.get_closest_marker("ollama"):
+        yield
+        return
+
+    def _none(*_a, **_k):
+        return None
+
+    import importlib
+
+    for mod_name in (
+        "app.services.context.http",
+        "app.services.context.search",
+        "app.services.context.rss",
+        "app.services.context.calendar",
+        "app.services.context.crypto",
+    ):
+        mod = importlib.import_module(mod_name)
+        for attr in ("cached_get_json", "cached_get_text", "cached_post_json"):
+            if hasattr(mod, attr):
+                monkeypatch.setattr(mod, attr, _none)
+    yield
+
 
 def _redacted_database_url() -> str:
     """Connection target without the password — this string reaches CI logs."""

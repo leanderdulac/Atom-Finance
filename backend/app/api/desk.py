@@ -36,6 +36,16 @@ async def desk_doctrine():
     return doctrine_payload()
 
 
+@router.get("/context-audits")
+async def context_audits(limit: int = Query(50, ge=1, le=200), _owner: str = Depends(get_current_user)):
+    """Operator diary of context overlays. Client never hits this route."""
+    from app.services.agents.audit import list_audits
+    return {
+        "items": list_audits(limit),
+        "eligible_for_live_trading": False,
+    }
+
+
 async def _run(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, partial(func, *args, **kwargs))

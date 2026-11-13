@@ -86,6 +86,11 @@ async def lifespan(_app: FastAPI):
         if client_job_enabled():
             job_tasks.append(asyncio.create_task(client_arsenal_loop(), name="client-arsenal"))
             logger.info("Client arsenal cache job started")
+        from app.services.context_job import job_enabled as context_job_enabled
+        from app.services.context_job import loop as context_job_loop
+        if context_job_enabled():
+            job_tasks.append(asyncio.create_task(context_job_loop(), name="context-prewarm"))
+            logger.info("Context prewarm job started")
         try:
             yield
         finally:
