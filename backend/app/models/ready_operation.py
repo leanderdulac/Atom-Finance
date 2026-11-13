@@ -509,13 +509,13 @@ def assemble(
         from app.models.derivatives_planner import PlanRequest, make_plans
         plan_quotes = [{k: v for k, v in q.items() if k != "iv"} for q in quotes]
         try:
-            req = PlanRequest(
-                source="ATOM cliente · livro do arsenal, tese montada automaticamente",
-                provenance="user_supplied",
-                as_of=now,
-                capital=capital,
-                risk_per_trade_pct=min(risk_pct, 5),
-                theses=[{
+            req = PlanRequest.model_validate({
+                "source": "ATOM cliente · livro do arsenal, tese montada automaticamente",
+                "provenance": "user_supplied",
+                "as_of": now,
+                "capital": capital,
+                "risk_per_trade_pct": min(risk_pct, 5),
+                "theses": [{
                     "ticker": asset["quote_symbol"],
                     "spot": spot,
                     "direction": direction,
@@ -527,7 +527,7 @@ def assemble(
                     "events_checked": True,
                     "options": plan_quotes,
                 }],
-            )
+            })
         except Exception as exc:
             return _insufficient(f"Livro rejeitado pelo planner: {exc}", contributions)
         report = make_plans(req, now=now)
