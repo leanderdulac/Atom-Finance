@@ -127,6 +127,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Prometheus instrumentação ────────────────────────────────────────────────
+# Registered after CORS and before the guard middlewares below so the metrics
+# middleware also records 413s — outermost of the function middlewares. Route
+# labels are templates (bounded cardinality); /api/metrics fails closed.
+from app.api.metrics import metrics_middleware
+from app.api.metrics import router as metrics_router
+
+app.middleware("http")(metrics_middleware)
+app.include_router(metrics_router, prefix="/api", tags=["Observability"])
+
 protected = APIRouter(dependencies=[Depends(get_current_user)])
 from app.api.market_sources import router as market_sources_router
 
@@ -175,6 +185,21 @@ async def response_security(request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+# Backstop for request-buffering DoS: Starlette buffers the whole body before
+# the route schema validates it, and this app runs single-worker. Reverse
+# proxies should cap bodies first (nginx client_max_body_size); this guards a
+# directly-exposed backend. Oversize → 413 before the body is read.
+_MAX_BODY_BYTES = int(os.getenv("ATOM_MAX_BODY_BYTES", str(5 * 1024 * 1024)))
+
+
+@app.middleware("http")
+async def body_size_guard(request, call_next):
+    raw = request.headers.get("content-length")
+    if raw is not None and raw.isdigit() and int(raw) > _MAX_BODY_BYTES:
+        return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+    return await call_next(request)
 
 
 @app.get("/api/live")

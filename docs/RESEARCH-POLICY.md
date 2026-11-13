@@ -11,7 +11,7 @@ O Laboratório Quant (`/ml`, `POST /api/ml/evaluate`) avalia hipóteses com vali
 3. Walk-forward por mês civil, com purga de rótulos sobrepostos e um mês de intervalo antes de cada janela de teste.
 4. Normalização apenas no treino de cada janela.
 5. Comparação fora da amostra com previsão zero, momentum simples e buy & hold, nos mesmos períodos.
-6. Custos de comissão e slippage, turnover, alvo de volatilidade e trava de drawdown.
+6. Custos de comissão e slippage, turnover, alvo de volatilidade e trava de drawdown. Inverter a covariância amostral na GMV de Markowitz é a maximizadora de erros — encolha Ledoit–Wolf antes (`/error-maximizer`).
 7. Dados sintéticos ou não ajustados identificados de forma explícita.
 
 ## O que o protocolo nunca faz

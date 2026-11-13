@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 18: observabilidade de produção
+
+Sem métrica não há operação: `/api/metrics` expõe o processo em formato Prometheus, fail-closed (JWT) por default, com cardinalidade limitada (handler do endpoint como label — query string e id de recurso nunca viram label).
+
+### Added
+- `GET /api/metrics` — expo Prom: contador `atom_http_requests_total{method,handler,status}`, histograma `atom_http_request_duration_seconds{method,handler}` e gauges do pool asyncpg (`atom_db_pool_size{state=total|idle|used}`); o scrape jamais abre conexões (lê o pool existente). Label = handler do endpoint (cardinalidade limitada; esta FastAPI aninha prefixos, então path de rota não serve como label).
+- `ATOM_METRICS_PUBLIC=false` (default): exige JWT; `true` libera o scrape apenas em rede confiável (no compose prod o backend é internal-only).
+- Dependabot semanal para pip/npm/github-actions com grouping minor+patch (`.github/dependabot.yml`).
+
+## [Unreleased] — round 17: maximizadora de erros / Ledoit–Wolf
+
+A GMV analítica `w* = Σ⁻¹ 1 / (1' Σ⁻¹ 1)` inverte o ruído da covariância amostral. Autovalores pequenos (Marchenko–Pastur) viram pesos gigantes e giro. A mesa encolhe antes de inverter.
+
+### Added
+- Lab `POST /api/desk/error-maximizer/evaluate` e UI `/error-maximizer`: painel unifatorial sintético, GMV amostral vs Ledoit–Wolf (alvo de correlação constante, α* analítico), espectro vs bulk MP, vol OOS e turnover. `eligible_for_live_trading` permanece false.
+- `app.models.covariance.ledoit_wolf_constant_correlation`. `PortfolioOptimizer(..., shrinkage="ledoit_wolf")` é opt-in; o default continua amostra.
+- Doutrina ponto 5 / tenet `/error-maximizer` em todo `compose_system`. QuantMind `extra_instructions` pede encolhimento antes de inverter Σ.
+
 ## [Unreleased] — health público sem trechos de chave; JBS BDR
 
 ### Changed

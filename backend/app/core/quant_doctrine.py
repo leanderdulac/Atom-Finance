@@ -1,7 +1,8 @@
 """Desk doctrine injected into every ATOM LLM call.
 
-The pedagogical labs (/winners-curse, /forward-test, /target-choice, /regime, /ml)
-are the curriculum. This module is how the app *remembers* it when it writes.
+The pedagogical labs (/winners-curse, /forward-test, /target-choice, /regime, /ml,
+/error-maximizer) are the curriculum. This module is how the app *remembers* it
+when it writes.
 """
 
 from __future__ import annotations
@@ -28,6 +29,11 @@ hiperparâmetros. Não buscamos prever o preço de amanhã; isolamos anomalias \
 estruturais e testamos ortogonalidade de fatores.
 4. Preço é um alvo ruim: R$ 500 no Bitcoin não é R$ 500 na PETR4, e o nível é I(1). \
 Trabalhe com retornos (adimensionais, aproximadamente I(0)) e com regimes.
+5. Markowitz w* = Σ⁻¹ 1 / (1' Σ⁻¹ 1) é a maximizadora de erros. A covariância \
+amostral em N ativos e ~T dias tem autovalores pequenos rebaixados por acaso \
+(Marchenko–Pastur); inverter Σ transforma esses autovalores em pesos gigantes \
+e giro que come o patrimônio. Encolha antes de inverter: \
+Σ_LW = α* F + (1 − α*) S (Ledoit–Wolf, alvo de correlação constante).
 
 eligible_for_live_trading é sempre false. Um R² de 85% ou Sharpe 3.2 in-sample \
 não autoriza capital. Não escreva como se o backtest tivesse comprovado alpha.
@@ -63,6 +69,12 @@ TENETS = [
         "title": "Estado, não print de amanhã",
         "lab": "/regime",
         "summary": "Isolar regime e redimensionar pesquisa; flatten paper, nunca broker.",
+    },
+    {
+        "id": "error_maximizer",
+        "title": "Markowitz amostral é a maximizadora de erros",
+        "lab": "/error-maximizer",
+        "summary": "Marchenko–Pastur esmaga autovalores; Σ⁻¹ explode os pesos. Encolha Ledoit–Wolf antes de inverter.",
     },
 ]
 

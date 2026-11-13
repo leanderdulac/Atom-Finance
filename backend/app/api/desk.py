@@ -14,6 +14,7 @@ from app.core.limiter import limiter
 from app.core.quant_doctrine import payload as doctrine_payload
 from app.core.security import get_current_user
 from app.models.cointegration import engle_granger, johansen, pairs_backtest
+from app.models.error_maximizer import evaluate as error_maximizer_evaluate
 from app.models.fama_french import decompose as ff_decompose
 from app.models.forward_test import evaluate as forward_evaluate
 from app.models.insider_clusters import detect as detect_insiders
@@ -546,5 +547,31 @@ class TargetChoiceRequest(BaseModel):
 async def target_choice_eval(request: Request, req: TargetChoiceRequest):
     try:
         return await _run(target_choice_evaluate, req.n, req.seed)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class ErrorMaximizerRequest(BaseModel):
+    n_assets: int = Field(80, ge=8, le=100)
+    t_is: int = Field(252, ge=60, le=1500)
+    t_oos: int = Field(63, ge=20, le=500)
+    seed: int = Field(7, ge=0)
+    rebalance_every: int = Field(21, ge=5, le=63)
+    returns: list[list[float]] | None = None
+
+
+@router.post("/error-maximizer/evaluate")
+@limiter.limit("20/minute")
+async def error_maximizer_eval(request: Request, req: ErrorMaximizerRequest):
+    try:
+        return await _run(
+            error_maximizer_evaluate,
+            returns=req.returns,
+            n_assets=req.n_assets,
+            t_is=req.t_is,
+            t_oos=req.t_oos,
+            seed=req.seed,
+            rebalance_every=req.rebalance_every,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

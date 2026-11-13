@@ -47,6 +47,7 @@ should read this before the feature list. Nothing below is live-trading eligible
 | Winner's curse / DSR | N iid zero-edge trials, IS×OOS cloud, Bailey–López de Prado deflated Sharpe | Trials modelled as independent; √(2 ln N) is the leading EVT term; DSR is not a tradable edge |
 | Sequential forward test | Locked SMA scored at t+1, mined TA grid, walk-forward refit | Synthetic GBM clock; SMA is one family; walk-forward still searches; **no broker** |
 | Price vs return | Same log-return path at two levels; ADF; walk-forward Ridge on P, r, vol-regime | Toy DGP; regime is trailing vol vs expanding median, not the six-signal classifier |
+| Error maximizer / Ledoit–Wolf | Analytical GMV on sample Σ vs constant-correlation shrinkage; Marchenko–Pastur bulk | One-factor DGP; α* is Frobenius-optimal, not a Sharpe maximizer; **no broker** |
 | Desk doctrine | `compose_system` on every LLM `complete()`; GET `/api/desk/doctrine`; UI `/quant-doctrine` | Prompt prefix, not weight fine-tuning; bypass surfaces must opt in (`ai_proxy`, `options_api`, QuantMind) |
 
 ## Protocol that was already honest
