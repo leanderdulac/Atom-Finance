@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 21: experiência do cliente (jornada do investidor)
+
+O app tinha 30 telas de operador e nenhuma porta de entrada para quem investe. `/cliente` ("Meu plano") é essa porta: questionário de perfil → valor e prazo → cenário simulado em reais, reutilizando `capmGbmMulti` — sem endpoint novo.
+
+### Added
+- Página `/cliente` (`ClientExperiencePage`), primeira da navegação: três perguntas (prazo, reação a uma queda de 20%, objetivo) pontuam um perfil; o perfil sugerido aparece na hora, com valor inicial e prazo herdado da resposta.
+- Cenário em reais: cenário típico, faixa "9 em 10" (p5–p95), pior cenário e queda máxima do caminho médio, mais trajetória média com banda e comparação dos três perfis no mesmo valor/prazo.
+- Testes (3): perfil conservador para prazo curto e aversão a perda, chamada de `capmGbmMulti` com `T=5`/`n_steps=1260` para o perfil agressivo, e bloqueio de valor abaixo de R$ 100.
+
+### Changed
+- Perfis de investidor extraídos de `PerfilInvestidorPage` para `src/data/investorProfiles.ts`, importados pelas duas páginas (antes só existiam dentro da página de comparação).
+
+### Not
+- A faixa é uma mistura das quantis por ativo, não a distribuição conjunta da carteira (os ativos são simulados de forma independente) — dito na UI, não escondido.
+- μ e σ são fixos por perfil, sem custos, impostos ou dividendos: cenário, não previsão. Nada é recomendação nem ordem.
+
 ## [Unreleased] — round 20: tooling — ESLint 10 (flat config)
 
 O lint tinha parado de correr: ESLint 10 removeu o suporte a `.eslintrc.*` e o repo ainda estava no formato legacy. A migração é de formato, não de política — o conjunto de regras efetivas é o mesmo de antes.
