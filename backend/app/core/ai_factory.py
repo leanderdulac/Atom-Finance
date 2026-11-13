@@ -30,6 +30,12 @@ class CreditException(LLMException):
     pass
 
 class LLMProvider(ABC):
+    """Cloud implementations below are key-gated. Agent default is Ollama:
+
+    `app.services.agents.llm.get_agent_llm()` — no paid call without
+    ATOM_AGENT_LLM + the matching API key.
+    """
+
     @abstractmethod
     async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         pass

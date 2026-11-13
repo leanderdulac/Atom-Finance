@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 23: contexto em tempo real com agentes locais
+
+Camada de busca + agentes Ollama ao lado do arsenal. O LLM **não** escolhe preço, stop, alvo nem tamanho.
+
+### Added
+- `backend/app/services/context/`: SearXNG (se `SEARXNG_URL`), Brave/Tavily opcionais, RSS pt-BR/en, calendário Copom/FOMC/CPI/payroll, funding/OI Binance/OKX e mempool.space no BTC. Cache Redis, timeout curto, degradação silenciosa.
+- Agente de notícias (`gpt-oss:20b` com tools) → JSON `{eventos_proximos, sentimento, riscos, fontes}`; Pydantic descarta sem fontes. Advogado do diabo → `{objecoes, severidade, recomendacao}`. Regras do arsenal reduzem tamanho/confiança ou recusam; **nunca** movem entrada/stop/alvo.
+- Redator cita fontes (título, data, link) no texto do cliente. Diário operador: `GET /api/desk/context-audits` (Redis + `experiments` se admin/operator).
+- `LLMProvider` Ollama padrão; stubs xAI/Anthropic/OpenAI/Perplexity só com `ATOM_AGENT_LLM` + chave.
+- Worker pré-aquece PETR4/VALE3/ITUB4/BTC/ETH. `docker-compose.searxng.yml` e launchd opcional (`ATOM_SEARXNG=1`).
+
+### Not
+- Paper only. Sem fonte = sem contexto. Nenhuma chamada cloud sem chave. Teste `@pytest.mark.ollama` é opcional.
+
 ## [Unreleased] — round 22: tela única do cliente + perfil/carteira/níveis
 
 Feedback do Mac (PR #34): o cliente via mesa, o perfil saía sempre Moderado, a carteira era só B3, BTC/ETH travavam e o stop do ETH estava incoerente.

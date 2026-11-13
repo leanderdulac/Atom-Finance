@@ -1,0 +1,23 @@
+# Optional local metasearch for ATOM context agents.
+#   docker compose -f docker-compose.searxng.yml up -d
+# Then in .env: SEARXNG_URL=http://127.0.0.1:8888
+#
+# Not started by the default docker-compose.yml. Mac: ATOM_SEARXNG=1 ./ops/macos/install.sh
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: atom-searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./ops/searxng:/etc/searxng:rw
+    environment:
+      SEARXNG_BASE_URL: http://127.0.0.1:8888/
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE

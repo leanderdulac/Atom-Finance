@@ -25,8 +25,14 @@ from app.models.ready_operation import (
     assemble,
     client_facing_why,
     facts_for_llm,
+    resolve_asset,
     universe_public,
 )
+from app.services.agents.apply import apply_context_risk
+from app.services.agents.audit import record_audit
+from app.services.agents.news import run_news_agent
+from app.services.agents.risk import run_risk_agent
+from app.services.agents.writer import cite_sources
 from app.services.client_arsenal import load_market
 from app.services.ollama import draft_why, ollama_configured
 
@@ -108,18 +114,51 @@ async def _decorate_why(payload: dict) -> dict:
     return payload
 
 
-async def build_ready_operation(req: ReadyRequest) -> dict:
+def _client_view(payload: dict) -> dict:
+    """Client sees the result and sources — not the devil's-advocate brief."""
+    out = dict(payload)
+    out.pop("risk_brief", None)
+    out.pop("news_brief", None)
+    out["eligible_for_live_trading"] = False
+    return out
+
+
+async def build_ready_operation(
+    req: ReadyRequest,
+    *,
+    owner: str | None = None,
+    role: str | None = None,
+) -> dict:
     market = await asyncio.to_thread(load_market, req.ticker)
     payload = await asyncio.to_thread(
         assemble, req.ticker, req.instrument, req.horizon, market=market,
     )
-    return await _decorate_why(payload)
+    payload = await _decorate_why(payload)
+    asset = resolve_asset(req.ticker)
+    asset_class = str((asset or {}).get("asset_class") or "equity_br")
+    news = await run_news_agent(req.ticker, req.horizon, asset_class=asset_class)
+    risk = await run_risk_agent(payload, news)
+    payload = apply_context_risk(payload, news, risk)
+    payload["why"] = cite_sources(str(payload.get("why") or ""), news)
+    payload.setdefault("arsenal", []).append({
+        "part": "Contexto (notícias/macro)",
+        "used": bool(news),
+        "note": "fontes públicas em cache; LLM não escolhe preço nem nível" if news
+        else "sem fonte pública — nenhum contexto inventado",
+    })
+    await record_audit(
+        owner=owner, role=role, ticker=req.ticker, horizon=req.horizon,
+        payload=payload, news=news, risk=risk,
+    )
+    return _client_view(payload)
 
 
 @router.post("/ready-operation")
 @limiter.limit("20/minute")
 async def ready_operation(request: Request, req: ReadyRequest, owner: str = Depends(get_current_user)):
-    return await build_ready_operation(req)
+    from app.db.database import get_user_by_username
+    user = await get_user_by_username(owner)
+    return await build_ready_operation(req, owner=owner, role=(user or {}).get("role"))
 
 
 async def _persist_watching(owner: str, assembled: dict) -> dict:
@@ -188,7 +227,9 @@ async def _persist_watching(owner: str, assembled: dict) -> dict:
 @router.post("/ready-operation/paper", status_code=201)
 @limiter.limit("10/minute")
 async def register_paper(request: Request, req: ReadyRequest, owner: str = Depends(get_current_user)):
-    assembled = await build_ready_operation(req)
+    from app.db.database import get_user_by_username
+    user = await get_user_by_username(owner)
+    assembled = await build_ready_operation(req, owner=owner, role=(user or {}).get("role"))
     if assembled.get("status") != "ready":
         raise HTTPException(409, assembled.get("reason") or "Sem operação para registrar.")
     if not assembled.get("suggested_size", {}).get("can_register_paper"):

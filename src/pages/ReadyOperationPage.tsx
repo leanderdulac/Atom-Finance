@@ -38,6 +38,8 @@ type ReadyBody = {
   reason?: string;
   disclaimer?: string;
   eligible_for_live_trading?: boolean;
+  context_used?: boolean;
+  sources?: { title: string; url: string; date?: string }[];
 };
 
 const money = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 });
@@ -321,7 +323,22 @@ export default function ReadyOperationPage() {
             <Typography variant="h6" sx={{ mt: 2 }}>
               {strategyLabel[result.structure?.strategy || ''] || 'Operação'} · {result.horizon_label}
             </Typography>
-            <Typography sx={{ mt: 1 }}>{result.why}</Typography>
+            <Typography sx={{ mt: 1 }} whiteSpace="pre-line">{result.why}</Typography>
+            {result.sources && result.sources.length > 0 ? (
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2">Fontes</Typography>
+                <Box component="ul" sx={{ pl: 2, mt: 0.5 }}>
+                  {result.sources.map((src) => (
+                    <li key={src.url}>
+                      <Typography variant="body2" component="span">
+                        <a href={src.url} target="_blank" rel="noreferrer">{src.title}</a>
+                        {src.date ? ` · ${src.date}` : ''}
+                      </Typography>
+                    </li>
+                  ))}
+                </Box>
+              </Box>
+            ) : null}
             <Divider sx={{ my: 2 }} />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2 }}>
               <Metric label="Preço agora" value={result.spot != null ? num(result.spot) : '—'} />
