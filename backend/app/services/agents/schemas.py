@@ -35,6 +35,10 @@ class NewsBrief(BaseModel):
     sentimento: float = Field(ge=-1.0, le=1.0)
     riscos: list[str] = Field(default_factory=list)
     fontes: list[SourceRef]
+    xai_sentimento: float | None = None
+    openai_sentimento: float | None = None
+    source_disagreement: bool = False
+    providers: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def require_sources(self) -> NewsBrief:

@@ -132,6 +132,23 @@ def test_assemble_sentiment_agreement_keeps_levels_from_arsenal():
     assert out["eligible_for_live_trading"] is False
 
 
+def test_assemble_source_disagreement_drops_confidence():
+    view, spot = _trending_view()
+    sent = build_signal(
+        "PETR4", "days", news=_news(sentimento=0.8), price=spot, price_mom=0.05,
+    )
+    assert sent is not None
+    sent["source_disagreement"] = True
+    sent["providers"] = ["xai", "openai"]
+    out = assemble("PETR4", "spot", "days", market=view, sentiment=sent, sentiment_weight=0.2)
+    assert out["eligible_for_live_trading"] is False
+    if out["status"] == "ready":
+        assert out["confidence"] == "baixa"
+        assert out["entry"] > 0
+        assert out["invalidation"] > 0
+        assert out["target"] > 0
+
+
 def test_quant_score_mean_reverting():
     assert quant_score("mean_reverting", 1.2, 0.01, 0.05) == -1.0
     assert quant_score("mean_reverting", -1.2, 0.01, 0.05) == 1.0

@@ -10,13 +10,13 @@ Camada de busca + agentes Ollama ao lado do arsenal. O LLM **não** escolhe pre�
 - `backend/app/services/context/`: SearXNG (se `SEARXNG_URL`), Brave/Tavily opcionais, RSS pt-BR/en, calendário Copom/FOMC/CPI/payroll, funding/OI Binance/OKX e mempool.space no BTC. Cache Redis, timeout curto, degradação silenciosa.
 - Agente de notícias (`gpt-oss:20b` com tools) → JSON `{eventos_proximos, sentimento, riscos, fontes}`; Pydantic descarta sem fontes. Advogado do diabo → `{objecoes, severidade, recomendacao}`. Regras do arsenal reduzem tamanho/confiança ou recusam; **nunca** movem entrada/stop/alvo.
 - Redator cita fontes (título, data, link) no texto do cliente. Diário operador: `GET /api/desk/context-audits` (Redis + `experiments` se admin/operator).
-- `LLMProvider` Ollama + xAI de verdade (`/v1/responses` com `web_search`/`x_search`, citações obrigatórias). Stubs Anthropic/OpenAI/Perplexity só com `ATOM_AGENT_LLM` + chave.
+- `LLMProvider` Ollama + xAI de verdade (`/v1/responses` com `web_search`/`x_search`) + **OpenAI de verdade** (`/v1/responses` com `web_search`, `OPENAI_MODEL=gpt-5-mini`). Citações obrigatórias. Stubs Anthropic/Perplexity só com `ATOM_AGENT_LLM` + chave.
 - Worker pré-aquece PETR4/VALE3/ITUB4/BTC/ETH. `docker-compose.searxng.yml` e launchd opcional (`ATOM_SEARXNG=1`).
-- Teto `ATOM_XAI_MAX_CALLS_PER_HOUR=60`, cache Redis 15 min por ativo+horizonte. Risco padrão Ollama (`ATOM_RISK_PROVIDER`).
-- Termômetro de mercado: score −1..+1, intensidade, momentum e divergência com o preço. Peso `ATOM_SENTIMENT_WEIGHT=0.2` na direção/confiança (sobe só com evidência). Série em `sentiment_snapshots`. Relatório `GET /api/desk/sentiment-skill` + `python -m app.services.sentiment_eval`. Tela do cliente: «Clima do mercado para BTC: otimista» + 2–3 links.
+- Tetos `ATOM_XAI_MAX_CALLS_PER_HOUR=60` e `ATOM_OPENAI_MAX_CALLS_PER_HOUR=60`, cache Redis 15 min. Risco padrão: OpenAI se houver chave, senão Ollama (`ATOM_RISK_PROVIDER=openai|xai|ollama`).
+- Termômetro de mercado: score −1..+1, intensidade, momentum e divergência com o preço. **Consenso ponderado Grok (X+web) + OpenAI (web/notícias)**; divergência forte entre os dois derruba a confiança. Peso `ATOM_SENTIMENT_WEIGHT=0.2` na direção/confiança (sobe só com evidência). Série em `sentiment_snapshots`. Relatório `GET /api/desk/sentiment-skill`. Custo estimado OpenAI: `GET /api/desk/openai-costs`. Tela do cliente: «Clima do mercado para BTC: otimista» + 2–3 links.
 
 ### Not
-- Paper only. Sem fonte = sem contexto. Nenhuma chamada cloud sem chave. Testes `@pytest.mark.ollama` / `@pytest.mark.xai` são opcionais (xAI live exige `ATOM_XAI_LIVE=1`).
+- Paper only. Sem fonte = sem contexto. Nenhuma chamada cloud sem chave. Testes `@pytest.mark.ollama` / `@pytest.mark.xai` / `@pytest.mark.openai` são opcionais (live exige `ATOM_XAI_LIVE=1` ou `ATOM_OPENAI_LIVE=1` + chave).
 
 ## [Unreleased] — round 22: tela única do cliente + perfil/carteira/níveis
 

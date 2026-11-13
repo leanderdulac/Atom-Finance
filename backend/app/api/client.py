@@ -173,7 +173,12 @@ async def _persist_signal(signal: dict | None) -> None:
                 return
         await insert_snapshot({
             **signal,
-            "payload": {"label": signal.get("label"), "climate": signal.get("climate")},
+            "payload": {
+                "label": signal.get("label"),
+                "climate": signal.get("climate"),
+                "providers": signal.get("providers") or [],
+                "source_disagreement": bool(signal.get("source_disagreement")),
+            },
         })
     except Exception:
         return
