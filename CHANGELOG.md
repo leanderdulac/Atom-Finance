@@ -10,7 +10,7 @@ O cliente deixa de ver ~30 telas de operador. Três escolhas (ativo, instrumento
 - `POST /api/client/ready-operation` e `…/paper`: orquestrador determinístico (cotação, EWMA/GARCH, Hurst, regime, planner de derivativos, gregas BS, Heston só como ilustração). LLM local (Ollama) redige o «por quê»; não escolhe a operação. Sem dado/sinal → `insufficient`, sem livro inventado.
 - Tela `/cliente` (Operação pronta) e `/cliente/plano` (Meu plano, jornadas do PR #32 sem depender do merge). Landing e login no modo cliente levam a essa experiência.
 - `ATOM_CLIENT_MODE`: 403 nas APIs da mesa para `analyst`; `admin`/`operator` seguem com tudo. Job de cache (`client_arsenal` + Redis) reaproveita o loop de regime.
-- `ops/macos/`: launchd (backend com caffeinate, worker, frontend `dist`, cloudflared), install/uninstall idempotentes, logs em `~/Library/Logs/atom/`.
+- `ops/macos/`: launchd (backend em `127.0.0.1:$ATOM_API_PORT` com caffeinate, worker, UI `serve.py` com proxy `/api`, cloudflared). Sem token → quick tunnel; URL em `~/Library/Logs/atom/public-url.txt` (muda a cada reinício). `ATOM_VENV` reaproveita um venv existente. `SECRET_KEY` é gerado no `.env` se faltar, sem ser impresso.
 - Paralelismo por env: `ATOM_COMPUTE_WORKERS`, `ATOM_IO_WORKERS`, `ATOM_DB_POOL_*`, `ATOM_TORCH_DEVICE` (mps/cpu).
 
 ### Not

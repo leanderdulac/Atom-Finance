@@ -4,14 +4,25 @@
 <dict>
   <key>Label</key>
   <string>com.atom.tunnel</string>
+  <key>WorkingDirectory</key>
+  <string>__ATOM_HOME__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>ATOM_HOME</key>
+    <string>__ATOM_HOME__</string>
+    <key>ATOM_LOGS</key>
+    <string>__ATOM_LOGS__</string>
+    <key>ATOM_ENV_FILE</key>
+    <string>__ATOM_ENV_FILE__</string>
+    <key>CLOUDFLARED</key>
+    <string>__CLOUDFLARED__</string>
+  </dict>
   <key>ProgramArguments</key>
   <array>
-    <string>__CLOUDFLARED__</string>
-    <string>tunnel</string>
-    <string>--no-autoupdate</string>
-    <string>run</string>
-    <string>--token</string>
-    <string>__TUNNEL_TOKEN__</string>
+    <string>/bin/bash</string>
+    <string>__ATOM_HOME__/ops/macos/tunnel.sh</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
