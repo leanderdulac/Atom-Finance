@@ -10,12 +10,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
+
 from app.core.cache import Cache
 from app.core.compute import parallel_map
-from app.models.ready_operation import UNIVERSE, MarketView, resolve_asset
+from app.models.ready_operation import MIN_HISTORY, UNIVERSE, MarketView, resolve_asset
 from app.models.volatility import EWMAVolatility
 from app.services.regime_job import last_snapshot, run_snapshot
 
@@ -23,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 CACHE_PREFIX = "client:arsenal:"
 CACHE_TTL = int(os.getenv("ATOM_CLIENT_CACHE_TTL", "900"))
+FETCH_TIMEOUT = float(os.getenv("ATOM_CLIENT_FETCH_TIMEOUT", "12"))
+BINANCE_SPOT = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
 
 
 def job_enabled() -> bool:
@@ -43,6 +49,62 @@ def job_interval_seconds() -> int:
 
 def cache_key(asset_id: str) -> str:
     return f"{CACHE_PREFIX}{asset_id.upper()}"
+
+
+def _run_timeout(fn, seconds: float = FETCH_TIMEOUT):
+    """Don't let yfinance.info hang the client request forever."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        fut = pool.submit(fn)
+        try:
+            return fut.result(timeout=seconds)
+        except FutureTimeout:
+            logger.warning("Client arsenal fetch timed out after %.0fs", seconds)
+            return None
+        except Exception:
+            logger.exception("Client arsenal fetch failed")
+            return None
+
+
+def fetch_binance_crypto(asset: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Public Binance spot ticker + daily klines. No API key. Used for BTC/ETH/SOL."""
+    symbol = asset.get("binance")
+    if not symbol:
+        return None, None
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            quote_res = client.get(f"{BINANCE_SPOT}/api/v3/ticker/price", params={"symbol": symbol})
+            quote_res.raise_for_status()
+            price = float(quote_res.json()["price"])
+            kline_res = client.get(
+                f"{BINANCE_SPOT}/api/v3/klines",
+                params={"symbol": symbol, "interval": "1d", "limit": 365},
+            )
+            kline_res.raise_for_status()
+            rows = kline_res.json()
+        if price <= 0 or not isinstance(rows, list) or len(rows) < MIN_HISTORY:
+            return None, None
+        quote = {
+            "ticker": asset["id"],
+            "price": price,
+            "provider": "binance",
+            "source": "binance",
+        }
+        closes = [float(row[4]) for row in rows]
+        dates = [
+            datetime.fromtimestamp(int(row[0]) / 1000, UTC).strftime("%Y-%m-%d")
+            for row in rows
+        ]
+        history = {
+            "ticker": asset["id"],
+            "close": closes,
+            "dates": dates,
+            "provider": "binance",
+            "source": "binance",
+        }
+        return quote, history
+    except Exception:
+        logger.info("Binance public fetch failed for %s", asset.get("id"))
+        return None, None
 
 
 def _history_from_yahoo(symbol: str) -> dict[str, Any] | None:
@@ -111,9 +173,19 @@ def _chain_live(asset: dict[str, Any]) -> tuple[list[dict[str, Any]] | None, str
 
 def warm_one(asset: dict[str, Any]) -> dict[str, Any]:
     """Fetch + cache one asset. Safe to call from a thread pool."""
-    quote = _quote_live(asset)
-    history = _history_live(asset)
-    chain, chain_source = _chain_live(asset)
+    quote = None
+    history = None
+    if asset.get("asset_class") == "crypto":
+        quote, history = fetch_binance_crypto(asset)
+    if not quote:
+        quote = _run_timeout(lambda: _quote_live(asset))
+    if not history:
+        history = _run_timeout(lambda: _history_live(asset))
+    chain, chain_source = (None, None)
+    if "option" in asset.get("instruments", []):
+        pair = _run_timeout(lambda: _chain_live(asset), max(FETCH_TIMEOUT, 20))
+        if pair:
+            chain, chain_source = pair
     vol = None
     if history and history.get("close"):
         import numpy as np

@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 22: tela única do cliente + perfil/carteira/níveis
+
+Feedback do Mac (PR #34): o cliente via mesa, o perfil saía sempre Moderado, a carteira era só B3, BTC/ETH travavam e o stop do ETH estava incoerente.
+
+### Changed
+- Scoring de perfil: o retorno desejado vale o dobro; 1–3 anos + esperar a queda + maior retorno → **Arrojado** (não Moderado). Tabela das 27 combinações. Carteira por classe: ações B3, cripto (BTC/ETH/SOL) ou misto.
+- Tela única pós-login (`/cliente`): ativo(s), horizonte, retorno desejado e tipo de operação. «Meu plano» fundido nela. Mesa, doutrina, regimes etc. só no **modo operador** (menu da conta, admin/operator). 403 no backend para analyst permanece.
+- Níveis: stop = 1× vol do horizonte (teto 12%), alvo = 1,6× o stop. Tamanho fracionário em cripto (lote 0,0001/0,001/0,01). Texto ao cliente em português, sem nomes de variável.
+- Cotação cripto: Binance público primeiro (BTC/ETH/SOL); yfinance com timeout. Sem dado → recusa clara, sem spinner eterno.
+
+### Not
+- Paper only. Nenhuma ordem. Sem promessa de retorno.
+
 ## [Unreleased] — round 21: operação pronta para o cliente + modo Mac
 
 O cliente deixa de ver ~30 telas de operador. Três escolhas (ativo, instrumento, horizonte) e o arsenal monta a operação paper — ou recusa com honestidade. No Mac público, `ATOM_CLIENT_MODE=true` tranca a mesa no backend, não só no menu.

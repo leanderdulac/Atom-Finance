@@ -23,6 +23,7 @@ from app.models.ready_operation import (
     Horizon,
     Instrument,
     assemble,
+    client_facing_why,
     facts_for_llm,
     universe_public,
 )
@@ -49,7 +50,7 @@ def _public_config() -> dict:
             {"id": "option", "label": "Opção",
              "hint": "Estrutura condicional se o arsenal tiver livro com bid, ask e quantidade."},
             {"id": "future", "label": "Futuro / perpétuo",
-             "hint": "Só BTC e ETH, via feed público da Binance. Sem futuro B3 neste modo."},
+             "hint": "Só BTC, ETH e SOL, via feed público da Binance. Sem futuro B3 neste modo."},
         ],
         "horizons": [{"id": key, **{k: v for k, v in val.items() if k != "holding_days"}, "holding_days": val["holding_days"]}
                      for key, val in HORIZONS.items()],
@@ -90,15 +91,16 @@ async def me(owner: str = Depends(get_current_user)):
 
 
 async def _decorate_why(payload: dict) -> dict:
+    fallback = payload.get("why_fallback") or payload.get("why") or ""
     text = await draft_why(facts_for_llm(payload))
     if text:
-        payload["why"] = text
-        payload["why_source"] = "ollama"
+        payload["why"] = client_facing_why(text, fallback)
+        payload["why_source"] = "ollama" if payload["why"] == text else "template"
         payload.setdefault("arsenal", []).append(
             {"part": "Ollama (texto)", "used": True, "note": "redigiu o porquê a partir dos números; não escolheu a operação"}
         )
     else:
-        payload["why"] = payload.get("why_fallback") or payload.get("why")
+        payload["why"] = client_facing_why(fallback, fallback)
         payload["why_source"] = "template"
         payload.setdefault("arsenal", []).append(
             {"part": "Ollama (texto)", "used": False, "note": "daemon ausente ou mudo — texto-padrão do arsenal"}

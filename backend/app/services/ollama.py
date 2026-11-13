@@ -20,7 +20,9 @@ _WHY_SYSTEM = (
     "já calculada. Você NÃO escolhe direção, estrutura, stop nem tamanho. "
     "Use só os números e rótulos fornecidos. Sem promessa de retorno, sem "
     "recomendação, sem ordem. Diga que é cenário/simulação. Se o bloco disser "
-    "que o arsenal recusou, explique a recusa sem inventar uma tese."
+    "que o arsenal recusou, explique a recusa sem inventar uma tese. "
+    "Proibido citar nomes de variáveis ou jargão interno "
+    "(z_score, EWMA, GARCH, Hurst, eligible_for_live_trading, kill_switch)."
 )
 
 
