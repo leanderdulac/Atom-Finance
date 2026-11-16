@@ -12,6 +12,10 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-production")
 os.environ.setdefault("REDIS_URL", "redis://localhost:19999/0")
 # Local dev/CI Postgres — see CONTRIBUTING.md for how to run one locally.
 os.environ.setdefault("ATOM_DATABASE_URL", "postgresql+asyncpg://atom:atom_dev@localhost:5432/atom_test")
+# Client assembler must not block tests on a local Ollama that is not there.
+os.environ.setdefault("OLLAMA_ENABLED", "0")
+os.environ.setdefault("ATOM_CLIENT_MODE", "false")
+os.environ.setdefault("ATOM_CLIENT_JOB", "0")
 
 def _redacted_database_url() -> str:
     """Connection target without the password — this string reaches CI logs."""

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.atom.frontend</string>
+  <key>WorkingDirectory</key>
+  <string>__ATOM_HOME__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>ATOM_HOME</key>
+    <string>__ATOM_HOME__</string>
+    <key>ATOM_LOGS</key>
+    <string>__ATOM_LOGS__</string>
+    <key>ATOM_ENV_FILE</key>
+    <string>__ATOM_ENV_FILE__</string>
+    <key>ATOM_DIST</key>
+    <string>__ATOM_HOME__/dist</string>
+  </dict>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>python3</string>
+    <string>__ATOM_HOME__/ops/macos/serve.py</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__ATOM_LOGS__/frontend.log</string>
+  <key>StandardErrorPath</key>
+  <string>__ATOM_LOGS__/frontend.err.log</string>
+</dict>
+</plist>

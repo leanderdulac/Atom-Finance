@@ -21,6 +21,29 @@ describe('App routing', () => {
     );
   });
 
+  it('renders the client landing when the public config lock is on', async () => {
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/client/config')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          client_mode: true,
+          universe: [],
+          instruments: [],
+          horizons: [],
+          disclaimer: 'Cenário, não recomendação.',
+          operator_roles: ['admin', 'operator'],
+          eligible_for_live_trading: false,
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      return Promise.resolve(new Response('{}', { status: 401 }));
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByText(/a operação vem pronta/i)).toBeInTheDocument()
+    );
+    expect(screen.getByRole('button', { name: /começar/i })).toBeInTheDocument();
+  });
+
   it('renders the login page at /login', async () => {
     window.history.pushState({}, '', '/login');
     render(<App />);

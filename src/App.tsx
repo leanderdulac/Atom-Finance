@@ -1,9 +1,9 @@
 import React, { Suspense, lazy, useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText,
   AppBar, Toolbar, Typography, IconButton, Divider, Tooltip, Chip, useMediaQuery,
-  CircularProgress, Stack, Button,
+  CircularProgress, Stack, Button, Menu, MenuItem,
 } from '@mui/material';
 import {
   ShowChart, Assessment, AccountBalance, Psychology, Warning,
@@ -13,6 +13,7 @@ import {
 } from '@mui/icons-material';
 import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ClientModeProvider, OperatorModeProvider, useOperatorMode } from './contexts/ClientModeContext';
 import DisclaimerBanner from './components/DisclaimerBanner';
 
 // Pages — lazy-loaded so each route ships its own chunk instead of one
@@ -54,8 +55,7 @@ const ForwardTestPage = lazy(() => import('./pages/ForwardTestPage'));
 const TargetChoicePage = lazy(() => import('./pages/TargetChoicePage'));
 const QuantDoctrinePage = lazy(() => import('./pages/QuantDoctrinePage'));
 const ErrorMaximizerPage = lazy(() => import('./pages/ErrorMaximizerPage'));
-const ClientExperiencePage = lazy(() => import('./pages/ClientExperiencePage'));
-
+const ReadyOperationPage = lazy(() => import('./pages/ReadyOperationPage'));
 function RouteFallback() {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
@@ -115,7 +115,7 @@ const exploratoryItems = [
 ];
 
 const coreItems = [
-  { label: 'Meu plano', path: '/cliente', icon: <Person /> },
+  { label: 'Operação pronta', path: '/cliente', icon: <ShowChart /> },
   { label: 'Mesa de operações', path: '/operations', icon: <Speed /> },
   { label: 'Doutrina da mesa', path: '/quant-doctrine', icon: <MenuBook /> },
   { label: 'Mesa de papers', path: '/desk', icon: <Functions /> },
@@ -138,6 +138,13 @@ function AppLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { showDesk } = useOperatorMode();
+  const homePath = showDesk ? '/dashboard' : '/cliente';
+  const navCore = coreItems;
+
+  if (!showDesk && !location.pathname.startsWith('/cliente')) {
+    return <Navigate to="/cliente" replace />;
+  }
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
@@ -152,11 +159,13 @@ function AppLayout() {
         }}
       >
         <Toolbar>
-          <IconButton aria-label="Alternar navegação" edge="start" onClick={() => setDrawerOpen(!drawerOpen)} sx={{ mr: 2 }}>
-            <MenuIcon />
-          </IconButton>
+          {showDesk && (
+            <IconButton aria-label="Alternar navegação" edge="start" onClick={() => setDrawerOpen(!drawerOpen)} sx={{ mr: 2 }}>
+              <MenuIcon />
+            </IconButton>
+          )}
           <Box
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate(homePath)}
             sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
           >
             <Box
@@ -168,7 +177,7 @@ function AppLayout() {
               ATOM
             </Typography>
             <Chip
-              label="Research · piloto"
+              label={showDesk ? 'Research · piloto' : 'Cliente · paper'}
               size="small"
               sx={{
                 bgcolor: 'primary.main',
@@ -189,7 +198,7 @@ function AppLayout() {
         </Toolbar>
       </AppBar>
 
-      <Drawer
+      {showDesk && <Drawer
         variant={compact ? "temporary" : "persistent"}
         open={compact ? drawerOpen : !drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -244,7 +253,7 @@ function AppLayout() {
             );
             return (
               <List>
-                {coreItems.map(renderItem)}
+                {navCore.map(renderItem)}
                 {showAdvanced && (
                   <>
                     {groupLabel('Ferramentas', 'Cálculo sobre entradas que você fornece.')}
@@ -270,7 +279,7 @@ function AppLayout() {
             </Typography>
           </Box>
         </Box>
-      </Drawer>
+      </Drawer>}
 
       <Box
         component="main"
@@ -286,8 +295,10 @@ function AppLayout() {
       >
         <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/cliente" element={<ProtectedRoute><ClientExperiencePage /></ProtectedRoute>} />
-          <Route path="/operations" element={<ProtectedRoute><OperationsPage /></ProtectedRoute>} />
+          <Route path="/cliente" element={<ProtectedRoute><ReadyOperationPage /></ProtectedRoute>} />
+          <Route path="/cliente/operacao" element={<ProtectedRoute><ReadyOperationPage /></ProtectedRoute>} />
+          <Route path="/cliente/plano" element={<Navigate to="/cliente" replace />} />
+          <Route path="/operations" element={<OperatorRoute><OperationsPage /></OperatorRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><ExperimentsPage /></ProtectedRoute>} />
           <Route path="/desk" element={<ProtectedRoute><DeskLabPage /></ProtectedRoute>} />
           <Route path="/regime" element={<ProtectedRoute><RegimePage /></ProtectedRoute>} />
@@ -334,13 +345,37 @@ function AppLayout() {
 function AuthStatusButton() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { canOperate, showDesk, enterOperatorMode, exitOperatorMode } = useOperatorMode();
+  const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   if (!user) return null;
   return (
-    <Tooltip title={`Sair (${user.username})`}>
-      <IconButton onClick={() => { logout(); navigate('/login'); }} sx={{ color: 'text.secondary' }}>
-        <Logout sx={{ fontSize: 20 }} />
-      </IconButton>
-    </Tooltip>
+    <>
+      <Tooltip title={user.username}>
+        <IconButton
+          aria-label="Menu da conta"
+          onClick={(event) => setAnchor(event.currentTarget)}
+          sx={{ color: 'text.secondary' }}
+        >
+          <Person sx={{ fontSize: 20 }} />
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+        <MenuItem disabled>{user.username}</MenuItem>
+        {canOperate && !showDesk && (
+          <MenuItem onClick={() => { setAnchor(null); enterOperatorMode(); navigate('/operations'); }}>
+            Modo operador
+          </MenuItem>
+        )}
+        {canOperate && showDesk && (
+          <MenuItem onClick={() => { setAnchor(null); exitOperatorMode(); navigate('/cliente'); }}>
+            Modo cliente
+          </MenuItem>
+        )}
+        <MenuItem onClick={() => { setAnchor(null); logout(); navigate('/login'); }}>
+          <Logout sx={{ fontSize: 18, mr: 1 }} /> Sair
+        </MenuItem>
+      </Menu>
+    </>
   );
 }
 
@@ -356,6 +391,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (loading) return <RouteFallback />;
   if (!isAuthenticated) return null;
   return <>{children}</>;
+}
+
+function OperatorRoute({ children }: { children: React.ReactNode }) {
+  const { showDesk } = useOperatorMode();
+  if (!showDesk) return <Navigate to="/cliente" replace />;
+  return <ProtectedRoute>{children}</ProtectedRoute>;
 }
 
 function AppRouter() {
@@ -378,10 +419,14 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <AppRouter />
-          <DisclaimerBanner />
-        </BrowserRouter>
+        <ClientModeProvider>
+          <OperatorModeProvider>
+            <BrowserRouter>
+              <AppRouter />
+              <DisclaimerBanner />
+            </BrowserRouter>
+          </OperatorModeProvider>
+        </ClientModeProvider>
       </AuthProvider>
     </ThemeProvider>
   );

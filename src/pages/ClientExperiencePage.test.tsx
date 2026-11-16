@@ -62,6 +62,17 @@ describe('ClientExperiencePage', () => {
     );
   });
 
+  it('suggests Arrojado for mid horizon, patience and max return', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await answerQuiz(user, [
+      'Entre 1 e 3 anos',
+      'Não mexeria e esperaria',
+      'Buscar o maior retorno possível',
+    ]);
+    expect(screen.getByText('Perfil sugerido: Arrojado')).toBeInTheDocument();
+  });
+
   it('suggests the conservative profile for a short horizon and loss aversion', async () => {
     const user = userEvent.setup();
     renderPage();
@@ -98,7 +109,7 @@ describe('ClientExperiencePage', () => {
     const firstCall = capmGbmMulti.mock.calls[0][0];
     expect(firstCall.T).toBe(5);
     expect(firstCall.n_steps).toBe(1260);
-    expect(firstCall.assets.map((a: AssetInput) => a.ticker)).toEqual(['ABEV3', 'ITUB4', 'VALE3']);
+    expect(firstCall.assets.map((a: AssetInput) => a.ticker)).toEqual(['WEGE3', 'ITUB4', 'VALE3']);
 
     // 10.000 invested, every asset ending at +8% -> R$ 10.800
     expect(screen.getAllByText(/10\.800/).length).toBeGreaterThan(0);
