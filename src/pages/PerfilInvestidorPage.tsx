@@ -94,7 +94,7 @@ interface ChartPoint {
   day: number;
   conservador?: number;
   moderado?: number;
-  agressivo?: number;
+  arrojado?: number;
   band_p5?: number;
   band_width?: number;
 }
@@ -126,7 +126,7 @@ function exportCSV(chartData: ChartPoint[], initial: number, horizon: number) {
     d.day,
     (d.conservador ?? '').toString(),
     (d.moderado ?? '').toString(),
-    (d.agressivo ?? '').toString(),
+    (d.arrojado ?? '').toString(),
   ]);
   const csv = [cols.join(','), ...rows.map((r) => r.join(','))].join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }); // BOM for Excel
@@ -167,7 +167,7 @@ function PortfolioTooltip({ active, payload, label }: TooltipProps) {
 
 export default function PerfilInvestidorPage() {
   const [selectedProfiles, setSelectedProfiles] = useState<Set<string>>(
-    new Set(['conservador', 'moderado', 'agressivo'])
+    new Set(['conservador', 'moderado', 'arrojado'])
   );
   const [initial, setInitial] = useState(10000);
   const [horizon, setHorizon] = useState(1.0);

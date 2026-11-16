@@ -41,7 +41,10 @@ async def draft_why(facts: str) -> str | None:
         return None
     host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
     model = os.getenv("OLLAMA_MODEL", "llama3.2:3b").strip() or "llama3.2:3b"
-    timeout = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "8"))
+    try:
+        timeout = min(120.0, max(1.0, float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "8"))))
+    except ValueError:
+        timeout = 8.0
     payload = {
         "model": model,
         "stream": False,

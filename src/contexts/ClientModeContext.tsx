@@ -44,10 +44,12 @@ export function ClientModeProvider({ children }: { children: React.ReactNode }) 
   return <ClientModeContext.Provider value={config}>{children}</ClientModeContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- colocated provider+hook is intentional
 export function useClientConfig() {
   return useContext(ClientModeContext);
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- colocated provider+hook is intentional
 export function isOperatorRole(role?: string, operatorRoles: string[] = fallback.operator_roles) {
   return operatorRoles.includes((role || '').toLowerCase());
 }
@@ -94,6 +96,7 @@ export function OperatorModeProvider({ children }: { children: React.ReactNode }
   return <OperatorModeContext.Provider value={value}>{children}</OperatorModeContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- colocated provider+hook is intentional
 export function useOperatorMode() {
   return useContext(OperatorModeContext);
 }
