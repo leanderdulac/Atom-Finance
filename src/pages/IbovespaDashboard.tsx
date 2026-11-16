@@ -10,7 +10,7 @@ import {
   TrendingUp, TrendingDown, ShowChart,
 } from '@mui/icons-material';
 import {
-  ComposedChart, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid,
+  AreaChart, Area, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend, ResponsiveContainer, ReferenceLine,
   LineChart, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis,
@@ -160,7 +160,10 @@ async function downloadExcel(
 
 // ── Tooltip components ────────────────────────────────────────────────────────
 
-function ValTooltip({ active, payload, label }: any) {
+interface ChartTooltipEntry { value?: number | string; dataKey?: string | number; color?: string }
+interface ChartTooltipProps { active?: boolean; payload?: ChartTooltipEntry[]; label?: string | number }
+
+function ValTooltip({ active, payload, label }: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
   const v = payload[0]?.value;
   return (
@@ -175,12 +178,12 @@ function ValTooltip({ active, payload, label }: any) {
   );
 }
 
-function AssetTooltip({ active, payload, label }: any) {
+function AssetTooltip({ active, payload, label }: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <Box sx={{ background: '#161622', border: '1px solid #2a2a3a', borderRadius: 1.5, p: 1.5, minWidth: 160 }}>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Dia {label}</Typography>
-      {payload.map((p: any) => (
+      {payload.map((p: ChartTooltipEntry) => (
         <Box key={p.dataKey} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.25 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box sx={{ width: 6, height: 6, borderRadius: '50%', background: p.color }} />
@@ -195,7 +198,7 @@ function AssetTooltip({ active, payload, label }: any) {
   );
 }
 
-function PieLabelCustom({ cx, cy, midAngle, innerRadius, outerRadius, sector, value }: any) {
+function PieLabelCustom({ cx = 0, cy = 0, midAngle = 0, innerRadius = 0, outerRadius = 0, value = 0 }: { cx?: number; cy?: number; midAngle?: number; innerRadius?: number; outerRadius?: number; value?: number }) {
   const RADIAN = Math.PI / 180;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
@@ -238,8 +241,8 @@ export default function IbovespaDashboard() {
       setResult(data);
       setStep(2);
       setChartMode('portfolio');
-    } catch (e: any) {
-      setError(e?.message ?? 'Erro na otimização RL.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro na otimização RL.');
       setStep(0);
     } finally {
       setLoading(false);
@@ -259,8 +262,8 @@ export default function IbovespaDashboard() {
       setCapital(100_000);
       setStep(2);
       setChartMode('portfolio');
-    } catch (e: any) {
-      setError(e?.message ?? 'Erro no demo.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro no demo.');
       setStep(0);
     } finally {
       setLoading(false);
@@ -546,7 +549,7 @@ export default function IbovespaDashboard() {
                                 stroke="none" />
                             ))}
                           </Pie>
-                          <RTooltip formatter={(v: any, name: any) => [`${Number(v).toFixed(1)}%`, name]} />
+                          <RTooltip formatter={(v: unknown, name: unknown) => [`${Number(v).toFixed(1)}%`, String(name ?? '')]} />
                         </PieChart>
                       </Box>
                       <Box sx={{ flex: 1, minWidth: 180 }}>
@@ -581,7 +584,7 @@ export default function IbovespaDashboard() {
                           <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
                           <Radar name={cfg.label} dataKey="value"
                             stroke={cfg.color} fill={cfg.color} fillOpacity={0.25} strokeWidth={2} />
-                          <RTooltip formatter={(v: any) => [`${Number(v).toFixed(0)}/100`]} />
+                          <RTooltip formatter={(v: unknown) => [`${Number(v).toFixed(0)}/100`]} />
                           <Legend />
                         </RadarChart>
                       </Box>
@@ -609,7 +612,7 @@ export default function IbovespaDashboard() {
                           <XAxis dataKey="iter" tick={{ fontSize: 11 }}
                             label={{ value: 'Iteração', position: 'insideBottom', offset: -4, fontSize: 11 }} />
                           <YAxis tick={{ fontSize: 11 }} />
-                          <RTooltip formatter={(v: any) => [Number(v).toFixed(4), 'Recompensa']} />
+                          <RTooltip formatter={(v: unknown) => [Number(v).toFixed(4), 'Recompensa']} />
                           <Area type="monotone" dataKey="reward" stroke="#6366f1" strokeWidth={2}
                             fill="url(#grad-reward)" dot={{ r: 3, fill: '#6366f1' }} name="Recompensa" />
                         </AreaChart>

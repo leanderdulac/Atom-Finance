@@ -23,14 +23,17 @@ export default function DeskLabPage() {
   const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<{ math?: string; what_broke?: string[] } & Record<string, unknown> | null>(null);
   const [inventory, setInventory] = useState(0);
   const [ticker, setTicker] = useState('AAPL');
   const [symbol, setSymbol] = useState('BTCUSDT');
 
   const run = async (fn: () => Promise<unknown>) => {
     setLoading(true); setError(''); setResult(null);
-    try { setResult(await fn()); }
+    try {
+      const v: unknown = await fn();
+      setResult(v !== null && typeof v === 'object' ? (v as Record<string, unknown>) : {});
+    }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   };

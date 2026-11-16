@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, Button,
   CircularProgress, Alert, Chip, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Paper, LinearProgress,
+  TableRow, LinearProgress,
 } from '@mui/material';
-import { api } from '../services/api';
+import { api, type FullTailRiskResult, type MarketHistory } from '../services/api';
 import QuantContextSection from '../components/QuantContextSection';
 import MarketTickerAutocomplete from '../components/MarketTickerAutocomplete';
 import ProviderChips from '../components/ProviderChips';
+
+type TailRiskResult = FullTailRiskResult;
 
 const blackSwanFoundations = [
   {
@@ -49,7 +51,7 @@ function generateReturns(): number[] {
 
 export default function BlackSwanPage() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<TailRiskResult | null>(null);
   const [error, setError] = useState('');
 
   const [ticker, setTicker] = useState('SPY');
@@ -61,13 +63,13 @@ export default function BlackSwanPage() {
   const loadMarketReturns = async () => {
     setLoading(true); setError('');
     try {
-      const history: any = await api.history(ticker, 252, provider);
+      const history: MarketHistory = await api.history(ticker, 252, provider);
       const closes = (history?.close || []).map(Number);
       if (closes.length < 31) throw new Error('Not enough data returned');
       const rets = closes.slice(1).map((p: number, i: number) => Math.log(p / closes[i]));
       setLiveReturns(rets);
       setDataSource(history.provider || history.source || provider);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
@@ -78,11 +80,11 @@ export default function BlackSwanPage() {
       const res = await api.blackSwanFull({ returns: liveReturns || generateReturns() });
       setUsedSynthetic(synthetic);
       setResult(res);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
-  const alertColor = (level: string) => {
+  const alertColor = (level: string): 'error' | 'warning' | 'success' => {
     switch (level) {
       case 'CRITICAL': return 'error';
       case 'HIGH': return 'error';
@@ -154,7 +156,7 @@ export default function BlackSwanPage() {
                 <Typography variant="h5">Tail Risk Score</Typography>
                 <Chip
                   label={`${result.alert_level}`}
-                  color={alertColor(result.alert_level) as any}
+                  color={alertColor(result.alert_level)}
                   sx={{ fontWeight: 700, fontSize: '1rem', px: 2, py: 2.5 }}
                 />
               </Box>

@@ -140,12 +140,15 @@ function exportCSV(chartData: ChartPoint[], initial: number, horizon: number) {
 
 // ── Custom tooltip ────────────────────────────────────────────────────────────
 
-function PortfolioTooltip({ active, payload, label }: any) {
+interface TooltipEntry { value?: number | string; dataKey?: string | number; color?: string; name?: string }
+interface TooltipProps { active?: boolean; payload?: TooltipEntry[]; label?: string | number }
+
+function PortfolioTooltip({ active, payload, label }: TooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <Box sx={{ background: '#1e1e2e', border: '1px solid #333', borderRadius: 1, p: 1.5, minWidth: 180 }}>
       <Typography variant="caption" color="text.secondary">Dia {label}</Typography>
-      {payload.filter((p: any) => p.value != null && !p.name?.includes('band')).map((p: any) => (
+      {payload.filter((p: TooltipEntry) => p.value != null && !p.name?.includes('band')).map((p: TooltipEntry) => (
         <Box key={p.dataKey} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
@@ -199,8 +202,8 @@ export default function PerfilInvestidorPage() {
         )
       );
       setResults(simResults);
-    } catch (e: any) {
-      setError(e?.message ?? 'Erro na simulação.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro na simulação.');
     } finally {
       setLoading(false);
     }

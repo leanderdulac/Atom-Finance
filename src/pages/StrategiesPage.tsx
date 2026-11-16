@@ -4,7 +4,13 @@ import {
   ToggleButtonGroup, ToggleButton, CircularProgress, Alert,
   Chip, Divider,
 } from '@mui/material';
-import { api } from '../services/api';
+import { api, type MarketQuote, type MarketVolatility } from '../services/api';
+
+interface StrategyResult {
+  strategy?: string; total_premium?: number; max_profit?: number | string;
+  max_loss?: number; breakeven_points?: number[];
+  greeks?: Record<string, number>; payoff_x?: number[]; payoff_y?: number[];
+}
 import MarketTickerAutocomplete from '../components/MarketTickerAutocomplete';
 import ProviderChips from '../components/ProviderChips';
 import QuantContextSection from '../components/QuantContextSection';
@@ -32,7 +38,7 @@ const strategyNotes = [
 
 export default function StrategiesPage() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<StrategyResult | null>(null);
   const [error, setError] = useState('');
   const [strategyType, setStrategyType] = useState('straddle');
   const [ticker, setTicker] = useState('AAPL');
@@ -50,8 +56,8 @@ export default function StrategiesPage() {
   const loadUnderlyingData = async () => {
     setLoading(true); setError('');
     try {
-      const quote: any = await api.quote(ticker, provider);
-      const vol: any = await api.volatility(ticker).catch(() => null);
+      const quote: MarketQuote = await api.quote(ticker, provider);
+      const vol: MarketVolatility | null = await api.volatility(ticker).catch(() => null);
       const spot = Number(quote.price || params.spot);
       const atm = Math.round(spot);
       setParams((p) => ({
@@ -66,7 +72,7 @@ export default function StrategiesPage() {
         k5: atm + 10,
       }));
       setMarketSource(quote.provider || quote.source || provider);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
@@ -99,7 +105,7 @@ export default function StrategiesPage() {
           res = await api.straddle({ ...base, strike: params.strike });
       }
       setResult(res);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 

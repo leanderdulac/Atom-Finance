@@ -9,7 +9,7 @@ import { Warning, Close, Shield, TrendingUp } from '@mui/icons-material';
 const SESSION_KEY = 'atom_disclaimer_accepted';
 
 const Transition = React.forwardRef(function Transition(
-  props: TransitionProps & { children: React.ReactElement<any, any> },
+  props: TransitionProps & { children: React.ReactElement },
   ref: React.Ref<unknown>,
 ) {
   return <Slide direction="up" ref={ref} {...props} />;

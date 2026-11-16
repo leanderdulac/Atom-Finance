@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
+
+type CAPMResult = BetaResult & { ticker?: string };
+
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : 'Unexpected error';
+}
 import {
   Box, Grid, Card, CardContent, Typography, TextField, Button,
   CircularProgress, Alert, Chip, Slider, Divider, Table,
   TableBody, TableCell, TableRow,
 } from '@mui/material';
-import { api } from '../services/api';
+import { api, type BetaResult, type GBMResult, type KellyResult, type MarketHistory, type MarketVolatility } from '../services/api';
 import GBMChart from '../components/charts/GBMChart';
 import VaRDistributionChart from '../components/charts/VaRDistributionChart';
 import CorrelationHeatmap from '../components/charts/CorrelationHeatmap';
@@ -48,7 +54,7 @@ function computeCorrelation(matrix: number[][]): number[][] {
 export default function TerminalPage() {
   // GBM state
   const [gbmLoading, setGbmLoading] = useState(false);
-  const [gbmResult, setGbmResult] = useState<any>(null);
+  const [gbmResult, setGbmResult] = useState<GBMResult | null>(null);
   const [gbmError, setGbmError] = useState('');
   const [gbmTicker, setGbmTicker] = useState('AAPL');
   const [gbmProvider, setGbmProvider] = useState('openbb');
@@ -60,7 +66,7 @@ export default function TerminalPage() {
 
   // CAPM state
   const [capmLoading, setCapmLoading] = useState(false);
-  const [capmResult, setCapmResult] = useState<any>(null);
+  const [capmResult, setCapmResult] = useState<CAPMResult | null>(null);
   const [capmError, setCapmError] = useState('');
   const [assetTicker, setAssetTicker] = useState('AAPL');
   const [capmProvider, setCapmProvider] = useState('openbb');
@@ -71,7 +77,7 @@ export default function TerminalPage() {
   const [winRate, setWinRate] = useState(0.55);
   const [payoutRatio, setPayoutRatio] = useState(2.0);
   const [kellyFraction, setKellyFraction] = useState(0.5);
-  const [kellyResult, setKellyResult] = useState<any>(null);
+  const [kellyResult, setKellyResult] = useState<KellyResult | null>(null);
 
   // Portfolio risk state
   const [riskLoading, setRiskLoading] = useState(false);
@@ -89,7 +95,7 @@ export default function TerminalPage() {
   const loadGbmFromMarket = async () => {
     setGbmLoading(true); setGbmError('');
     try {
-      const [hist, vol]: any[] = await Promise.all([
+      const [hist, vol]: [MarketHistory | null, MarketVolatility | null] = await Promise.all([
         api.history(gbmTicker, 252, gbmProvider),
         api.volatility(gbmTicker).catch(() => null),
       ]);
@@ -105,7 +111,7 @@ export default function TerminalPage() {
       setMu(parseFloat(annMu.toFixed(4)));
       const res = await api.capmGbm({ S0: s0, mu: annMu, sigma: annVol, T, n_steps: 252, n_paths: nPaths, seed: 42 });
       setGbmResult(res);
-    } catch (e: any) { setGbmError(e.message); }
+    } catch (e) { setGbmError(errMsg(e)); }
     finally { setGbmLoading(false); }
   };
 
@@ -114,7 +120,7 @@ export default function TerminalPage() {
     try {
       const res = await api.capmGbm({ S0, mu, sigma, T, n_steps: 252, n_paths: nPaths, seed: 42 });
       setGbmResult(res);
-    } catch (e: any) { setGbmError(e.message); }
+    } catch (e) { setGbmError(errMsg(e)); }
     finally { setGbmLoading(false); }
   };
 
@@ -123,7 +129,7 @@ export default function TerminalPage() {
   const runCAPM = async () => {
     setCapmLoading(true); setCapmError('');
     try {
-      const [assetHist, mktHist]: any[] = await Promise.all([
+      const [assetHist, mktHist]: [MarketHistory | null, MarketHistory | null] = await Promise.all([
         api.history(assetTicker, 252, capmProvider),
         api.history('SPY', 252, capmProvider),
       ]);
@@ -139,8 +145,8 @@ export default function TerminalPage() {
         risk_free_rate: rfRate,
         market_premium: mktPremium,
       });
-      setCapmResult({ ...(res as any), ticker: assetTicker });
-    } catch (e: any) { setCapmError(e.message); }
+      setCapmResult({ ...(res as CAPMResult), ticker: assetTicker });
+    } catch (e) { setCapmError(errMsg(e)); }
     finally { setCapmLoading(false); }
   };
 
@@ -150,7 +156,7 @@ export default function TerminalPage() {
     try {
       const res = await api.capmKelly({ win_rate: winRate, payout_ratio: payoutRatio, fraction: kellyFraction });
       setKellyResult(res);
-    } catch (e: any) { console.error(e); }
+    } catch (e) { console.error(e); }
   };
 
   // ── Portfolio risk handler ───────────────────────────────────────────────
@@ -159,8 +165,8 @@ export default function TerminalPage() {
     setRiskLoading(true); setRiskError('');
     try {
       const symbols = portfolioTickers.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
-      const histories: any[] = await Promise.all(symbols.map((s) => api.history(s, 252, riskProvider).catch(() => null)));
-      const validIdx = histories.map((h, i) => (h?.close?.length > 30 ? i : -1)).filter((i) => i >= 0);
+      const histories: (MarketHistory | null)[] = await Promise.all(symbols.map((s) => api.history(s, 252, riskProvider).catch(() => null)));
+      const validIdx = histories.map((h, i) => ((h?.close?.length ?? 0) > 30 ? i : -1)).filter((i) => i >= 0);
       if (validIdx.length < 2) throw new Error('Need at least 2 valid tickers');
 
       const validSymbols = validIdx.map((i) => symbols[i]);
@@ -182,7 +188,7 @@ export default function TerminalPage() {
       const sorted = [...firstRets].sort((a, b) => a - b);
       setVarThreshold(sorted[Math.floor(sorted.length * 0.05)]);
       setVarSource(histories[validIdx[0]]?.source || riskProvider);
-    } catch (e: any) { setRiskError(e.message); }
+    } catch (e) { setRiskError(errMsg(e)); }
     finally { setRiskLoading(false); }
   };
 
@@ -250,8 +256,8 @@ export default function TerminalPage() {
                       ['σ', `${(gbmResult.sigma * 100).toFixed(1)}%`],
                       ['T', `${gbmResult.T}y`],
                       ['Paths', gbmResult.n_paths],
-                      ['E[S(T)]', `$${gbmResult.terminal?.mean?.toFixed(2)}`],
-                      ['P(S>S₀)', `${(gbmResult.terminal?.prob_above_S0 * 100).toFixed(1)}%`],
+                      ['E[S(T)]', `$${gbmResult.terminal.mean.toFixed(2)}`],
+                      ['P(S>S₀)', `${((gbmResult.terminal.prob_above_S0 ?? 0) * 100).toFixed(1)}%`],
                     ].map(([k, v]) => (
                       <Chip key={String(k)} label={`${k}: ${v}`} size="small" variant="outlined"
                         sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
@@ -335,7 +341,7 @@ export default function TerminalPage() {
                     <Typography variant="h6" gutterBottom>CAPM Expected Return</Typography>
                     <Box sx={{ textAlign: 'center', py: 2 }}>
                       <Typography variant="h3" sx={{ fontWeight: 700, color: 'primary.main', fontFamily: 'monospace' }}>
-                        {(capmResult.capm?.expected_return_annual * 100).toFixed(2)}%
+                        {((capmResult.capm?.expected_return_annual ?? 0) * 100).toFixed(2)}%
                       </Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                         E[R] = rf + β × Market Premium
@@ -349,19 +355,19 @@ export default function TerminalPage() {
                       <Box sx={{ textAlign: 'center' }}>
                         <Typography variant="caption" color="text.secondary">Risk-free</Typography>
                         <Typography variant="body1" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
-                          {(capmResult.capm?.risk_free_rate * 100).toFixed(1)}%
+                          {((capmResult.capm?.risk_free_rate ?? 0) * 100).toFixed(1)}%
                         </Typography>
                       </Box>
                       <Box sx={{ textAlign: 'center' }}>
                         <Typography variant="caption" color="text.secondary">Mkt Premium</Typography>
                         <Typography variant="body1" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
-                          {(capmResult.capm?.market_premium * 100).toFixed(1)}%
+                          {((capmResult.capm?.market_premium ?? 0) * 100).toFixed(1)}%
                         </Typography>
                       </Box>
                       <Box sx={{ textAlign: 'center' }}>
                         <Typography variant="caption" color="text.secondary">Beta × Premium</Typography>
                         <Typography variant="body1" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
-                          {((capmResult.beta * capmResult.capm?.market_premium) * 100).toFixed(2)}%
+                          {((capmResult.beta * (capmResult.capm?.market_premium ?? 0)) * 100).toFixed(2)}%
                         </Typography>
                       </Box>
                     </Box>
@@ -419,14 +425,14 @@ export default function TerminalPage() {
                       label={`Full Kelly: ${(kellyResult.kelly_full * 100).toFixed(1)}%`}
                       color={kellyResult.kelly_full > 0 ? 'primary' : 'error'} sx={{ fontSize: '1rem', px: 1, py: 2.5 }} />
                     <Chip
-                      label={`Fractional Kelly: ${kellyResult.recommended_position_pct?.toFixed(1)}%`}
+                      label={`Fractional Kelly: ${(kellyResult.kelly_fraction * 100).toFixed(1)}%`}
                       color={kellyResult.kelly_fraction > 0 ? 'success' : 'error'} sx={{ fontSize: '1rem', px: 1, py: 2.5 }} />
                     <Chip
                       label={`Edge: ${(kellyResult.edge * 100).toFixed(2)}%`}
                       variant="outlined" sx={{ fontSize: '1rem', px: 1, py: 2.5 }} />
                   </Box>
                   <Alert severity={kellyResult.edge > 0 ? 'success' : 'error'} sx={{ mb: 2 }}>
-                    <strong>{kellyResult.interpretation}</strong>
+                    <strong>{kellyResult.edge > 0 ? 'Positive edge — sized bet justified.' : 'No edge — do not bet.'}</strong>
                   </Alert>
                   <Table size="small">
                     <TableBody>
@@ -437,7 +443,7 @@ export default function TerminalPage() {
                         ['Payout ratio b', `${kellyResult.payout_ratio}×`],
                         ['Expected value (edge)', `${(kellyResult.edge * 100).toFixed(2)}% per bet`],
                         ['Full Kelly f*', `${(kellyResult.kelly_full * 100).toFixed(2)}% of capital`],
-                        ['Fractional Kelly', `${kellyResult.recommended_position_pct?.toFixed(2)}% of capital`],
+                        ['Fractional Kelly', `${(kellyResult.kelly_fraction * 100).toFixed(2)}% of capital`],
                       ].map(([k, v]) => (
                         <TableRow key={String(k)}>
                           <TableCell sx={{ color: 'text.secondary', fontWeight: 600, width: 200 }}>{k}</TableCell>

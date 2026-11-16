@@ -31,11 +31,29 @@ def test_no_trust_uses_peer_ip(monkeypatch):
     assert rate_limit_key(req) == "ip:192.168.1.50"
 
 
-def test_trusted_proxy_keys_on_first_xff(monkeypatch):
+def test_trusted_proxy_ignores_spoofed_leftmost_xff(monkeypatch):
     monkeypatch.setenv("ATOM_TRUST_X_FORWARDED_FOR", "1")
-    req = _make_request({"X-Forwarded-For": "203.0.113.42, 192.168.1.50"}, client=("192.168.1.50", 5000))
-    # leftmost is the real client as appended by nginx
+    monkeypatch.delenv("ATOM_TRUST_PROXY_HOPS", raising=False)
+    # nginx APPENDS the real client to whatever XFF the client already sent
+    # ($proxy_add_x_forwarded_for), so "6.6.6.6" here is attacker-supplied junk.
+    # With 1 trusted hop the key must be the RIGHTMOST entry — the one nginx added.
+    req = _make_request({"X-Forwarded-For": "6.6.6.6, 203.0.113.42"}, client=("192.168.1.50", 5000))
     assert rate_limit_key(req) == "ip:203.0.113.42"
+
+
+def test_trusted_proxy_two_hops_caddy_edge(monkeypatch):
+    monkeypatch.setenv("ATOM_TRUST_X_FORWARDED_FOR", "1")
+    monkeypatch.setenv("ATOM_TRUST_PROXY_HOPS", "2")
+    # Caddy edge → nginx → backend: XFF is "<client junk>, <real client>, <caddy>".
+    req = _make_request({"X-Forwarded-For": "6.6.6.6, 203.0.113.42, 10.0.0.2"}, client=("10.0.0.2", 5000))
+    assert rate_limit_key(req) == "ip:203.0.113.42"
+
+
+def test_trusted_proxy_falls_back_when_xff_shorter_than_hops(monkeypatch):
+    monkeypatch.setenv("ATOM_TRUST_X_FORWARDED_FOR", "1")
+    monkeypatch.setenv("ATOM_TRUST_PROXY_HOPS", "2")
+    req = _make_request({"X-Forwarded-For": "203.0.113.42"}, client=("192.168.1.50", 5000))
+    assert rate_limit_key(req) == "ip:192.168.1.50"
 
 
 def test_trusted_proxy_falls_back_when_no_xff(monkeypatch):

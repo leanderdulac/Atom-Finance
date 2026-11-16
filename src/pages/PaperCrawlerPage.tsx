@@ -171,8 +171,8 @@ export default function PaperCrawlerPage() {
         "Implemente melhorias profissionais e vetorizadas em cima deste código B3 Quant. Retorne apenas código Python puro."
       );
       setCode(result.refined_code);
-    } catch (e: any) {
-      alert("Falha na formatação via IA: " + e.message);
+    } catch (e) {
+      alert("Falha na formatação via IA: " + (e instanceof Error ? e.message : e));
     }
     setLoading(false);
   };

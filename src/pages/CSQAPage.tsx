@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 
 // ═══════════════════════════════════════════════════════════════
 //  MATH ENGINE — todos os 12 conceitos
@@ -39,7 +39,6 @@ function blackScholes(S: number, K: number, T: number, r: number, sigma: number,
 }
 function bsGreeks(S: number, K: number, T: number, r: number, sigma: number) {
   const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
-  const d2 = d1 - sigma * Math.sqrt(T);
   const phi = Math.exp(-0.5 * d1 ** 2) / Math.sqrt(2 * Math.PI);
   return {
     delta: normCDF(d1),
@@ -104,13 +103,16 @@ function chernSimonsSignal(prices: number[], fastPeriod = 8, slowPeriod = 21) {
 }
 
 // ── 9. Backtest via GBM + CSQA ────────────────────────────────
-function runBacktest(params: any) {
+interface CSQAParams { S0: number; mu: number; sigma: number; rf: number; beta: number; rm: number; K: number; T_opt: number; capital: number }
+interface SignalEntry { i: number; price: number; signal: number; kappa: number }
+
+function runBacktest(params: CSQAParams) {
   const { S0, mu, sigma, rf, beta, rm, K, T_opt, capital } = params;
   const prices = simulateGBM(S0, mu, sigma, 1, 1 / 252, Date.now() % 10000);
   
   let equity = capital, positions = 0, trades = 0, wins = 0;
   const equity_curve = [capital];
-  const signals_log: any[] = [];
+  const signals_log: SignalEntry[] = [];
   const window = 30;
   
   for (let i = window; i < prices.length - 1; i++) {
@@ -122,7 +124,8 @@ function runBacktest(params: any) {
     const position_size = Math.max(0, Math.min(k.half, 1.0));
     
     if (cs.signal !== positions) {
-      const pnl = positions * (prices[i + 1] - prices[i]) * (equity / prices[i]) * 0.3;
+      // Size by the half-Kelly fraction computed above (was a hardcoded 0.3).
+      const pnl = positions * (prices[i + 1] - prices[i]) * (equity / prices[i]) * position_size;
       equity += pnl;
       if (pnl > 0) wins++;
       trades++;
@@ -159,7 +162,7 @@ function calcMaxDD(curve: number[]) {
 }
 
 // ══ MINI CHART (SVG) ══════════════════════════════════════════
-function MiniChart({ data, color = "#00ff88", height = 80, showFill = true }: any) {
+function MiniChart({ data, color = "#00ff88", height = 80, showFill = true }: { data: number[]; color?: string; height?: number; showFill?: boolean }) {
   if (!data || data.length < 2) return null;
   const min = Math.min(...data), max = Math.max(...data);
   const range = max - min || 1;
@@ -176,7 +179,7 @@ function MiniChart({ data, color = "#00ff88", height = 80, showFill = true }: an
 }
 
 // ══ COMPONENTS ════════════════════════════════════════════════
-function Pill({ label, value, color = "#00ff88", sub }: any) {
+function Pill({ label, value, color = "#00ff88", sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
     <div style={{ background: "#0a1628", border: `1px solid ${color}28`, borderRadius: 8, padding: "12px 16px" }}>
       <div style={{ color: "#3a5a7c", fontSize: 10, letterSpacing: 2, marginBottom: 5 }}>{label}</div>
@@ -186,7 +189,7 @@ function Pill({ label, value, color = "#00ff88", sub }: any) {
   );
 }
 
-function Section({ title, tag, children, color = "#3a5a7c" }: any) {
+function Section({ title, tag, children, color = "#3a5a7c" }: { title: string; tag?: string; children: ReactNode; color?: string }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
@@ -199,7 +202,7 @@ function Section({ title, tag, children, color = "#3a5a7c" }: any) {
   );
 }
 
-function Slider({ label, min, max, step, value, onChange, fmt }: any) {
+function Slider({ label, min, max, step, value, onChange, fmt }: { label: string; min: number; max: number; step: number; value: number; onChange: (v: number) => void; fmt: (v: number) => string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
       <span style={{ color: "#5a7a9c", fontSize: 12, minWidth: 100 }}>{label}</span>
@@ -213,7 +216,7 @@ function Slider({ label, min, max, step, value, onChange, fmt }: any) {
 // ══ MAIN ══════════════════════════════════════════════════════
 export default function CSQAPage() {
   const [params, setParams] = useState({ S0: 100, mu: 0.15, sigma: 0.22, rf: 0.05, beta: 1.2, rm: 0.12, K: 105, T_opt: 0.25, capital: 1000000 });
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<ReturnType<typeof runBacktest> | null>(null);
   const [running, setRunning] = useState(false);
   const [tab, setTab] = useState("overview");
   const [calcError, setCalcError] = useState("");
@@ -222,9 +225,7 @@ export default function CSQAPage() {
   const pct = (v: number) => (v * 100).toFixed(1) + "%";
   const money = (v: number) => "$" + (v / 1000).toFixed(0) + "k";
 
-  useEffect(() => { run(); }, [params]); // Run dynamically if desired, or manually on button
-
-  function run() {
+  const run = useCallback(() => {
     setRunning(true);
     setCalcError("");
     setTimeout(() => {
@@ -238,7 +239,9 @@ export default function CSQAPage() {
         setRunning(false);
       }
     }, 100);
-  }
+  }, [params]);
+
+  useEffect(() => { run(); }, [run]); // Run dynamically if desired, or manually on button
 
   const sr_color = result ? (result.sharpe > 3 ? "#00ff88" : result.sharpe > 1.5 ? "#ffd700" : "#ff6b6b") : "#3a5a7c";
   const ret_color = result ? (result.totalReturn > 0 ? "#00ff88" : "#ff6b6b") : "#3a5a7c";
@@ -328,7 +331,7 @@ export default function CSQAPage() {
                 <Section title="CURVA DE EQUITY — GBM + CHERN-SIMONS" tag="252d">
                   <MiniChart data={result.equity_curve} color={result.totalReturn >= 0 ? "#00ff88" : "#ff6b6b"} height={100} />
                   <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                    {result.signals_log.slice(-12).map((s: any, i: number) => (
+                    {result.signals_log.slice(-12).map((s: SignalEntry, i: number) => (
                       <span key={i} style={{ background: s.signal > 0 ? "#00ff8811" : "#ff6b6b11", border: `1px solid ${s.signal > 0 ? "#00ff8833" : "#ff6b6b33"}`, color: s.signal > 0 ? "#00ff88" : "#ff6b6b", borderRadius: 3, padding: "1px 6px", fontSize: 10, fontFamily: "monospace" }}>
                         {s.signal > 0 ? "▲" : "▼"} ${s.price.toFixed(0)}
                       </span>

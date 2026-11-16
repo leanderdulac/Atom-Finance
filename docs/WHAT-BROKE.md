@@ -35,7 +35,7 @@ should read this before the feature list. Nothing below is live-trading eligible
 
 | Paper / tool | Implemented | What broke |
 |---|---|---|
-| Heston 1993 | CF Europeans, Euler MC, **smile calibration** | 5 params on one expiry are unidentified; price RMSE not vega-weighted |
+| Heston 1993 | CF Europeans, Euler MC, **multiexpiry calibration** (vega weights, seeded restarts, per-expiry RMSE, calendar diagnostics, chain→quotes adapter) | Single-expiry fits still unidentified; calendar arb is diagnosed, not constrained; mid/last only, no bid/ask |
 | Engle–Granger 1987 | OLS hedge, ADF residual, lagged pairs backtest | Full-sample β leaks; ADF low power |
 | Johansen 1991 | Trace test, rank, first β̂ | Asymptotic 5% table; lag p is not AIC-selected |
 | Avellaneda–Stoikov 2008 | Reservation price, optimal spread, Poisson inventory | Constant σ; unidentified A,k; no queue |

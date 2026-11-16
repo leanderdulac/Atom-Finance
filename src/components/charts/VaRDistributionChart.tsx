@@ -40,7 +40,7 @@ export default function VaRDistributionChart({ returns, varThreshold, confidence
           <Tooltip
             contentStyle={{ background: '#1e1e2e', border: '1px solid #374151', borderRadius: 8 }}
             labelStyle={{ color: '#9ca3af' }}
-            formatter={(v: any) => [v, 'Observations']}
+            formatter={(v: unknown) => [v as number, 'Observations']}
             labelFormatter={(l) => `Return ≈ ${l}%`}
           />
           <ReferenceLine x={(varThreshold * 100).toFixed(2)} stroke="#ef4444" strokeWidth={2}

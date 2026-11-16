@@ -13,7 +13,7 @@ function simulateIntradayCurve(length = 78) { // 78 barras de 5m (6,5 horas)
 }
 
 // ══ MINI CHART (SVG) ══════════════════════════════════════════
-function MiniChart({ data, color = "#00ff88", height = 80, showFill = true }: any) {
+function MiniChart({ data, color = "#00ff88", height = 80, showFill = true }: { data: number[]; color?: string; height?: number; showFill?: boolean }) {
   if (!data || data.length < 2) return null;
   const min = Math.min(...data), max = Math.max(...data);
   const range = max - min || 1;
@@ -29,7 +29,7 @@ function MiniChart({ data, color = "#00ff88", height = 80, showFill = true }: an
   );
 }
 
-function Pill({ label, value, color = "#00ff88", sub }: any) {
+function Pill({ label, value, color = "#00ff88", sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
     <div style={{ background: "#0a1628", border: `1px solid ${color}28`, borderRadius: 8, padding: "12px 16px" }}>
       <div style={{ color: "#3a5a7c", fontSize: 10, letterSpacing: 2, marginBottom: 5 }}>{label}</div>
@@ -179,8 +179,8 @@ export default function SPYIntradayPage() {
         "Implemente melhorias profissionais focadas em slippage e transaction costs. Retorne apenas o script Python puro."
       );
       setCode(result.refined_code);
-    } catch (e: any) {
-      alert("Falha na automação IA: " + e.message);
+    } catch (e) {
+      alert("Falha na automação IA: " + (e instanceof Error ? e.message : e));
     }
     setLoading(false);
   };

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Stack, Table, TableBody,
+  Alert, Box, Button, Chip, Stack, Table, TableBody,
   TableCell, TableHead, TableRow, Typography,
 } from '@mui/material';
 import {
@@ -52,7 +52,7 @@ export default function TargetChoicePage() {
 
   const run = useCallback(async () => {
     setLoading(true); setError('');
-    try { setResult(await api.deskTargetChoice({})); }
+    try { setResult(await api.deskTargetChoice<Result>({})); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, []);

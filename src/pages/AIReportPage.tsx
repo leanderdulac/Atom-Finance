@@ -47,7 +47,9 @@ function BullScoreGauge({ score }: { score: number }) {
 
 // ── Kelly Sizing card ──────────────────────────────────────────────────────
 
-function KellySizingCard({ kelly }: { kelly: any }) {
+interface KellySizing { kelly_frac: number; alocacao_dolares?: number; tipo: string; explicacao: string; erro?: string }
+
+function KellySizingCard({ kelly }: { kelly: KellySizing }) {
   if (!kelly || kelly.erro) return null;
   
   return (
@@ -125,7 +127,7 @@ function PriceChart({ closes, forecast, currency }: {
           tickFormatter={(v) => `${currency === 'BRL' ? 'R$' : '$'}${v.toFixed(0)}`} />
         <Tooltip
           contentStyle={{ background: '#1e1e2e', border: '1px solid #374151', borderRadius: 8 }}
-          formatter={(v: any, name: any) => [`${currency === 'BRL' ? 'R$' : '$'}${Number(v).toFixed(2)}`, name === 'price' ? 'Preço' : 'Previsão']}
+          formatter={(v: unknown, name: unknown) => [`${currency === 'BRL' ? 'R$' : '$'}${Number(v).toFixed(2)}`, name === 'price' ? 'Preço' : 'Previsão']}
           labelFormatter={(l) => `Dia ${l}`}
         />
         <ReferenceLine x={splitDay} stroke="#6b7280" strokeDasharray="4 4"
@@ -139,7 +141,14 @@ function PriceChart({ closes, forecast, currency }: {
 
 // ── Recommendation banner ──────────────────────────────────────────────────
 
-function RecommendationBanner({ rec }: { rec: any }) {
+interface AIRecommendation {
+  color?: string; action?: string; suggested_strike?: number | string;
+  holding?: { days?: number; label?: string; reason?: string };
+  confidence?: number | string; bull_score?: number;
+  kelly?: KellySizing | null;
+}
+
+function RecommendationBanner({ rec }: { rec: AIRecommendation }) {
   const bgColor = rec.color === 'success' ? '#064e3b' : rec.color === 'error' ? '#450a0a' : '#422006';
   const textColor = rec.color === 'success' ? '#34d399' : rec.color === 'error' ? '#f87171' : '#fbbf24';
   const Icon = rec.color === 'success' ? TrendingUp : rec.color === 'error' ? TrendingDown : SwapVert;
@@ -162,34 +171,6 @@ function RecommendationBanner({ rec }: { rec: any }) {
         <Chip label={`Confiança: ${rec.confidence}`} size="small"
           sx={{ bgcolor: 'rgba(255,255,255,0.1)', color: textColor, fontWeight: 700 }} />
       </Box>
-    </Box>
-  );
-}
-
-// ── Loading steps ──────────────────────────────────────────────────────────
-
-const STEPS = [
-  { icon: <ShowChart />, label: 'Buscando dados de mercado...' },
-  { icon: <AutoGraph />, label: 'Executando Black-Scholes e CAPM...' },
-  { icon: <Psychology />, label: 'Rodando baseline de suavização exponencial...' },
-  { icon: <Security />, label: 'Calculando VaR e Black Swan...' },
-  { icon: <AutoGraph />, label: 'Gerando relatório com IA...' },
-];
-
-function LoadingSteps({ step }: { step: number }) {
-  return (
-    <Box sx={{ py: 4 }}>
-      {STEPS.map((s, i) => (
-        <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2,
-          opacity: i < step ? 0.4 : i === step ? 1 : 0.2 }}>
-          <Box sx={{ color: i < step ? '#10b981' : i === step ? 'primary.main' : 'text.disabled' }}>
-            {i < step ? '✓' : i === step ? <CircularProgress size={16} /> : s.icon}
-          </Box>
-          <Typography variant="body2" color={i === step ? 'text.primary' : 'text.secondary'}>
-            {s.label}
-          </Typography>
-        </Box>
-      ))}
     </Box>
   );
 }
@@ -225,7 +206,9 @@ function RateLimitCoolDown() {
 
 // ── Agent cards ────────────────────────────────────────────────────────────
 
-function AgentCards({ agents }: { agents: any[] }) {
+interface AgentSignal { agent: string; persona: string; signal: string; confidence: number; reasoning: string }
+
+function AgentCards({ agents }: { agents: AgentSignal[] }) {
   const signalColor = (signal: string) => {
     if (signal === 'COMPRAR CALL') return '#22c55e';
     if (signal === 'COMPRAR PUT') return '#ef4444';
@@ -266,7 +249,19 @@ function AgentCards({ agents }: { agents: any[] }) {
 
 // ── Intelligence Hub ────────────────────────────────────────────────────────
 
-function IntelligenceHub({ analysis }: { analysis: any }) {
+interface HubAnalysis {
+  fundamental_claude?: string; quant_strategy_gpt?: string;
+  news_monitoring_gemini?: string | { ai_analysis: string };
+  pulse_grok?: string; search_perplexity?: string;
+  bridgewise_b3?: {
+    paragraphs?: { title?: string; text?: string }[];
+    overall_grade?: number; recommendation?: string; peer_rank?: string | number;
+    fundamental_score?: number; technical_score?: number; stability_score?: number;
+    is_real_data?: boolean; bridgewise_narrative?: string;
+  } | null;
+}
+
+function IntelligenceHub({ analysis }: { analysis: HubAnalysis }) {
   const [tab, setTab] = useState(0);
 
   if (!analysis) return null;
@@ -311,9 +306,9 @@ function IntelligenceHub({ analysis }: { analysis: any }) {
               <Box>
                 <Typography variant="subtitle2" color="success.main" gutterBottom>GEMINI 1.5 PRO • RADAR DE NOTÍCIAS</Typography>
                 <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: 'text.secondary', lineHeight: 1.8 }}>
-                  {typeof analysis.news_monitoring_gemini === 'string' 
-                    ? analysis.news_monitoring_gemini 
-                    : analysis.news_monitoring_gemini.ai_analysis}
+                  {typeof analysis.news_monitoring_gemini === 'string'
+                    ? analysis.news_monitoring_gemini
+                    : analysis.news_monitoring_gemini?.ai_analysis ?? '—'}
                 </Typography>
               </Box>
             </Fade>
@@ -353,7 +348,7 @@ function IntelligenceHub({ analysis }: { analysis: any }) {
                   <Box sx={{ position: 'relative', display: 'inline-flex' }}>
                     <CircularProgress 
                       variant="determinate" 
-                      value={analysis.bridgewise_b3.overall_grade * 10} 
+                      value={(analysis.bridgewise_b3.overall_grade ?? 0) * 10} 
                       size={80} thickness={6} sx={{ color: '#6366f1' }} 
                     />
                     <Box sx={{ top: 0, left: 0, bottom: 0, right: 0, position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -377,7 +372,7 @@ function IntelligenceHub({ analysis }: { analysis: any }) {
                 
                 {analysis.bridgewise_b3.paragraphs && analysis.bridgewise_b3.paragraphs.length > 0 ? (
                   <Box sx={{ maxHeight: 300, overflowY: 'auto', pr: 1 }}>
-                    {analysis.bridgewise_b3.paragraphs.map((p: any, idx: number) => (
+                    {analysis.bridgewise_b3.paragraphs.map((p: { title?: string; text?: string }, idx: number) => (
                       <Box key={idx} sx={{ mb: 2 }}>
                         <Typography variant="subtitle2" sx={{ color: 'primary.light', mb: 0.5 }}>{p.title}</Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
@@ -425,7 +420,20 @@ const POPULAR_US = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'SP
 export default function AIReportPage() {
   const [ticker, setTicker] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  interface AIAnalysisResult {
+  ticker?: string; price?: number; iv_used?: number; exchange?: string; generated_at?: string;
+  market_data?: { name?: string; currency?: string; price?: number; change_pct?: number };
+  kelly?: KellySizing | null;
+  recommendation?: AIRecommendation | null;
+  model_scores?: Record<string, number>;
+  price_history?: { closes?: number[]; ml_forecast?: number[] };
+  specialized_analysis?: HubAnalysis;
+  narrative?: string;
+  agent_analysis?: { consensus: string; consensus_pct: number; call_count: number; put_count: number; neutral_count: number; signals?: AgentSignal[] } | null;
+  [key: string]: unknown;
+}
+
+  const [result, setResult] = useState<AIAnalysisResult | null>(null);
   const [error, setError] = useState('');
   const [rateLimited, setRateLimited] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ step: number; total: number; message: string } | null>(null);
@@ -556,12 +564,12 @@ export default function AIReportPage() {
                 sx={{ fontFamily: 'monospace', fontWeight: 700 }}
               />
               <Chip
-                label={`${result.market_data?.change_pct >= 0 ? '+' : ''}${result.market_data?.change_pct}%`}
-                color={result.market_data?.change_pct >= 0 ? 'success' : 'error'}
+                label={`${(result.market_data?.change_pct ?? 0) >= 0 ? '+' : ''}${result.market_data?.change_pct ?? '—'}%`}
+                color={(result.market_data?.change_pct ?? 0) >= 0 ? 'success' : 'error'}
                 size="small"
               />
               <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-                Gerado em {result.generated_at}
+                Gerado em {result.generated_at ?? '—'}
               </Typography>
             </Box>
 
@@ -573,7 +581,7 @@ export default function AIReportPage() {
                   {/* Bull Score */}
                   <Card>
                     <CardContent>
-                      <BullScoreGauge score={result.recommendation?.bull_score} />
+                      <BullScoreGauge score={result.recommendation?.bull_score ?? 0} />
                     </CardContent>
                   </Card>
 
@@ -583,7 +591,7 @@ export default function AIReportPage() {
                       <Typography variant="subtitle2" gutterBottom color="text.secondary">
                         RECOMENDAÇÃO
                       </Typography>
-                      <RecommendationBanner rec={result.recommendation} />
+                      {result.recommendation && <RecommendationBanner rec={result.recommendation} />}
                       <Box sx={{ mt: 2 }}>
                         <Typography variant="caption" color="text.secondary">
                           {result.recommendation?.holding?.label} · {result.recommendation?.holding?.days}
@@ -593,7 +601,7 @@ export default function AIReportPage() {
                         </Typography>
                       </Box>
                       
-                      <KellySizingCard kelly={result.recommendation?.kelly} />
+                      {result.recommendation?.kelly && <KellySizingCard kelly={result.recommendation.kelly} />}
                     </CardContent>
                   </Card>
 
@@ -604,24 +612,24 @@ export default function AIReportPage() {
                       <Grid container spacing={1}>
                         <Grid size={6}>
                           <MetricCard icon={<Psychology fontSize="small" />} label="ML (30d)"
-                            value={`${result.model_scores?.ml_return_pct > 0 ? '+' : ''}${result.model_scores?.ml_return_pct}%`}
-                            color={result.model_scores?.ml_return_pct > 0 ? '#10b981' : '#ef4444'} />
+                            value={`${(result.model_scores?.ml_return_pct ?? 0) > 0 ? '+' : ''}${(result.model_scores?.ml_return_pct ?? 0)}%`}
+                            color={(result.model_scores?.ml_return_pct ?? 0) > 0 ? '#10b981' : '#ef4444'} />
                         </Grid>
                         <Grid size={6}>
                           <MetricCard icon={<AutoGraph fontSize="small" />} label="Beta"
                             value={String(result.model_scores?.beta)}
-                            sub={result.model_scores?.beta > 1 ? 'agressivo' : 'defensivo'} />
+                            sub={(result.model_scores?.beta ?? 0) > 1 ? 'agressivo' : 'defensivo'} />
                         </Grid>
                         <Grid size={6}>
                           <MetricCard icon={<Security fontSize="small" />} label="VaR 95%"
                             value={`${result.model_scores?.var_pct?.toFixed(2)}%`}
-                            color={result.model_scores?.var_pct > 3 ? '#ef4444' : '#9ca3af'} />
+                            color={(result.model_scores?.var_pct ?? 0) > 3 ? '#ef4444' : '#9ca3af'} />
                         </Grid>
                         <Grid size={6}>
                           <MetricCard icon={<ShowChart fontSize="small" />} label="Black Swan"
                             value={`${result.model_scores?.black_swan_score}/100`}
-                            color={result.model_scores?.black_swan_score > 60 ? '#ef4444' :
-                                   result.model_scores?.black_swan_score > 40 ? '#f59e0b' : '#10b981'} />
+                            color={(result.model_scores?.black_swan_score ?? 0) > 60 ? '#ef4444' :
+                                   (result.model_scores?.black_swan_score ?? 0) > 40 ? '#f59e0b' : '#10b981'} />
                         </Grid>
                       </Grid>
                     </CardContent>
@@ -686,8 +694,8 @@ export default function AIReportPage() {
                           <Box sx={{ textAlign: 'center', p: 1, border: 1, borderColor: 'divider', borderRadius: 2 }}>
                             <Typography variant="caption" color="text.secondary">Alpha/ano</Typography>
                             <Typography variant="h6" sx={{ fontFamily: 'monospace',
-                              color: result.model_scores?.alpha_annual_pct > 0 ? '#10b981' : '#ef4444' }}>
-                              {result.model_scores?.alpha_annual_pct > 0 ? '+' : ''}{result.model_scores?.alpha_annual_pct?.toFixed(1)}%
+                              color: (result.model_scores?.alpha_annual_pct ?? 0) > 0 ? '#10b981' : '#ef4444' }}>
+                              {(result.model_scores?.alpha_annual_pct ?? 0) > 0 ? '+' : ''}{result.model_scores?.alpha_annual_pct?.toFixed(1)}%
                             </Typography>
                           </Box>
                         </Grid>
@@ -704,7 +712,7 @@ export default function AIReportPage() {
                   </Card>
 
                   {/* Intelligence Hub — New Specialized Multi-Model Section */}
-                  <IntelligenceHub analysis={result.specialized_analysis} />
+                  {result.specialized_analysis && <IntelligenceHub analysis={result.specialized_analysis} />}
 
                   {/* Agent consensus banner */}
                   {result.agent_analysis && (
@@ -780,9 +788,9 @@ export default function AIReportPage() {
                       <Table size="small">
                         <TableBody>
                           {[
-                            ['Previsão ML 30d', `${result.model_scores?.ml_return_pct > 0 ? '+' : ''}${result.model_scores?.ml_return_pct}%`],
+                            ['Previsão ML 30d', `${(result.model_scores?.ml_return_pct ?? 0) > 0 ? '+' : ''}${(result.model_scores?.ml_return_pct ?? 0)}%`],
                             ['Beta (vs mercado)', result.model_scores?.beta],
-                            ['Alpha anual (CAPM)', `${result.model_scores?.alpha_annual_pct > 0 ? '+' : ''}${result.model_scores?.alpha_annual_pct?.toFixed(2)}%`],
+                            ['Alpha anual (CAPM)', `${(result.model_scores?.alpha_annual_pct ?? 0) > 0 ? '+' : ''}${result.model_scores?.alpha_annual_pct?.toFixed(2)}%`],
                             ['VaR 95% (1 dia)', `${result.model_scores?.var_pct?.toFixed(4)}%`],
                             ['Score Black Swan', `${result.model_scores?.black_swan_score}/100`],
                             ['Volatilidade Implícita', `${result.model_scores?.iv_pct?.toFixed(1)}%`],

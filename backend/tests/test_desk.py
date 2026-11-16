@@ -2,6 +2,7 @@
 import math
 
 import numpy as np
+import pytest
 
 from app.core.security import is_insecure_secret
 from app.models.cointegration import engle_granger, johansen, pairs_backtest
@@ -193,4 +194,134 @@ class TestDeskPapers:
         )
         assert fitted["rmse_price"] < 0.15
         assert fitted["rho"] < 0
+
+    def test_heston_multiexpiry_vega_recovers_parameters(self):
+        true = dict(S0=100, v0=0.04, r=0.05, kappa=1.5, theta=0.04, xi=0.5, rho=-0.6)
+        quotes = []
+        for T in (0.25, 0.5, 1.0):
+            for K in (90, 95, 100, 105, 110):
+                px = HestonModel.price_cf_raw(K=K, T=T, option_type="call", **true)
+                quotes.append({"K": K, "T": T, "price": px, "option_type": "call"})
+        fitted = HestonModel.calibrate(
+            100, 0.05, quotes,
+            weighting="vega",
+            n_restarts=3,
+            seed=7,
+            max_nfev=60,
+        )
+        assert fitted["rmse_price"] < 0.05
+        assert abs(fitted["rho"] - (-0.6)) < 0.15
+        assert abs(fitted["theta"] - 0.04) < 0.02
+        assert fitted["weighting"] == "vega"
+        assert fitted["best_restart"] in (0, 1, 2)
+        assert len(fitted["restarts"]) == 3
+        assert set(fitted["rmse_by_expiry"]) == {"0.25", "0.5", "1.0"}
+        assert all(v < 0.05 for v in fitted["rmse_by_expiry"].values())
+        assert fitted["model_calendar_violations"] == []
+        # Vega weights must vary with moneyness: ATM > wings.
+        atm_w = [r["weight"] for r in fitted["smile"] if r["K"] == 100 and r["T"] == 0.5][0]
+        wing_w = [r["weight"] for r in fitted["smile"] if r["K"] == 90 and r["T"] == 0.5][0]
+        assert atm_w > wing_w > 0
+
+    def test_heston_vega_weight_falls_back_when_iv_fails(self):
+        quotes = [
+            {"K": 100, "T": 0.5, "price": 5.0, "option_type": "call"},
+            {"K": 105, "T": 0.5, "price": 3.0, "option_type": "call"},
+            {"K": 110, "T": 0.5, "price": 1.5, "option_type": "call"},
+            # Zero premium has no finite IV: weight must fall back, not NaN.
+            {"K": 150, "T": 0.5, "price": 0.0, "option_type": "call"},
+        ]
+        fitted = HestonModel.calibrate(100, 0.05, quotes, weighting="vega", max_nfev=10)
+        assert fitted["vega_fallback_n"] == 1
+        assert all(np.isfinite(r["weight"]) and r["weight"] > 0 for r in fitted["smile"])
+
+    def test_heston_market_calendar_violation_is_flagged(self):
+        # Total variance must not decrease in T: iv 0.50 @ 3m then 0.10 @ 1y is arbitrable.
+        quotes = []
+        for T, iv in ((0.25, 0.50), (1.0, 0.10)):
+            for K in (95, 100, 105):
+                px = BlackScholes.price(100, K, T, 0.05, iv, "call")
+                quotes.append({"K": K, "T": T, "price": px, "option_type": "call"})
+        fitted = HestonModel.calibrate(100, 0.05, quotes, max_nfev=10)
+        viols = fitted["market_calendar_violations"]
+        assert len(viols) == 1
+        assert viols[0]["T_prev"] == 0.25 and viols[0]["T"] == 1.0
+        assert viols[0]["w"] < viols[0]["w_prev"]
+
+    def test_heston_rejects_bad_weighting_and_restarts(self):
+        quotes = [{"K": K, "T": 0.5, "price": 5.0, "option_type": "call"} for K in (90, 95, 100, 105)]
+        with pytest.raises(ValueError, match="weighting"):
+            HestonModel.calibrate(100, 0.05, quotes, weighting="gamma")
+        with pytest.raises(ValueError, match="n_restarts"):
+            HestonModel.calibrate(100, 0.05, quotes, n_restarts=0)
+
+    def test_quotes_from_yfinance_chain_prefers_mid(self):
+        chains = [
+            {
+                "expiry": "2026-06-19",
+                "calls": [
+                    {"strike": 95, "lastPrice": 7.0, "bid": 6.8, "ask": 7.2,
+                     "volume": 120, "openInterest": 500, "impliedVolatility": 0.3},
+                    {"strike": 100, "lastPrice": 4.0, "bid": 0.0, "ask": 0.0,
+                     "volume": 200, "openInterest": 800, "impliedVolatility": 0.28},
+                    # Outside the 0.7–1.3 moneyness window: dropped.
+                    {"strike": 150, "lastPrice": 0.1, "bid": 0.05, "ask": 0.15,
+                     "volume": 5, "openInterest": 10, "impliedVolatility": 0.6},
+                ],
+                "puts": [
+                    {"strike": 100, "lastPrice": 5.0, "bid": 4.9, "ask": 5.1,
+                     "volume": 150, "openInterest": 600, "impliedVolatility": 0.29},
+                ],
+            },
+            {
+                "expiry": "2026-12-18",
+                "calls": [
+                    {"strike": 100, "lastPrice": 8.0, "bid": 7.8, "ask": 8.2,
+                     "volume": 90, "openInterest": 300, "impliedVolatility": 0.27},
+                ],
+                "puts": [],
+            },
+        ]
+        quotes = HestonModel.quotes_from_option_chain(chains, S0=100.0, as_of="2026-01-02")
+        by_key = {(q["K"], q["option_type"]): q for q in quotes if q["T"] < 0.6}
+        # Mid of 6.8/7.2 wins over lastPrice 7.0.
+        assert by_key[(95.0, "call")]["price"] == 7.0
+        # No bid/ask: falls back to lastPrice.
+        assert by_key[(100.0, "call")]["price"] == 4.0
+        assert by_key[(100.0, "put")]["price"] == 5.0
+        assert all(q["K"] != 150 for q in quotes)
+        assert {q["T"] for q in quotes} == {
+            (np.datetime64("2026-06-19") - np.datetime64("2026-01-02")).astype(int) / 365.0,
+            (np.datetime64("2026-12-18") - np.datetime64("2026-01-02")).astype(int) / 365.0,
+        }
+
+    def test_quotes_from_endpoint_chain_shape(self):
+        chain = {"chain": [
+            {"expiration": "2026-06-19", "strike": 100,
+             "call_price": 4.0, "call_iv": 0.28, "put_price": 5.0, "put_iv": 0.29,
+             "volume": 350, "open_interest": 1400},
+            {"expiration": "2026-06-19", "strike": 105,
+             "call_price": 2.0, "call_iv": 0.27, "put_price": 0.0, "put_iv": 0.0,
+             "volume": 40, "open_interest": 100},
+        ]}
+        quotes = HestonModel.quotes_from_option_chain(chain, S0=100.0, as_of="2026-01-02")
+        # Zero put premium is not a quote.
+        assert {(q["K"], q["option_type"]) for q in quotes} == {
+            (100.0, "call"), (100.0, "put"), (105.0, "call"),
+        }
+        assert all(q["T"] > 0 for q in quotes)
+
+    def test_heston_calibrate_request_validates_options(self):
+        from pydantic import ValidationError
+
+        from app.api.desk import HestonCalibrateRequest
+
+        base = {"S0": 100, "quotes": [
+            {"K": K, "T": 0.5, "price": 5.0} for K in (90, 95, 100, 105)]}
+        ok = HestonCalibrateRequest(**base, weighting="vega", n_restarts=3, seed=7)
+        assert ok.weighting == "vega" and ok.n_restarts == 3 and ok.seed == 7
+        with pytest.raises(ValidationError):
+            HestonCalibrateRequest(**base, n_restarts=0)
+        with pytest.raises(ValidationError):
+            HestonCalibrateRequest(**base, weighting="gamma")
 

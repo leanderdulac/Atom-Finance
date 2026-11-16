@@ -140,6 +140,17 @@ class TestFiniteDifference:
         fd = FiniteDifference.price(100, 110, 1.0, 0.05, 0.25, "call", american=False, q=0.04)
         assert abs(fd["price"] - bs) < 0.15
 
+    def test_greeks_match_bs_european(self):
+        bs = BlackScholes.greeks(100, 100, 1.0, 0.05, 0.2, "call")
+        fd = FiniteDifference.price(100, 100, 1.0, 0.05, 0.2, "call", american=False)
+        assert abs(fd["delta"] - bs.delta) < 0.02
+        assert abs(fd["gamma"] - bs.gamma) < 0.005
+
+    def test_american_put_greeks_sane_bounds(self):
+        fd = FiniteDifference.price(100, 100, 1.0, 0.05, 0.2, "put", american=True)
+        assert -1.0 <= fd["delta"] <= 0.0
+        assert fd["gamma"] >= 0.0
+
 
 # ── Options Strategies ────────────────────────────────────────────────────────
 

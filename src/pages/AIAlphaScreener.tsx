@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
-  Box, Typography, Grid, Card, CardContent, Chip, Button, 
-  CircularProgress, LinearProgress, Divider, Fade, Zoom,
-  Tooltip, IconButton
+  Box, Typography, Grid, Card, CardContent, Chip, Button,
+  CircularProgress, LinearProgress, Divider, Zoom, Tooltip,
+  Alert
 } from '@mui/material';
 import { 
-  AutoFixHigh, TrendingUp, TrendingDown, Info, 
+  AutoFixHigh, TrendingUp,
   Refresh, Analytics, Shield, Search
 } from '@mui/icons-material';
 import { api } from '../services/api';
@@ -35,7 +35,10 @@ interface ScreenerResult {
     quant_strategy_gpt: string;
     pulse_grok: string;
     search_perplexity: string;
-    bridgewise_b3: any;
+    bridgewise_b3: {
+      paragraphs?: { title?: string; text?: string }[];
+      overall_grade?: number; recommendation?: string;
+    } | null;
   };
 }
 
@@ -83,6 +86,8 @@ const AIAlphaScreener: React.FC = () => {
           {loading ? 'PROCESSANDO 108 ANÁLISES...' : 'ESCANEAR MERCADO AGORA'}
         </Button>
       </Box>
+
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       {loading && (
         <Box sx={{ mb: 4 }}>

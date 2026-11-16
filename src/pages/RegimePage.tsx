@@ -6,6 +6,19 @@ import {
 } from '@mui/material';
 import { api } from '../services/api';
 
+interface RegimeStrategy {
+  id: string; name?: string; md?: string; status?: string;
+  live_in?: string[]; kill_in?: string[];
+}
+interface RegimeAdjustment { id: string; action: string; current_weight?: number; target_weight?: number; reason?: string; flag?: string; percentile?: number; value?: number }
+interface RegimeResult {
+  regime?: string; probs?: Record<string, number>; signals?: unknown;
+  math?: string; holdout?: { n?: number; accuracy?: number; crisis_recall?: number | null }; what_broke?: string[];
+  strategies?: RegimeStrategy[]; adjustments?: RegimeAdjustment[];
+  context?: Record<string, string>; eligible_for_live_trading?: boolean;
+  kill_switch?: { armed?: boolean; regime?: string; action?: string };
+}
+
 type DemoKind = 'calm' | 'trending' | 'crisis';
 
 const STATUS_COLOR: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -17,7 +30,7 @@ const STATUS_COLOR: Record<string, 'success' | 'warning' | 'error' | 'default'> 
 export default function RegimePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<RegimeResult | null>(null);
   const [kind, setKind] = useState<DemoKind | 'live'>('crisis');
   const [confirmFlatten, setConfirmFlatten] = useState(false);
 
@@ -123,7 +136,7 @@ export default function RegimePage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {Object.entries(result.signals || {}).map(([name, meta]: [string, any]) => (
+                  {Object.entries(result.signals || {}).map(([name, meta]: [string, { flag?: string; percentile?: number; value?: number }]) => (
                     <TableRow key={name}>
                       <TableCell><code>{name}</code></TableCell>
                       <TableCell align="right">{Number(meta.value).toFixed(4)}</TableCell>
@@ -152,13 +165,13 @@ export default function RegimePage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(result.strategies || []).map((s: any) => (
+                  {(result.strategies || []).map((s: RegimeStrategy) => (
                     <TableRow key={s.id}>
                       <TableCell>{s.name}</TableCell>
                       <TableCell>{(s.live_in || []).join(', ')}</TableCell>
                       <TableCell>{(s.kill_in || []).join(', ')}</TableCell>
                       <TableCell>
-                        <Chip size="small" color={STATUS_COLOR[s.status] || 'default'} label={s.status} />
+                        <Chip size="small" color={(s.status && STATUS_COLOR[s.status]) || 'default'} label={s.status} />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -180,7 +193,7 @@ export default function RegimePage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(result.adjustments || []).map((a: any) => (
+                  {(result.adjustments || []).map((a: RegimeAdjustment) => (
                     <TableRow key={a.id}>
                       <TableCell>{a.id}</TableCell>
                       <TableCell align="right">{a.current_weight}</TableCell>

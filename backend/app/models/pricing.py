@@ -325,9 +325,15 @@ class FiniteDifference:
 
         # Interpolate to get price at S
         idx = int(S / dS)
-        idx = min(idx, N_S - 1)
+        idx = min(max(idx, 1), N_S - 1)
         weight = (S - S_grid[idx]) / dS
         price = V[idx] + weight * (V[idx + 1] - V[idx])
+
+        # Delta/gamma by central differences on the solved grid (American: on
+        # exercised values — the standard FD approximation, exact only as the
+        # grid refines; singular at the exercise boundary by construction).
+        delta = float((V[idx + 1] - V[idx - 1]) / (2.0 * dS))
+        gamma = float((V[idx + 1] - 2.0 * V[idx] + V[idx - 1]) / dS**2)
 
         wb = []
         if N_S < 200 or N_t < 200:
@@ -340,6 +346,8 @@ class FiniteDifference:
             "method": "crank_nicolson",
             "grid_size": f"{N_S}x{N_t}",
             "american": american,
+            "delta": round(delta, 6),
+            "gamma": round(gamma, 6),
             "what_broke": wb,
         }
 
