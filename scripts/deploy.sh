@@ -18,13 +18,19 @@ mkdir -p "$APP_DIR/releases"
 [[ -z "$(git -C "$release" status --porcelain)" ]] || { echo 'Release checkout is dirty' >&2; exit 2; }
 compose=(docker compose --project-name atom --env-file "$PROD_ENV" -f "$release/docker-compose.prod.yml")
 services=(backend frontend redis)
+build_services=(backend frontend)
 if [[ "${ATOM_ENABLE_EDGE:-false}" == true ]]; then
   compose+=(-f "$release/docker-compose.edge.yml")
   services+=(edge)
 fi
+if [[ "${ATOM_ENABLE_RESEARCH:-false}" == true ]]; then
+  compose+=(--profile research)
+  services+=(quantmind)
+  build_services+=(quantmind)
+fi
 "${compose[@]}" config --quiet
 # Image builds belong here, not in atom.service (boot is `up --no-build`).
-"${compose[@]}" build backend frontend
+"${compose[@]}" build "${build_services[@]}"
 # Online backup using the currently running image, before changing the service.
 # Storage is Postgres (managed, outside this compose) since round 3 — pg_dump
 # runs inside the container (it has ATOM_DATABASE_URL and, since the Dockerfile
@@ -42,4 +48,7 @@ fi
 # --no-build: this script already built; boot/start must not compile torch again.
 "${compose[@]}" up -d --no-build --wait --wait-timeout 180 "${services[@]}"
 printf '%s\n' "$TARGET_SHA" > "$APP_DIR/deployed-sha"
-echo "Healthy release: $TARGET_SHA"
+# Publish the release only after it is healthy: atom.service boots from this
+# symlink, so a reboot can never resurrect a stale root checkout.
+ln -sfn "$release" "$APP_DIR/current"
+echo "Healthy release: $TARGET_SHA (current -> $release)"

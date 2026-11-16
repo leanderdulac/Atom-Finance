@@ -44,6 +44,17 @@ def backup():
             with local.open('rb') as source:
                 subprocess.run(['restic', 'backup', '--stdin', '--stdin-filename', 'atom.dump',
                                 '--tag', 'atom-core'], stdin=source, check=True, timeout=1800)
+            # Research worker SQLite (user articles) — only when the research
+            # profile is up; skipped silently otherwise.
+            qm = subprocess.run(compose + ['ps', '-q', 'quantmind'], capture_output=True,
+                                text=True, check=True, timeout=120)
+            if qm.stdout.strip():
+                research_local = Path(staging) / 'research.db'
+                run(compose + ['cp', 'quantmind:/data/research.db', str(research_local)])
+                research_local.chmod(0o600)
+                with research_local.open('rb') as source:
+                    subprocess.run(['restic', 'backup', '--stdin', '--stdin-filename', 'research.db',
+                                    '--tag', 'atom-research'], stdin=source, check=True, timeout=1800)
         state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         # Only advance freshness after a fully successful upload.
         target = state_dir / 'backup-success.json'

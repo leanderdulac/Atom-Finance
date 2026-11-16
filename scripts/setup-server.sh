@@ -136,6 +136,19 @@ XAI_API_KEY=
 PERPLEXITY_API_KEY=
 BRIDGEWISE_TOKEN=
 
+# Options-chain providers (see docs/DATA-INTEGRATIONS.md) — leave empty to skip
+OPLAB_ACCESS_TOKEN=
+OPLAB_OWNER=
+CEDRO_SESSION_COOKIE=
+CEDRO_OWNER=
+
+# Research worker (enabled in deploy.sh via ATOM_ENABLE_RESEARCH=true)
+QUANTMIND_SERVICE_TOKEN=
+QUANTMIND_MODEL=gpt-4o-mini
+
+# Public hostname for the edge proxy (no scheme/path; see docs/PILOT-DEPLOYMENT.md)
+ATOM_DOMAIN=
+
 # Redis (auto-configured via docker internal network)
 REDIS_URL=redis://redis:6379/0
 ACCESS_TOKEN_EXPIRE_HOURS=24
@@ -152,14 +165,23 @@ EOF
     echo ""
 fi
 
-# ── 8. Systemd service (manages docker-compose lifecycle) ─────────────────────
-info "8/9 Installing systemd service for ATOM..."
-UNIT_SRC="$APP_DIR/ops/systemd/atom.service"
-[[ -f "$UNIT_SRC" ]] || error "Missing $UNIT_SRC — clone a revision that ships ops/systemd/atom.service."
-install -m 644 "$UNIT_SRC" /etc/systemd/system/atom.service
+# ── 8. Systemd units: app lifecycle + monitor/backup timers ─────────────────────
+info "8/9 Installing systemd units for ATOM..."
+for unit in atom.service atom-monitor.service atom-monitor.timer atom-backup.service atom-backup.timer; do
+    UNIT_SRC="$APP_DIR/ops/systemd/$unit"
+    [[ -f "$UNIT_SRC" ]] || error "Missing $UNIT_SRC — clone a revision that ships ops/systemd/$unit."
+    install -m 644 "$UNIT_SRC" "/etc/systemd/system/$unit"
+done
+OPS_ENV_SRC="$APP_DIR/ops/operations.env.example"
+[[ -f /etc/atom/operations.env ]] || {
+    mkdir -p /etc/atom
+    install -m 600 "$OPS_ENV_SRC" /etc/atom/operations.env
+    warn "/etc/atom/operations.env created from the example — edit RESTIC_* before enabling backups."
+}
 systemctl daemon-reload
-systemctl enable atom.service
-success "Systemd service 'atom' installed and enabled on boot (up --no-build; images come from deploy.sh)."
+systemctl enable atom.service atom-monitor.timer
+success "Systemd units installed: atom.service + atom-monitor.timer enabled on boot."
+warn "atom-backup.timer left disabled until RESTIC_REPOSITORY is configured; enable it explicitly (docs/PILOT-DEPLOYMENT.md)."
 
 # ── 9. Summary ────────────────────────────────────────────────────────────────
 SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")

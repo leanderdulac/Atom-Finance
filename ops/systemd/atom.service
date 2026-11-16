@@ -4,17 +4,20 @@ Documentation=file:///opt/atom/docs/PRODUCTION.md
 Requires=docker.service
 Wants=network-online.target
 After=docker.service network-online.target
+# /opt/atom/current is the release symlink maintained by scripts/deploy.sh.
+# Booting without it would run a stale root checkout, so refuse explicitly.
+ConditionPathIsSymbolicLink=/opt/atom/current
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/atom
+WorkingDirectory=/opt/atom/current
 EnvironmentFile=/opt/atom/.env.prod
 # Boot must reuse images already built by scripts/deploy.sh (or an explicit
 # `docker compose build`). `up --build` pip-installs torch on every reboot and
 # exceeds TimeoutStartSec, marking the unit failed even when containers are up.
-ExecStart=/usr/bin/docker compose --project-name atom --env-file /opt/atom/.env.prod -f docker-compose.prod.yml up -d --no-build
-ExecStop=/usr/bin/docker compose --project-name atom --env-file /opt/atom/.env.prod -f docker-compose.prod.yml down
+ExecStart=/usr/bin/docker compose --project-name atom --env-file /opt/atom/.env.prod -f /opt/atom/current/docker-compose.prod.yml up -d --no-build
+ExecStop=/usr/bin/docker compose --project-name atom --env-file /opt/atom/.env.prod -f /opt/atom/current/docker-compose.prod.yml down
 TimeoutStartSec=120
 User=atom
 

@@ -32,6 +32,10 @@ assert call('/api/auth/me')['username'] == os.environ['ATOM_SMOKE_USER']
 call('/api/sources/status')
 call('/api/derivatives/plans')
 call('/api/binance/account', expected=410)
+try:
+    call('/api/research/health')
+except AssertionError:
+    print('research worker not deployed; skipping /api/research/health')
 from datetime import date, timedelta
 result = call('/api/ml/evaluate', payload={
     'prices':[100+i/100 for i in range(500)],
