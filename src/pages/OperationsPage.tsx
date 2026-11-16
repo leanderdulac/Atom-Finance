@@ -81,7 +81,7 @@ export default function OperationsPage() {
   useEffect(() => { let active = true; refreshOps(active); return () => { active = false; }; }, [refreshOps]);
   useEffect(() => {
     let active = true;
-    api.deskRegimeLive(false).then(v => { if (active) setRegime(v); }).catch(() => { /* regime é opcional no cockpit */ });
+    api.deskRegimeLive<{ regime?: string; kill_switch?: { armed?: boolean } }>(false).then(v => { if (active) setRegime(v); }).catch(() => { /* regime é opcional no cockpit */ });
     return () => { active = false; };
   }, []);
 

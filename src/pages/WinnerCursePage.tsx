@@ -70,7 +70,7 @@ export default function WinnerCursePage() {
   const simulate = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const out = await api.deskWinnersCurseSimulate({
+      const out = await api.deskWinnersCurseSimulate<SimResult>({
         n_strategies: n, t_is: tIs, t_oos: tOos, seed,
       });
       setResult(out);
@@ -90,7 +90,7 @@ export default function WinnerCursePage() {
   const haircut = async () => {
     setDeflateErr('');
     try {
-      const out = await api.deskWinnersCurseDeflate({
+      const out = await api.deskWinnersCurseDeflate<DeflateResult>({
         observed_sharpe: Number(obsSr),
         n_trials: Number(deflateN),
         n_obs: Number(deflateT),

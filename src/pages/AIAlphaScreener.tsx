@@ -48,7 +48,7 @@ const AIAlphaScreener: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.screenerTopPicks();
+      const response = await api.screenerTopPicks<ScreenerResult[]>();
       setResults(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao processar screening multi-IA. Verifique as chaves de API.');
