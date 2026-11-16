@@ -7,9 +7,15 @@ import dataclasses
 import logging
 from typing import Literal
 
+from app.models.pricing import BlackScholes
 from app.services.data_fetcher import DataFetcher
 
 logger = logging.getLogger(__name__)
+
+# Horizon shared by every recommendation below (30 calendar days) and the
+# BRL risk-free proxy used to price them. Wire the DI curve when available.
+_HORIZON_T = 30.0 / 365.0
+_SELIC_PROXY = 0.10
 
 @dataclasses.dataclass
 class OptionTrade:
@@ -70,7 +76,7 @@ class OptionsExpert:
                 kronos_trend = kronos_pred["trend"] if kronos_pred else "NEUTRAL"
                 kronos_return = kronos_pred["predicted_return_pct"] if kronos_pred else 0.0
             except Exception as e:
-                logger.error(f"Kronos prediction failed for {ticker}: {e}")
+                logger.error("Kronos prediction failed for %s: %s", ticker, e)
                 kronos_trend = "NEUTRAL"
                 kronos_return = 0.0
 
@@ -100,59 +106,104 @@ class OptionsExpert:
         return trades[:5]
 
     @classmethod
+    def _bs_call(cls, spot: float, strike: float, iv: float):
+        return BlackScholes.greeks(spot, strike, _HORIZON_T, _SELIC_PROXY, iv, "call")
+
+    @classmethod
+    def _bs_put(cls, spot: float, strike: float, iv: float):
+        return BlackScholes.greeks(spot, strike, _HORIZON_T, _SELIC_PROXY, iv, "put")
+
+    @classmethod
     def _recommend_bullish(cls, ticker: str, spot: float, iv: float) -> OptionTrade:
-        strike = round(spot * 1.05, 2) # 5% OTM
-        cost = spot * 0.03 # generic premium estimate
-        
-        # Scenario
-        scenario = {
-            "p10_gain": spot * 0.10 * 100, # crude estimate
-            "p5_gain": spot * 0.05 * 100,
-            "m5_loss": -cost * 100
-        }
-        
+        from scipy.stats import norm as _norm
+
+        k1 = round(spot * 1.05, 2)  # 5% OTM long leg
+        k2 = round(k1 * 1.05, 2)  # short leg caps the upside
+        long_leg, short_leg = cls._bs_call(spot, k1, iv), cls._bs_call(spot, k2, iv)
+        debit = long_leg.price - short_leg.price
+        max_profit = (k2 - k1) - debit
+        # First-order P(expiring above K1): risk-neutral N(d2) of the long leg.
+        d2 = BlackScholes.d2(spot, k1, _HORIZON_T, _SELIC_PROXY, iv)
+        prob = float(_norm.cdf(d2) * 100.0)
+
         return OptionTrade(
             ticker=ticker,
             action="BULL CALL SPREAD",
             underlying_price=spot,
-            strike=strike,
-            strike_2=round(strike * 1.05, 2),
-            cost_brl=cost,
+            strike=k1,
+            strike_2=k2,
+            cost_brl=round(debit, 2),
             iv=iv,
-            prob_success=58.0,
-            reasoning=f"Tendência de alta confirmada em {ticker}. Volatilidade baixa ({iv*100:.1f}%) favorece a compra de estrutura. Trava de alta reduz o custo e protege contra queda moderada.",
-            scenario_analysis=scenario
+            delta=round(long_leg.delta - short_leg.delta, 4),
+            theta=round(long_leg.theta - short_leg.theta, 6),
+            max_profit=round(max_profit, 2),
+            max_loss=round(-debit, 2),
+            prob_success=round(prob, 1),
+            reasoning=f"Tendência de alta em {ticker}. Trava {k1}/{k2} precificada a R${debit:.2f} (BS 30d, IV {iv*100:.1f}%).",
+            scenario_analysis={
+                "p10_gain": round((k2 - k1 - debit) * 100, 2),
+                "p5_gain": round(max(spot * 1.05 - k1, 0.0) * 100 - debit * 100, 2),
+                "m5_loss": round(-debit * 100, 2),
+            },
         )
 
     @classmethod
     def _recommend_bearish(cls, ticker: str, spot: float, iv: float) -> OptionTrade:
-        strike = round(spot * 0.95, 2)
-        cost = spot * 0.03
+        from scipy.stats import norm as _norm
+
+        k1 = round(spot * 0.95, 2)  # long put, 5% OTM-down
+        k2 = round(k1 * 0.95, 2)  # short put funds it
+        long_leg, short_leg = cls._bs_put(spot, k1, iv), cls._bs_put(spot, k2, iv)
+        debit = long_leg.price - short_leg.price
+        max_profit = (k1 - k2) - debit
+        d2 = BlackScholes.d2(spot, k1, _HORIZON_T, _SELIC_PROXY, iv)
+        prob = float(_norm.cdf(-d2) * 100.0)
+
         return OptionTrade(
             ticker=ticker,
             action="BEAR PUT SPREAD",
             underlying_price=spot,
-            strike=strike,
-            strike_2=round(strike * 0.95, 2),
-            cost_brl=cost,
+            strike=k1,
+            strike_2=k2,
+            cost_brl=round(debit, 2),
             iv=iv,
-            prob_success=62.0,
-            reasoning=f"Sinais de correção para {ticker}. IV moderado permite montagem de trava de baixa com bom custo/benefício.",
-            scenario_analysis={}
+            delta=round(long_leg.delta - short_leg.delta, 4),
+            theta=round(long_leg.theta - short_leg.theta, 6),
+            max_profit=round(max_profit, 2),
+            max_loss=round(-debit, 2),
+            prob_success=round(prob, 1),
+            reasoning=f"Sinais de correção para {ticker}. Trava {k2}/{k1} precificada a R${debit:.2f} (BS 30d, IV {iv*100:.1f}%).",
+            scenario_analysis={
+                "m10_gain": round((k1 - k2 - debit) * 100, 2),
+                "m5_gain": round(max(k1 - spot * 0.95, 0.0) * 100 - debit * 100, 2),
+                "p5_loss": round(-debit * 100, 2),
+            },
         )
 
     @classmethod
     def _recommend_income(cls, ticker: str, spot: float, iv: float) -> OptionTrade:
+        from scipy.stats import norm as _norm
+
         strike = round(spot * 1.08, 2)
-        premium = spot * 0.05
+        leg = cls._bs_call(spot, strike, iv)
+        premium = leg.price
+        d2 = BlackScholes.d2(spot, strike, _HORIZON_T, _SELIC_PROXY, iv)
+        prob = float(_norm.cdf(-d2) * 100.0)  # expire below K: keep it all
         return OptionTrade(
             ticker=ticker,
             action="COVERED CALL",
             underlying_price=spot,
             strike=strike,
-            cost_brl=-premium, # credit
+            cost_brl=-round(premium, 2),  # credit
             iv=iv,
-            prob_success=75.0,
-            reasoning=f"Volatilidade implícita de {iv*100:.1f}% em {ticker} está muito acima da média. Venda de CALL (Lançamento Coberto) permite rentabilizar a carteira com prêmio gordo.",
-            scenario_analysis={}
+            delta=round(1.0 - leg.delta, 4),  # long stock + short call
+            theta=round(-leg.theta, 6),
+            max_profit=round(premium, 2),
+            max_loss=round(premium - spot, 2),
+            prob_success=round(prob, 1),
+            reasoning=f"IV de {iv*100:.1f}% em {ticker} sustenta lançamento coberto {strike} por R${premium:.2f} (BS 30d).",
+            scenario_analysis={
+                "flat_keep": round(premium * 100, 2),
+                "up8_capped": round((strike - spot + premium) * 100, 2),
+            },
         )

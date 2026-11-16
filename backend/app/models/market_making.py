@@ -69,8 +69,7 @@ def simulate_inventory(
     seed: int | None = 42,
 ) -> dict:
     """Euler mid + Poisson fills. Terminal inventory is penalised, not hedged."""
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
     dt = T / n_steps
     mid = mid0
     q = 0.0
@@ -88,8 +87,8 @@ def simulate_inventory(
                 quotes["intensity_bid"] = 0.0
             else:
                 quotes["intensity_ask"] = 0.0
-        buy_hit = np.random.random() < quotes["intensity_bid"] * dt
-        sell_hit = np.random.random() < quotes["intensity_ask"] * dt
+        buy_hit = rng.random() < quotes["intensity_bid"] * dt
+        sell_hit = rng.random() < quotes["intensity_ask"] * dt
         if buy_hit:
             cash -= quotes["bid"]
             q += 1.0
@@ -98,7 +97,7 @@ def simulate_inventory(
             cash += quotes["ask"]
             q -= 1.0
             fills += 1
-        mid *= np.exp(-0.5 * sigma ** 2 * dt + sigma * np.sqrt(dt) * np.random.standard_normal())
+        mid *= np.exp(-0.5 * sigma ** 2 * dt + sigma * np.sqrt(dt) * rng.standard_normal())
         mids.append(float(mid))
         qs.append(float(q))
         pnls.append(float(cash + q * mid))

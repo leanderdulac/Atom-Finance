@@ -100,12 +100,12 @@ def _normalise_df_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def _generate_synthetic_prices(ticker: str, days: int = 252) -> dict:
     """Generate synthetic OHLCV data for demo purposes."""
-    np.random.seed(hash(ticker) % 2**31)
+    rng = np.random.default_rng(hash(ticker) % 2**31)
     base = _SYNTHETIC_BASE_PRICES.get(ticker.upper(), 100.0)
 
-    returns = np.random.normal(0.0004, 0.018, days)
+    returns = rng.normal(0.0004, 0.018, days)
     prices = base * np.cumprod(1 + returns)
-    volumes = np.random.lognormal(15, 0.5, days).astype(int)
+    volumes = rng.lognormal(15, 0.5, days).astype(int)
 
     dates: list[str] = []
     start = date.today()
@@ -117,13 +117,13 @@ def _generate_synthetic_prices(ticker: str, days: int = 252) -> dict:
     n = len(dates)
     prices = prices[:n]
     volumes = volumes[:n]
-    highs = prices * (1 + np.abs(np.random.normal(0, 0.01, n)))
-    lows = prices * (1 - np.abs(np.random.normal(0, 0.01, n)))
+    highs = prices * (1 + np.abs(rng.normal(0, 0.01, n)))
+    lows = prices * (1 - np.abs(rng.normal(0, 0.01, n)))
 
     return {
         "ticker": ticker.upper(),
         "dates": dates,
-        "open": [round(float(p * (1 + np.random.normal(0, 0.002))), 2) for p in prices],
+        "open": [round(float(p * (1 + rng.normal(0, 0.002))), 2) for p in prices],
         "high": [round(float(h), 2) for h in highs],
         "low": [round(float(l), 2) for l in lows],
         "close": [round(float(p), 2) for p in prices],
@@ -223,7 +223,7 @@ def _options_from_yfinance(ticker: str) -> dict | None:
 
 
 def _synthetic_options(ticker: str) -> dict:
-    np.random.seed(hash(ticker) % 2**31)
+    rng = np.random.default_rng(hash(ticker) % 2**31)
     spot_data = _generate_synthetic_prices(ticker, 5)
     spot = spot_data["close"][-1]
     strikes = [round(spot * m, 2) for m in np.arange(0.85, 1.16, 0.025)]
@@ -246,8 +246,8 @@ def _synthetic_options(ticker: str) -> dict:
                     "put_price": put.price,
                     "put_delta": put.delta,
                     "put_iv": round(sigma, 4),
-                    "volume": int(np.random.exponential(500)),
-                    "open_interest": int(np.random.exponential(2000)),
+                    "volume": int(rng.exponential(500)),
+                    "open_interest": int(rng.exponential(2000)),
                 }
             )
 

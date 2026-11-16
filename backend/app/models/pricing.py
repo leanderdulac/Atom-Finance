@@ -57,6 +57,9 @@ class BlackScholes:
     @classmethod
     def greeks(cls, S: float, K: float, T: float, r: float, sigma: float,
                option_type: Literal["call", "put"] = "call", q: float = 0.0) -> OptionResult:
+        """Black-Scholes Greeks. Conventions: theta is ACT/365 per calendar
+        day (annual theta / 365); vega and rho are per 1 point (0.01) move
+        of sigma and r respectively."""
         if T <= 1e-10:
             intrinsic = max(S - K, 0) if option_type == "call" else max(K - S, 0)
             return OptionResult(price=intrinsic)
@@ -129,16 +132,20 @@ class MonteCarlo:
               n_simulations: int = 100_000, n_steps: int = 252,
               q: float = 0.0, seed: int | None = 42) -> dict:
 
-        if seed is not None:
-            np.random.seed(seed)
+        # Local generator: seeding must never mutate the caller's global RNG.
+        rng = np.random.default_rng(seed)
 
         dt = T / n_steps
         drift = (r - q - 0.5 * sigma**2) * dt
         vol = sigma * np.sqrt(dt)
 
-        # Antithetic variates for variance reduction
-        z = np.random.standard_normal((n_simulations // 2, n_steps))
+        # Antithetic variates for variance reduction; an odd count gets one
+        # extra unpaired draw so n_simulations is exact, not rounded down.
+        n_half = n_simulations // 2
+        z = rng.standard_normal((n_half, n_steps))
         z = np.concatenate([z, -z], axis=0)
+        if len(z) < n_simulations:
+            z = np.concatenate([z, rng.standard_normal((1, n_steps))], axis=0)
 
         log_paths = np.cumsum(drift + vol * z, axis=1)
         ST = S * np.exp(log_paths[:, -1])
@@ -151,6 +158,11 @@ class MonteCarlo:
         discounted = np.exp(-r * T) * payoffs
         price = float(np.mean(discounted))
         std_err = float(np.std(discounted) / np.sqrt(len(discounted)))
+        wb = []
+        if price > 0 and std_err / price > 0.01:
+            wb.append("MC standard error above 1% of price — widen n_simulations.")
+        if n_steps < 50:
+            wb.append("Coarse time grid (n_steps < 50) — path-dependent bias possible.")
 
         # Paths for visualization (sample 200)
         sample_idx = np.linspace(0, len(log_paths) - 1, min(200, len(log_paths)), dtype=int)
@@ -162,6 +174,7 @@ class MonteCarlo:
             "std_error": round(std_err, 6),
             "confidence_95": [round(price - 1.96 * std_err, 6), round(price + 1.96 * std_err, 6)],
             "n_simulations": len(discounted),
+            "what_broke": wb,
             "sample_paths": paths_list[:20],
             "terminal_distribution": {
                 "mean": round(float(np.mean(ST)), 2),
@@ -188,10 +201,17 @@ class BinomialTree:
               american: bool = False, n_steps: int = 500,
               q: float = 0.0) -> dict:
 
+        if n_steps < 3:
+            raise ValueError("CRR needs n_steps >= 3 (delta/gamma use the first two steps)")
         dt = T / n_steps
         u = np.exp(sigma * np.sqrt(dt))
         d = 1.0 / u
         p = (np.exp((r - q) * dt) - d) / (u - d)
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(
+                f"CRR risk-neutral probability outside [0, 1] (p={p:.4f}); "
+                "widen n_steps or check r/q/sigma"
+            )
         disc = np.exp(-r * dt)
 
         # Build price tree at maturity
@@ -202,8 +222,9 @@ class BinomialTree:
         else:
             values = np.maximum(K - prices, 0)
 
-        # Backward induction
+        # Backward induction (snapshots at i=2,1 feed delta/gamma at t=0)
         early_exercise_nodes = 0
+        snap = {}
         for i in range(n_steps - 1, -1, -1):
             prices_i = S * u ** np.arange(i, -1, -1) * d ** np.arange(0, i + 1)
             values = disc * (p * values[:-1] + (1 - p) * values[1:])
@@ -216,6 +237,22 @@ class BinomialTree:
                 early = exercise > values
                 early_exercise_nodes += int(np.sum(early))
                 values = np.maximum(values, exercise)
+            if i in (1, 2):
+                snap[i] = (prices_i.copy(), values.copy())
+
+        # Delta/gamma from the first tree steps (American: on exercised values,
+        # the standard tree approximation; exact only in the continuum limit).
+        (s1, v1), (s2, v2) = snap[1], snap[2]
+        delta = float((v1[0] - v1[1]) / (s1[0] - s1[1]))
+        d_up = (v2[0] - v2[1]) / (s2[0] - s2[1])
+        d_dn = (v2[1] - v2[2]) / (s2[1] - s2[2])
+        gamma = float((d_up - d_dn) / ((s2[0] - s2[2]) / 2.0))
+
+        wb = []
+        if n_steps < 200:
+            wb.append("Coarse tree (n_steps < 200) — price/Greeks may oscillate; widen the grid.")
+        if american and option_type == "call" and q == 0:
+            wb.append("American call without dividends never exercises early — equals European.")
 
         return {
             "price": round(float(values[0]), 6),
@@ -225,6 +262,9 @@ class BinomialTree:
             "n_steps": n_steps,
             "american": american,
             "early_exercise_nodes": early_exercise_nodes,
+            "delta": round(delta, 6),
+            "gamma": round(gamma, 6),
+            "what_broke": wb,
         }
 
 
@@ -265,12 +305,14 @@ class FiniteDifference:
         for i in range(N_t):
             rhs = M2 @ V[1:N_S]
 
-            # Boundary conditions
+            # Boundary conditions (with dividend yield: deep-ITM call
+            # approaches S*e^{-q*tau} - K*e^{-r*tau}, not S - K*e^{-r*tau})
+            tau = T - (i + 1) * dt
             if option_type == "call":
                 rhs[0] += alpha[1] * 0
-                rhs[-1] += gamma_c[N_S - 1] * (S_max - K * np.exp(-r * (T - (i + 1) * dt)))
+                rhs[-1] += gamma_c[N_S - 1] * (S_max * np.exp(-q * tau) - K * np.exp(-r * tau))
             else:
-                rhs[0] += alpha[1] * (K * np.exp(-r * (T - (i + 1) * dt)))
+                rhs[0] += alpha[1] * (K * np.exp(-r * tau))
                 rhs[-1] += gamma_c[N_S - 1] * 0
 
             V[1:N_S] = np.linalg.solve(M1, rhs)
@@ -287,11 +329,18 @@ class FiniteDifference:
         weight = (S - S_grid[idx]) / dS
         price = V[idx] + weight * (V[idx + 1] - V[idx])
 
+        wb = []
+        if N_S < 200 or N_t < 200:
+            wb.append("Coarse grid — widen N_S/N_t if the price moves with refinement.")
+        if S > 0.9 * S_max:
+            wb.append("Spot near the upper boundary — widen S_max_mult.")
+
         return {
             "price": round(float(price), 6),
             "method": "crank_nicolson",
             "grid_size": f"{N_S}x{N_t}",
             "american": american,
+            "what_broke": wb,
         }
 
 

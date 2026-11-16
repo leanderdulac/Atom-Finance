@@ -150,9 +150,9 @@ async def gbm_multi_demo():
 @router.get("/demo")
 async def capm_demo():
     """Demo: SPY-like asset vs market benchmark."""
-    np.random.seed(99)
-    market = np.random.normal(0.0004, 0.012, 252)
-    asset = 1.2 * market + np.random.normal(0.0002, 0.008, 252)  # beta ~1.2
+    rng = np.random.default_rng(99)
+    market = rng.normal(0.0004, 0.012, 252)
+    asset = 1.2 * market + rng.normal(0.0002, 0.008, 252)  # beta ~1.2
     beta_result = CAPMAnalyzer.compute_beta(asset, market)
     capm = CAPMAnalyzer.expected_return(beta_result["beta"])
     kelly = CAPMAnalyzer.kelly_criterion(0.55, 1.8, 0.5)

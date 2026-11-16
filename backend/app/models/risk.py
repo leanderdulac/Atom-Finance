@@ -139,8 +139,7 @@ class ValueAtRisk:
     def monte_carlo(returns: np.ndarray, confidence: float = 0.95,
                     portfolio_value: float = 1_000_000, holding_period: int = 1,
                     n_simulations: int = 50_000, seed: int | None = 42) -> dict:
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.default_rng(seed)
 
         returns = np.asarray(returns, dtype=np.float64)
         mu = float(np.mean(returns))
@@ -148,7 +147,7 @@ class ValueAtRisk:
         alpha = 1 - confidence
 
         # Simulate portfolio returns
-        sim_returns = np.random.normal(mu * holding_period, sigma * np.sqrt(holding_period), n_simulations)
+        sim_returns = rng.normal(mu * holding_period, sigma * np.sqrt(holding_period), n_simulations)
         sim_values = portfolio_value * (1 + sim_returns)
         sim_pnl = sim_values - portfolio_value
 
