@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import { useClientConfig } from '../contexts/ClientModeContext';
 import {
-  AccountTree, AutoGraph, Layers, Science, ShowChart, Timeline, WarningAmber,
+  AccountTree, Assessment, AutoGraph, Layers, Science, ShowChart, Timeline, WarningAmber,
 } from '@mui/icons-material';
 
 const families = [
