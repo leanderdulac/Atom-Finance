@@ -10,6 +10,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType>({ mode: 'dark', toggle: () => {} });
 
+// eslint-disable-next-line react-refresh/only-export-components -- colocated provider+hook is intentional
 export const useThemeMode = () => useContext(ThemeContext);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

@@ -2,18 +2,14 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, Button, TextField,
   Table, TableBody, TableCell, TableHead, TableRow, LinearProgress,
-  Chip, Divider, IconButton, Tooltip, Zoom, Fade, Alert
+  Chip, IconButton, Tooltip, Fade, Alert
 } from '@mui/material';
 import {
-  CurrencyExchange, TrendingUp, TrendingDown, Refresh,
-  Calculate, Assessment, AccountBalanceWallet, Speed, 
-  BarChart, History, InfoOutlined
+  CurrencyExchange, Refresh,
+  Calculate, Assessment, AccountBalanceWallet, Speed,
+  BarChart, History
 } from '@mui/icons-material';
-import { 
-  BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip as ReTooltip, ResponsiveContainer, Cell, AreaChart, Area
-} from 'recharts';
-import { api } from '../services/api';
+import { api, type BinanceKellySizing, type BinanceTicker } from '../services/api';
 
 const BINANCE_YELLOW = '#F3BA2F';
 
@@ -39,7 +35,7 @@ const BinanceDashboard: React.FC = () => {
   const [payout, setPayout] = useState(1.5);
   const [fraction, setFraction] = useState(0.25);
   const [bankroll, setBankroll] = useState(10_000);
-  const [kellyResult, setKellyResult] = useState<any>(null);
+  const [kellyResult, setKellyResult] = useState<BinanceKellySizing | null>(null);
   const [kellyError, setKellyError] = useState('');
   const [calculatingKelly, setCalculatingKelly] = useState(false);
 
@@ -47,10 +43,10 @@ const BinanceDashboard: React.FC = () => {
   const loadTickerList = async () => {
     try {
       const data = await api.binanceTickers();
-      const filtered = data.filter((t: any) => t.symbol.endsWith('USDT'))
-                          .sort((a: any, b: any) => parseFloat(b.price) - parseFloat(a.price))
+      const filtered = data.filter((t: BinanceTicker) => t.symbol.endsWith('USDT'))
+                          .sort((a: BinanceTicker, b: BinanceTicker) => parseFloat(b.price) - parseFloat(a.price))
                           .slice(0, 100);
-      setAllTickers(filtered.map((t: any) => ({ symbol: t.symbol, price: parseFloat(t.price) })));
+      setAllTickers(filtered.map((t: BinanceTicker) => ({ symbol: t.symbol, price: parseFloat(t.price) })));
     } catch (e) {
       console.error('Failed to load tickers', e);
     }

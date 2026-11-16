@@ -32,8 +32,8 @@ export default function LoginPage() {
       if (tab === 0) await login(username, password);
       else await register(username, email, password);
       navigate(from.startsWith('/') && !from.startsWith('//') ? from : '/dashboard', { replace: true });
-    } catch (err: any) {
-      setError(err.message || 'Erro desconhecido.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro desconhecido.');
     } finally {
       setLoading(false);
     }

@@ -5,7 +5,17 @@ import {
   Table, TableBody, TableCell, TableRow, Chip,
 } from '@mui/material';
 import { Link } from 'react-router-dom';
-import { api } from '../services/api';
+import { api, type MarketHistory } from '../services/api';
+
+interface BacktestTrade { day: number; type: string; price: number; shares: number; pnl?: number }
+
+interface BacktestResult {
+  strategy?: string;
+  performance: Record<string, number>;
+  trades?: BacktestTrade[];
+  n_trades?: number;
+  validation?: { note?: string; eligible_for_live_trading?: boolean };
+}
 import MarketTickerAutocomplete from '../components/MarketTickerAutocomplete';
 import ProviderChips from '../components/ProviderChips';
 import QuantContextSection from '../components/QuantContextSection';
@@ -47,7 +57,7 @@ function generatePrices(n: number = 500): number[] {
 
 export default function BacktestingPage() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<BacktestResult | null>(null);
   const [error, setError] = useState('');
   const [strategy, setStrategy] = useState<'sma_crossover' | 'mean_reversion' | 'momentum' | 'rsi'>('sma_crossover');
   const [capital, setCapital] = useState(100000);
@@ -63,13 +73,13 @@ export default function BacktestingPage() {
   const loadMarketPrices = async () => {
     setLoading(true); setError(''); setPriceData(null); setResult(null);
     try {
-      const history: any = await api.history(ticker, historyDays, provider);
+      const history: MarketHistory = await api.history(ticker, historyDays, provider);
       const livePrices = (history?.close || []).map((v: number) => Number(v));
       if (livePrices.length < 100) throw new Error('Not enough historical data returned');
       if ((history.provider || history.source || '').includes('synthetic')) throw new Error('Fonte indisponível: dados sintéticos exigem selecionar a demonstração explicitamente.');
       setPriceData({ prices: livePrices, source: history.provider || history.source || provider });
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unexpected error');
     } finally { setLoading(false); }
   };
 
@@ -77,7 +87,7 @@ export default function BacktestingPage() {
     if (!priceData) return;
     setLoading(true); setError('');
     try {
-      const res = await api.backtest({
+      const res = await api.backtest<BacktestResult>({
         prices: priceData!.prices,
         data_source: priceData!.source,
         slippage,
@@ -86,7 +96,7 @@ export default function BacktestingPage() {
         commission,
       });
       setResult(res);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
@@ -179,7 +189,7 @@ export default function BacktestingPage() {
                   </Box>
 
                   <Grid container spacing={2}>
-                    {Object.entries(result.performance).map(([key, val]: [string, any]) => (
+                    {Object.entries(result.performance).map(([key, val]: [string, number]) => (
                       <Grid size={{ xs: 6, sm: 4, md: 3 }} key={key}>
                         <Box sx={{ textAlign: 'center', p: 1.5, border: 1, borderColor: 'divider', borderRadius: 2 }}>
                           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize', fontSize: '0.7rem' }}>
@@ -218,7 +228,7 @@ export default function BacktestingPage() {
                     </Typography>
                     <Table size="small">
                       <TableBody>
-                        {result.trades.slice(-10).map((trade: any, i: number) => (
+                        {result.trades.slice(-10).map((trade: BacktestTrade, i: number) => (
                           <TableRow key={i}>
                             <TableCell>Day {trade.day}</TableCell>
                             <TableCell>

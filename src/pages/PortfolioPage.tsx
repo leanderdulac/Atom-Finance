@@ -4,7 +4,9 @@ import {
   CircularProgress, Alert, Table, TableBody, TableCell, TableRow,
   Chip, ToggleButtonGroup, ToggleButton,
 } from '@mui/material';
-import { api } from '../services/api';
+import { api, type MarketHistory, type PortfolioOptimizeResult } from '../services/api';
+
+type PortfolioResult = PortfolioOptimizeResult;
 import MarketTickerAutocomplete from '../components/MarketTickerAutocomplete';
 import ProviderChips from '../components/ProviderChips';
 import QuantContextSection from '../components/QuantContextSection';
@@ -53,13 +55,13 @@ function generateMultiAssetReturns(): { returns: number[][]; names: string[] } {
 
 export default function PortfolioPage() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<PortfolioResult | null>(null);
   const [error, setError] = useState('');
   const [method, setMethod] = useState('efficient-frontier');
   const [riskFreeRate, setRiskFreeRate] = useState(0.02);
   const [tickerList, setTickerList] = useState('AAPL,MSFT,GOOGL,AMZN,TSLA');
   const [provider, setProvider] = useState('openbb');
-  const [marketState, setMarketState] = useState<any>(null);
+  const [marketState, setMarketState] = useState<{ assetReturns: number[][]; assetNames: string[]; source: string } | null>(null);
 
   const { returns, names } = generateMultiAssetReturns();
 
@@ -67,8 +69,8 @@ export default function PortfolioPage() {
     const symbols = tickerList.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
     if (symbols.length < 2) return null;
 
-    const histories: any[] = await Promise.all(symbols.map((symbol) => api.history(symbol, 252, provider)));
-    const series = histories.map((history: any) => (history?.close || []).map((v: number) => Number(v)));
+    const histories: MarketHistory[] = await Promise.all(symbols.map((symbol) => api.history(symbol, 252, provider)));
+    const series = histories.map((history: MarketHistory) => (history?.close || []).map((v: number) => Number(v)));
     const cleanSeries = series.filter((s) => s.length > 10);
     const cleanSymbols = symbols.filter((_, idx) => series[idx].length > 10);
 
@@ -80,7 +82,7 @@ export default function PortfolioPage() {
       aligned.map((prices) => prices[i + 1] / prices[i] - 1)
     );
 
-    const firstHistory: any = histories[0] || {};
+    const firstHistory: Partial<MarketHistory> = histories[0] || {};
     const source = firstHistory.provider || firstHistory.source || provider;
     const state = { assetReturns, assetNames: cleanSymbols, source };
     setMarketState(state);
@@ -111,7 +113,7 @@ export default function PortfolioPage() {
           res = await api.efficientFrontier(payload);
       }
       setResult(res);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
@@ -247,7 +249,7 @@ export default function PortfolioPage() {
                           <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{ret.toFixed(2)}%</Typography>
                           <Typography variant="caption" color="text.secondary">Risk</Typography>
                           <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                            {result.frontier.volatilities[i]?.toFixed(2)}%
+                            {result.frontier?.volatilities[i]?.toFixed(2)}%
                           </Typography>
                         </Box>
                       ))}

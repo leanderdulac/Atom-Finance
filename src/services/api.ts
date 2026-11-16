@@ -111,6 +111,12 @@ export interface StrategyRequest { spot: number; sigma?: number; rate?: number; 
 export interface PresetStrategyRequest { spot: number; sigma?: number; rate?: number; maturity?: number }
 export interface Greeks { delta: number; gamma: number; theta: number; vega: number; rho: number }
 export interface PricingResult { model: string; price: number; greeks: Greeks; inputs: Record<string, unknown> }
+export interface EnginePricingResult {
+  price?: number; model?: string; comparison?: Record<string, number>;
+  greeks?: Record<string, number>; p1?: number; p2?: number;
+  std_error?: number; confidence_95?: [number, number];
+  arbitrage_violation?: boolean; limitations?: string[];
+}
 
 export interface VaRRequest {
   returns: number[]; confidence?: number; portfolio_value?: number; holding_period?: number;
@@ -161,6 +167,80 @@ export interface IbovespaRLRequest {
 
 export interface KellyCryptoRequest { symbol: string; win_prob: number; payout_ratio: number; bankroll_override?: number | null; fraction?: number }
 export interface BinanceTicker { symbol: string; price: string }
+export interface BinanceKellySizing {
+  kelly_full: number; kelly_frac: number; alocacao_dolares: number;
+  current_price: number; symbol: string; asset_units: number;
+}
+export interface MarketHistory {
+  ticker: string; dates: string[]; open: number[]; high: number[]; low: number[];
+  close: number[]; volume: number[]; provider: string; source?: string;
+}
+export interface MarketQuote {
+  ticker: string; price: number; change?: number; change_pct?: number;
+  volume?: number; high?: number; low?: number; provider: string; source?: string;
+}
+export interface MarketVolatility {
+  symbol: string; iv_call: number; iv_put: number; iv_avg: number;
+  volatility_skew: number; timestamp: string;
+}
+export interface BetaResult {
+  beta: number; alpha_daily: number; alpha_annual: number; r_squared: number;
+  p_value: number; std_err: number; n_observations: number;
+  capm?: {
+    expected_return_annual: number; risk_free_rate: number;
+    market_premium: number; formula: string;
+  };
+}
+export interface KellyResult {
+  kelly_full: number; kelly_fraction: number; edge: number;
+  win_rate: number; payout_ratio: number; fraction_used: number;
+}
+export interface GBMResult {
+  S0: number; mu: number; sigma: number; T: number; n_steps: number; n_paths: number;
+  time: number[]; paths: number[][]; mean: number[]; p5: number[]; p95: number[];
+  terminal: { mean: number; std: number; p5: number; p50: number; p95: number; prob_above_S0: number };
+}
+export interface VaRMethodResult {
+  var_percentage: number; var_absolute: number;
+  cvar_percentage: number; cvar_absolute: number;
+}
+export interface StressScenarioResult {
+  scenario: string; portfolio_value: number; total_impact_pct: number;
+  total_impact_abs: number; portfolio_after: number;
+}
+export interface GARCHFitResult {
+  omega: number; alpha: number; beta: number; mu: number; persistence: number;
+  long_run_variance: number; long_run_volatility: number | null;
+  conditional_volatility: number[]; log_likelihood: number; converged: boolean;
+}
+export interface StrategyAnalysisResult {
+  payoff_x?: number[]; payoff_y?: number[]; total_premium?: number;
+  max_profit?: number | string; max_loss?: number;
+  breakeven_points?: number[]; greeks?: Record<string, number>;
+  strategy?: string;
+}
+export interface PortfolioOptimizeResult {
+  expected_return?: number; volatility?: number; sharpe_ratio?: number;
+  weights?: Record<string, number>;
+  frontier?: { returns: number[]; volatilities: number[] };
+  max_sharpe_portfolio?: Record<string, number>;
+}
+export interface GARCHForecastResult {
+  forecast_volatility: number[];
+  forecast_interval_95: { lower: number[]; upper: number[]; units: string };
+  horizon_days: number;
+}
+export interface FullTailRiskResult {
+  alert_level: string; combined_score: number;
+  scores?: { market_score: number; regime_score: number };
+  components?: {
+    market_tail_risk?: {
+      statistics?: Record<string, number>;
+      tail_analysis?: Record<string, number>;
+      risk_metrics?: Record<string, number>;
+    };
+  };
+}
 export interface BinanceDepth { bids: [string, string][]; asks: [string, string][] }
 
 export interface AutopilotRequest { capital: number; horizon_days: number }
@@ -233,54 +313,54 @@ export const api = {
   me: () => request<{ username: string; email?: string; role?: string }>('/auth/me'),
 
   // Pricing
-  blackScholes: (data: PricingRequest) => request<PricingResult>('/pricing/black-scholes', { method: 'POST', body: JSON.stringify(data) }),
-  monteCarlo: (data: MonteCarloRequest) => request<unknown>('/pricing/monte-carlo', { method: 'POST', body: JSON.stringify(data) }),
-  binomial: (data: BinomialRequest) => request<unknown>('/pricing/binomial', { method: 'POST', body: JSON.stringify(data) }),
-  finiteDifference: (data: FiniteDiffRequest) => request<unknown>('/pricing/finite-difference', { method: 'POST', body: JSON.stringify(data) }),
+  blackScholes: (data: PricingRequest) => request<EnginePricingResult & { greeks: Record<string, number> }>('/pricing/black-scholes', { method: 'POST', body: JSON.stringify(data) }),
+  monteCarlo: (data: MonteCarloRequest) => request<EnginePricingResult>('/pricing/monte-carlo', { method: 'POST', body: JSON.stringify(data) }),
+  binomial: (data: BinomialRequest) => request<EnginePricingResult>('/pricing/binomial', { method: 'POST', body: JSON.stringify(data) }),
+  finiteDifference: (data: FiniteDiffRequest) => request<EnginePricingResult>('/pricing/finite-difference', { method: 'POST', body: JSON.stringify(data) }),
   impliedVolatility: (data: IVRequest) => request<unknown>('/pricing/implied-volatility', { method: 'POST', body: JSON.stringify(data) }),
   volSurface: (data: SurfaceRequest) => request<unknown>('/pricing/volatility-surface', { method: 'POST', body: JSON.stringify(data) }),
-  compareModels: (data: PricingRequest) => request<unknown>('/pricing/compare', { method: 'POST', body: JSON.stringify(data) }),
-  strategy: (data: StrategyRequest) => request<unknown>('/pricing/strategy', { method: 'POST', body: JSON.stringify(data) }),
+  compareModels: (data: PricingRequest) => request<EnginePricingResult>('/pricing/compare', { method: 'POST', body: JSON.stringify(data) }),
+  strategy: (data: StrategyRequest) => request<StrategyAnalysisResult>('/pricing/strategy', { method: 'POST', body: JSON.stringify(data) }),
   straddle: (data: PresetStrategyRequest & { strike: number }) => {
     const { strike, ...body } = data;
-    return request<unknown>(`/pricing/strategy/straddle?strike=${strike}`, { method: 'POST', body: JSON.stringify(body) });
+    return request<StrategyAnalysisResult>(`/pricing/strategy/straddle?strike=${strike}`, { method: 'POST', body: JSON.stringify(body) });
   },
   ironCondor: (data: PresetStrategyRequest & { k1: number; k2: number; k3: number; k4: number }) => {
     const { k1, k2, k3, k4, ...body } = data;
-    return request<unknown>(`/pricing/strategy/iron-condor?k1=${k1}&k2=${k2}&k3=${k3}&k4=${k4}`, { method: 'POST', body: JSON.stringify(body) });
+    return request<StrategyAnalysisResult>(`/pricing/strategy/iron-condor?k1=${k1}&k2=${k2}&k3=${k3}&k4=${k4}`, { method: 'POST', body: JSON.stringify(body) });
   },
   butterfly: (data: PresetStrategyRequest & { k1: number; k2: number; k3: number }) => {
     const { k1, k2, k3, ...body } = data;
-    return request<unknown>(`/pricing/strategy/butterfly?k1=${k1}&k2=${k2}&k3=${k3}`, { method: 'POST', body: JSON.stringify(body) });
+    return request<StrategyAnalysisResult>(`/pricing/strategy/butterfly?k1=${k1}&k2=${k2}&k3=${k3}`, { method: 'POST', body: JSON.stringify(body) });
   },
 
   // Risk
   var: (data: VaRRequest) => request<unknown>('/risk/var', { method: 'POST', body: JSON.stringify(data) }),
   varAll: <T = unknown>(data: VaRRequest) => request<T>('/risk/var/all-methods', { method: 'POST', body: JSON.stringify(data) }),
-  stressTest: (data: StressTestRequest) => request<unknown>('/risk/stress-test', { method: 'POST', body: JSON.stringify(data) }),
-  garch: (data: GARCHRequest) => request<unknown>('/risk/garch', { method: 'POST', body: JSON.stringify(data) }),
+  stressTest: (data: StressTestRequest) => request<{ scenarios: Record<string, StressScenarioResult> }>('/risk/stress-test', { method: 'POST', body: JSON.stringify(data) }),
+  garch: (data: GARCHRequest) => request<{ fit: GARCHFitResult; forecast: GARCHForecastResult }>('/risk/garch', { method: 'POST', body: JSON.stringify(data) }),
   heston: (data: HestonRequest) => request<unknown>('/risk/heston', { method: 'POST', body: JSON.stringify(data) }),
 
   // Portfolio
-  efficientFrontier: (data: PortfolioRequest) => request<unknown>('/portfolio/efficient-frontier', { method: 'POST', body: JSON.stringify(data) }),
-  maxSharpe: (data: PortfolioRequest) => request<unknown>('/portfolio/max-sharpe', { method: 'POST', body: JSON.stringify(data) }),
-  riskParity: (data: PortfolioRequest) => request<unknown>('/portfolio/risk-parity', { method: 'POST', body: JSON.stringify(data) }),
+  efficientFrontier: (data: PortfolioRequest) => request<PortfolioOptimizeResult>('/portfolio/efficient-frontier', { method: 'POST', body: JSON.stringify(data) }),
+  maxSharpe: (data: PortfolioRequest) => request<PortfolioOptimizeResult>('/portfolio/max-sharpe', { method: 'POST', body: JSON.stringify(data) }),
+  riskParity: (data: PortfolioRequest) => request<PortfolioOptimizeResult>('/portfolio/risk-parity', { method: 'POST', body: JSON.stringify(data) }),
   blackLitterman: (data: BlackLittermanRequest) => request<unknown>('/portfolio/black-litterman', { method: 'POST', body: JSON.stringify(data) }),
 
   // Tail risk
   tailRisk: (data: TailRiskRequest) => request<unknown>('/black-swan/tail-risk', { method: 'POST', body: JSON.stringify(data) }),
   regimeChange: (data: TailRiskRequest) => request<unknown>('/black-swan/regime-change', { method: 'POST', body: JSON.stringify(data) }),
-  blackSwanFull: (data: TailRiskRequest) => request<unknown>('/black-swan/full-analysis', { method: 'POST', body: JSON.stringify(data) }),
+  blackSwanFull: (data: TailRiskRequest) => request<FullTailRiskResult>('/black-swan/full-analysis', { method: 'POST', body: JSON.stringify(data) }),
   blackSwanDemo: () => request('/black-swan/demo'),
 
   // Market Data
   marketProviders: () => request('/market-data/providers'),
-  quote: (ticker: string, provider = 'auto') => request(`/market-data/quote/${encodeURIComponent(ticker)}?provider=${encodeURIComponent(provider)}`),
-  history: (ticker: string, days?: number, provider = 'auto') => request(`/market-data/history/${encodeURIComponent(ticker)}?days=${days || 252}&provider=${encodeURIComponent(provider)}`),
+  quote: (ticker: string, provider = 'auto') => request<MarketQuote>(`/market-data/quote/${encodeURIComponent(ticker)}?provider=${encodeURIComponent(provider)}`),
+  history: (ticker: string, days?: number, provider = 'auto') => request<MarketHistory>(`/market-data/history/${encodeURIComponent(ticker)}?days=${days || 252}&provider=${encodeURIComponent(provider)}`),
   profile: (ticker: string) => request(`/market-data/profile/${encodeURIComponent(ticker)}`),
   search: (query: string) => request(`/market-data/search?query=${encodeURIComponent(query)}`),
   optionsChain: (ticker: string, provider = 'auto') => request(`/market-data/options-chain/${encodeURIComponent(ticker)}?provider=${encodeURIComponent(provider)}`),
-  volatility: (ticker: string) => request(`/market-data/volatility/${encodeURIComponent(ticker)}`),
+  volatility: (ticker: string) => request<MarketVolatility>(`/market-data/volatility/${encodeURIComponent(ticker)}`),
   returns: (ticker: string, period = '1y') => request(`/market-data/returns/${encodeURIComponent(ticker)}?period=${encodeURIComponent(period)}`),
 
   // Backtesting
@@ -288,14 +368,14 @@ export const api = {
 
   // Neural SDE
   neuralSdeStatus: () => request('/neural-sde/status'),
-  neuralSdeDemo: () => request('/neural-sde/demo'),
+  neuralSdeDemo: <T = unknown>() => request<T>('/neural-sde/demo'),
   neuralSdeSimulate: <T = unknown>(data: NeuralSDERequest) => request<T>('/neural-sde/simulate', { method: 'POST', body: JSON.stringify(data) }),
 
   // CAPM & Kelly
   capmDemo: () => request('/capm/demo'),
-  capmBeta: (data: BetaRequest) => request<unknown>('/capm/beta', { method: 'POST', body: JSON.stringify(data) }),
-  capmKelly: (data: KellyRequest) => request<unknown>('/capm/kelly', { method: 'POST', body: JSON.stringify(data) }),
-  capmGbm: (data: GBMRequest) => request<unknown>('/capm/gbm', { method: 'POST', body: JSON.stringify(data) }),
+  capmBeta: (data: BetaRequest) => request<BetaResult>('/capm/beta', { method: 'POST', body: JSON.stringify(data) }),
+  capmKelly: (data: KellyRequest) => request<KellyResult>('/capm/kelly', { method: 'POST', body: JSON.stringify(data) }),
+  capmGbm: (data: GBMRequest) => request<GBMResult>('/capm/gbm', { method: 'POST', body: JSON.stringify(data) }),
   capmGbmMulti: (data: GBMMultiRequest) => request<unknown>('/capm/gbm-multi', { method: 'POST', body: JSON.stringify(data) }),
   capmGbmMultiDemo: () => request('/capm/gbm-multi/demo'),
 
@@ -364,7 +444,7 @@ export const api = {
   binancePrice: (symbol: string) => request<BinanceTicker>(`/binance/price/${encodeURIComponent(symbol)}`),
   binanceTickers: () => request<BinanceTicker[]>('/binance/tickers'),
   binanceDepth: (symbol: string, limit = 100) => request<BinanceDepth>(`/binance/depth/${encodeURIComponent(symbol)}?limit=${limit}`),
-  binanceKellySizing: (data: KellyCryptoRequest) => request<unknown>('/binance/kelly-sizing', { method: 'POST', body: JSON.stringify(data) }),
+  binanceKellySizing: (data: KellyCryptoRequest) => request<BinanceKellySizing>('/binance/kelly-sizing', { method: 'POST', body: JSON.stringify(data) }),
   binanceFuturesAccount: () => request<unknown>('/binance/futures/account'),
   binanceFuturesPrice: (symbol: string) => request<BinanceTicker>(`/binance/futures/price/${encodeURIComponent(symbol)}`),
 

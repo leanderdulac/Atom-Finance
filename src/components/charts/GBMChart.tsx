@@ -49,7 +49,7 @@ export default function GBMChart({ data, height = 320 }: GBMChartProps) {
           <Tooltip
             contentStyle={{ background: '#1e1e2e', border: '1px solid #374151', borderRadius: 8 }}
             labelStyle={{ color: '#9ca3af' }}
-            formatter={(v: any) => [`$${Number(v).toFixed(2)}`]}
+            formatter={(v: unknown) => [`$${Number(v).toFixed(2)}`]}
             labelFormatter={(l) => `Day ${l}`}
           />
           <ReferenceLine y={data.S0} stroke="#6b7280" strokeDasharray="4 4" />

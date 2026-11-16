@@ -12,9 +12,7 @@ from app.services.data_fetcher import DataFetcher
 
 logger = logging.getLogger(__name__)
 
-# Horizon shared by every recommendation below (30 calendar days) and the
-# BRL risk-free proxy used to price them. Wire the DI curve when available.
-_HORIZON_T = 30.0 / 365.0
+# BRL risk-free proxy used to price recommendations. Wire the DI curve when available.
 _SELIC_PROXY = 0.10
 
 @dataclasses.dataclass
@@ -44,7 +42,64 @@ class OptionsExpert:
     ]
 
     @classmethod
-    async def scan_market(cls, limit: int = 15) -> list[OptionTrade]:
+    @classmethod
+    def expected_value(cls, trade: OptionTrade) -> float:
+        """First-order EV in BRL: p(win)·max_profit − p(lose)·|max_loss|.
+
+        Uses the trade's own N(d2) success proxy on both legs' exact payoffs —
+        a ranking score, not a P&L forecast (no vol dynamics, no early exit).
+        """
+        p = min(max(trade.prob_success / 100.0, 0.0), 1.0)
+        win = trade.max_profit or 0.0
+        lose = abs(trade.max_loss or 0.0)
+        return p * win - (1.0 - p) * lose
+
+    @classmethod
+    def select_structure(
+        cls,
+        ticker: str,
+        spot: float,
+        iv: float,
+        direction: str,
+        r: float = _SELIC_PROXY,
+        days_grid: tuple[int, ...] = (30, 60, 90),
+        otm_grid: tuple[float, ...] = (0.03, 0.05, 0.08),
+        width_grid: tuple[float, ...] = (0.03, 0.05),
+    ) -> dict:
+        """Sweep strikes × expiries and return every candidate plus the best-EV pick.
+
+        direction: 'bullish' | 'bearish' | 'income'. Pure function (no network).
+        """
+        makers = {
+            "bullish": cls._recommend_bullish,
+            "bearish": cls._recommend_bearish,
+            "income": cls._recommend_income,
+        }
+        if direction not in makers:
+            raise ValueError(f"direction must be one of {sorted(makers)}")
+        make = makers[direction]
+        candidates = []
+        for days in days_grid:
+            for otm in otm_grid:
+                for width in (width_grid if direction != "income" else (None,)):
+                    kw: dict = {"r": r, "days": days, "otm_pct": otm}
+                    if width is not None:
+                        kw["width_pct"] = width
+                    trade = make(ticker, spot, iv, **kw)
+                    ev = cls.expected_value(trade)
+                    candidates.append({
+                        "days": days, "otm_pct": otm,
+                        **({"width_pct": width} if width is not None else {}),
+                        "strike": trade.strike, "strike_2": trade.strike_2,
+                        "cost_brl": trade.cost_brl,
+                        "max_profit": trade.max_profit, "max_loss": trade.max_loss,
+                        "prob_success": trade.prob_success,
+                        "expected_value_brl": round(ev, 2),
+                    })
+        best = max(candidates, key=lambda c: c["expected_value_brl"])
+        return {"candidates": candidates, "best": best, "direction": direction}
+
+    async def scan_market(cls, limit: int = 15, r: float = _SELIC_PROXY) -> list[OptionTrade]:
         """Scans B3 assets and returns the best 3-5 opportunities."""
         tickers = cls.TOP_B3_TICKERS[:limit]
         yf_tickers = [f"{t}.SA" for t in tickers]
@@ -85,19 +140,19 @@ class OptionsExpert:
             # single day's print is noise relative to that horizon.
 
             if kronos_trend == "BULLISH" and iv < 0.45:
-                trade = cls._recommend_bullish(ticker, spot, iv)
+                trade = cls._recommend_bullish(ticker, spot, iv, r=r)
                 trade.reasoning = f"Modelo Kronos prevê alta de {kronos_return:.1f}% em 30 dias. Volatilidade baixa ({iv*100:.1f}%) favorece a compra de estrutura."
                 trades.append(trade)
             elif kronos_trend == "BEARISH" and iv < 0.45:
-                trade = cls._recommend_bearish(ticker, spot, iv)
+                trade = cls._recommend_bearish(ticker, spot, iv, r=r)
                 trade.reasoning = f"Modelo Kronos prevê queda de {abs(kronos_return):.1f}% em 30 dias. IV moderado permite montagem de trava de baixa."
                 trades.append(trade)
             elif iv > 0.45:
-                trade = cls._recommend_income(ticker, spot, iv)
+                trade = cls._recommend_income(ticker, spot, iv, r=r)
                 trade.reasoning = f"Mesmo com previsão de {kronos_trend} ({kronos_return:.1f}%), a volatilidade implícita de {iv*100:.1f}% está muito alta. Recomenda-se venda coberta."
                 trades.append(trade)
             else:
-                trade = cls._recommend_bullish(ticker, spot, iv)
+                trade = cls._recommend_bullish(ticker, spot, iv, r=r)
                 trade.reasoning = f"Previsão neutra ou sem sinal forte ({kronos_return:.1f}%). Sugerimos alocação conservadora."
                 trades.append(trade)
 
@@ -106,30 +161,33 @@ class OptionsExpert:
         return trades[:5]
 
     @classmethod
-    def _bs_call(cls, spot: float, strike: float, iv: float):
-        return BlackScholes.greeks(spot, strike, _HORIZON_T, _SELIC_PROXY, iv, "call")
+    def _bs_call(cls, spot: float, strike: float, iv: float, r: float, days: int):
+        return BlackScholes.greeks(spot, strike, days / 365.0, r, iv, "call")
 
     @classmethod
-    def _bs_put(cls, spot: float, strike: float, iv: float):
-        return BlackScholes.greeks(spot, strike, _HORIZON_T, _SELIC_PROXY, iv, "put")
+    def _bs_put(cls, spot: float, strike: float, iv: float, r: float, days: int):
+        return BlackScholes.greeks(spot, strike, days / 365.0, r, iv, "put")
 
     @classmethod
-    def _recommend_bullish(cls, ticker: str, spot: float, iv: float) -> OptionTrade:
+    def _recommend_bullish(cls, ticker: str, spot: float, iv: float,
+                           r: float = _SELIC_PROXY, days: int = 30,
+                           otm_pct: float = 0.05, width_pct: float = 0.05) -> OptionTrade:
         from scipy.stats import norm as _norm
 
-        k1 = round(spot * 1.05, 2)  # 5% OTM long leg
-        k2 = round(k1 * 1.05, 2)  # short leg caps the upside
-        long_leg, short_leg = cls._bs_call(spot, k1, iv), cls._bs_call(spot, k2, iv)
+        k1 = round(spot * (1 + otm_pct), 2)  # OTM long leg
+        k2 = round(k1 * (1 + width_pct), 2)  # short leg caps the upside
+        long_leg, short_leg = cls._bs_call(spot, k1, iv, r, days), cls._bs_call(spot, k2, iv, r, days)
         debit = long_leg.price - short_leg.price
         max_profit = (k2 - k1) - debit
         # First-order P(expiring above K1): risk-neutral N(d2) of the long leg.
-        d2 = BlackScholes.d2(spot, k1, _HORIZON_T, _SELIC_PROXY, iv)
+        d2 = BlackScholes.d2(spot, k1, days / 365.0, r, iv)
         prob = float(_norm.cdf(d2) * 100.0)
 
         return OptionTrade(
             ticker=ticker,
             action="BULL CALL SPREAD",
             underlying_price=spot,
+            expiry_days=days,
             strike=k1,
             strike_2=k2,
             cost_brl=round(debit, 2),
@@ -139,7 +197,7 @@ class OptionsExpert:
             max_profit=round(max_profit, 2),
             max_loss=round(-debit, 2),
             prob_success=round(prob, 1),
-            reasoning=f"Tendência de alta em {ticker}. Trava {k1}/{k2} precificada a R${debit:.2f} (BS 30d, IV {iv*100:.1f}%).",
+            reasoning=f"Tendência de alta em {ticker}. Trava {k1}/{k2} precificada a R${debit:.2f} (BS {days}d, IV {iv*100:.1f}%).",
             scenario_analysis={
                 "p10_gain": round((k2 - k1 - debit) * 100, 2),
                 "p5_gain": round(max(spot * 1.05 - k1, 0.0) * 100 - debit * 100, 2),
@@ -148,21 +206,24 @@ class OptionsExpert:
         )
 
     @classmethod
-    def _recommend_bearish(cls, ticker: str, spot: float, iv: float) -> OptionTrade:
+    def _recommend_bearish(cls, ticker: str, spot: float, iv: float,
+                           r: float = _SELIC_PROXY, days: int = 30,
+                           otm_pct: float = 0.05, width_pct: float = 0.05) -> OptionTrade:
         from scipy.stats import norm as _norm
 
-        k1 = round(spot * 0.95, 2)  # long put, 5% OTM-down
-        k2 = round(k1 * 0.95, 2)  # short put funds it
-        long_leg, short_leg = cls._bs_put(spot, k1, iv), cls._bs_put(spot, k2, iv)
+        k1 = round(spot * (1 - otm_pct), 2)  # long put, OTM-down
+        k2 = round(k1 * (1 - width_pct), 2)  # short put funds it
+        long_leg, short_leg = cls._bs_put(spot, k1, iv, r, days), cls._bs_put(spot, k2, iv, r, days)
         debit = long_leg.price - short_leg.price
         max_profit = (k1 - k2) - debit
-        d2 = BlackScholes.d2(spot, k1, _HORIZON_T, _SELIC_PROXY, iv)
+        d2 = BlackScholes.d2(spot, k1, days / 365.0, r, iv)
         prob = float(_norm.cdf(-d2) * 100.0)
 
         return OptionTrade(
             ticker=ticker,
             action="BEAR PUT SPREAD",
             underlying_price=spot,
+            expiry_days=days,
             strike=k1,
             strike_2=k2,
             cost_brl=round(debit, 2),
@@ -172,7 +233,7 @@ class OptionsExpert:
             max_profit=round(max_profit, 2),
             max_loss=round(-debit, 2),
             prob_success=round(prob, 1),
-            reasoning=f"Sinais de correção para {ticker}. Trava {k2}/{k1} precificada a R${debit:.2f} (BS 30d, IV {iv*100:.1f}%).",
+            reasoning=f"Sinais de correção para {ticker}. Trava {k2}/{k1} precificada a R${debit:.2f} (BS {days}d, IV {iv*100:.1f}%).",
             scenario_analysis={
                 "m10_gain": round((k1 - k2 - debit) * 100, 2),
                 "m5_gain": round(max(k1 - spot * 0.95, 0.0) * 100 - debit * 100, 2),
@@ -181,18 +242,21 @@ class OptionsExpert:
         )
 
     @classmethod
-    def _recommend_income(cls, ticker: str, spot: float, iv: float) -> OptionTrade:
+    def _recommend_income(cls, ticker: str, spot: float, iv: float,
+                          r: float = _SELIC_PROXY, days: int = 30,
+                          otm_pct: float = 0.08) -> OptionTrade:
         from scipy.stats import norm as _norm
 
-        strike = round(spot * 1.08, 2)
-        leg = cls._bs_call(spot, strike, iv)
+        strike = round(spot * (1 + otm_pct), 2)
+        leg = cls._bs_call(spot, strike, iv, r, days)
         premium = leg.price
-        d2 = BlackScholes.d2(spot, strike, _HORIZON_T, _SELIC_PROXY, iv)
+        d2 = BlackScholes.d2(spot, strike, days / 365.0, r, iv)
         prob = float(_norm.cdf(-d2) * 100.0)  # expire below K: keep it all
         return OptionTrade(
             ticker=ticker,
             action="COVERED CALL",
             underlying_price=spot,
+            expiry_days=days,
             strike=strike,
             cost_brl=-round(premium, 2),  # credit
             iv=iv,
@@ -201,7 +265,7 @@ class OptionsExpert:
             max_profit=round(premium, 2),
             max_loss=round(premium - spot, 2),
             prob_success=round(prob, 1),
-            reasoning=f"IV de {iv*100:.1f}% em {ticker} sustenta lançamento coberto {strike} por R${premium:.2f} (BS 30d).",
+            reasoning=f"IV de {iv*100:.1f}% em {ticker} sustenta lançamento coberto {strike} por R${premium:.2f} (BS {days}d).",
             scenario_analysis={
                 "flat_keep": round(premium * 100, 2),
                 "up8_capped": round((strike - spot + premium) * 100, 2),

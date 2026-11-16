@@ -5,7 +5,7 @@ import {
   TableContainer, TableHead, TableRow, Paper, CircularProgress, Alert,
   Tabs, Tab, Divider, Chip,
 } from '@mui/material';
-import { api } from '../services/api';
+import { api, type EnginePricingResult, type MarketQuote, type MarketVolatility } from '../services/api';
 import MarketTickerAutocomplete from '../components/MarketTickerAutocomplete';
 import ProviderChips from '../components/ProviderChips';
 import QuantContextSection from '../components/QuantContextSection';
@@ -14,6 +14,12 @@ interface TabPanelProps {
   children?: React.ReactNode;
   value: number;
   index: number;
+}
+
+interface PricingParams {
+  spot: number; strike: number; maturity: number; rate: number;
+  sigma: number; option_type: 'call' | 'put'; dividend_yield: number;
+  n_simulations: number; n_steps: number; american: boolean;
 }
 
 const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => (
@@ -44,7 +50,7 @@ const modelSelectionNotes = [
 export default function PricingPage() {
   const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<EnginePricingResult | null>(null);
   const [error, setError] = useState('');
   const [ticker, setTicker] = useState('AAPL');
   const [provider, setProvider] = useState('auto');
@@ -57,14 +63,14 @@ export default function PricingPage() {
     american: false,
   });
 
-  const update = (key: string, val: any) => setParams((p) => ({ ...p, [key]: val }));
+  const update = (key: keyof PricingParams, val: number | string) => setParams((p) => ({ ...p, [key]: val }));
 
   const loadMarketData = async () => {
     setLoading(true);
     setError('');
     try {
-      const quote: any = await api.quote(ticker, provider);
-      const vol: any = await api.volatility(ticker).catch(() => null);
+      const quote: MarketQuote = await api.quote(ticker, provider);
+      const vol: MarketVolatility | null = await api.volatility(ticker).catch(() => null);
 
       setParams((p) => ({
         ...p,
@@ -73,8 +79,8 @@ export default function PricingPage() {
         sigma: Number(vol?.iv_avg || p.sigma),
       }));
       setMarketSource(quote.provider || quote.source || provider);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unexpected error');
     } finally {
       setLoading(false);
     }
@@ -105,8 +111,8 @@ export default function PricingPage() {
           res = await api.blackScholes(params);
       }
       setResult(res);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unexpected error');
     } finally {
       setLoading(false);
     }
