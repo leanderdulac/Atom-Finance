@@ -40,6 +40,28 @@ class TestPasswordHashing:
         hashed = hash_password("shared_secret")
         assert verify_password("shared_secret", hashed) is True
 
+    def test_verify_over_72_bytes_returns_false_without_raising(self):
+        # bcrypt 5 raises ValueError past 72 bytes instead of truncating;
+        # the login path must answer False (401), never 500.
+        hashed = hash_password("correct_password")
+        assert verify_password("x" * 100, hashed) is False
+        assert verify_password("é" * 40, hashed) is False
+
+    def test_login_schema_rejects_over_72_utf8_bytes(self):
+        import pytest
+        from pydantic import ValidationError
+
+        from app.api.auth import LoginRequest, RegisterRequest
+
+        assert LoginRequest(username="alice", password="a" * 72).password == "a" * 72
+        assert LoginRequest(username="alice", password="é" * 36).password == "é" * 36
+        with pytest.raises(ValidationError):
+            LoginRequest(username="alice", password="a" * 73)
+        with pytest.raises(ValidationError):
+            LoginRequest(username="alice", password="é" * 37)
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="alice", password="a" * 73, email="a@b.test")
+
 
 class TestJWT:
     def test_token_roundtrip(self):
