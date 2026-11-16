@@ -84,7 +84,7 @@ jobs:
           python -m pytest tests/ \
             --tb=short \
             -q \
-            -x \
+            --maxfail=5 \
             --cov=app \
             --cov-report=term-missing \
             --cov-fail-under=50

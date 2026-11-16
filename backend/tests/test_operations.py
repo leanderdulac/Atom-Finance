@@ -56,6 +56,29 @@ def test_successful_upload_records_freshness(tmp_path, monkeypatch):
     assert (datetime.now(UTC) - stamp).total_seconds() < 5
 
 
+def test_research_db_backed_up_when_worker_is_up(tmp_path, monkeypatch):
+    monkeypatch.setenv('RESTIC_REPOSITORY', 's3:https://example.test/bucket')
+    monkeypatch.setenv('RESTIC_PASSWORD_FILE', '/secret-file')
+    monkeypatch.setenv('ATOM_OPS_STATE', str(tmp_path))
+    copied = []
+
+    def docker(args):
+        if 'cp' in args:
+            copied.append(args[-2])
+            Path(args[-1]).write_bytes(b'snapshot bytes')
+
+    def probe(*args, **kwargs):
+        if args and isinstance(args[0], list) and 'quantmind' in args[0]:
+            return SimpleNamespace(stdout='abc123\n')
+        return SimpleNamespace(stdout='')
+
+    monkeypatch.setattr(backup, 'run', docker)
+    monkeypatch.setattr(backup.subprocess, 'run', probe)
+    backup.backup()
+    assert 'quantmind:/data/research.db' in copied
+    assert (tmp_path / 'backup-success.json').exists()
+
+
 def test_local_repository_rejected_before_snapshot(monkeypatch):
     monkeypatch.setenv('RESTIC_REPOSITORY', '/local/directory')
     monkeypatch.setattr(backup, 'run', lambda _: pytest.fail('must not create a snapshot'))
@@ -104,12 +127,14 @@ def test_atom_unit_reuses_images_on_boot_instead_of_rebuilding():
     seconds = int(timeout.rstrip('s'))
     assert seconds <= 180
     setup = (ROOT / 'scripts/setup-server.sh').read_text()
-    assert 'ops/systemd/atom.service' in setup
-    assert 'up -d --build' not in setup.split('Installing systemd service')[1].split('Summary')[0]
+    assert 'for unit in atom.service atom-monitor.service' in setup
+    assert 'ops/systemd/$unit' in setup
+    assert 'up -d --build' not in setup.split('Installing systemd units')[1].split('Summary')[0]
 
 
 def test_deploy_script_builds_then_ups_without_rebuild():
     script = (ROOT / 'scripts/deploy.sh').read_text()
-    assert 'build backend frontend' in script
+    assert 'build_services=(backend frontend)' in script
+    assert 'build "${build_services[@]}"' in script
     assert 'up -d --no-build' in script
     assert 'up -d --build' not in script

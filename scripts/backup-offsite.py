@@ -6,10 +6,10 @@ primary recovery mechanism — this is a secondary, encrypted, offsite copy on
 top of that, not a replacement for it."""
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 
@@ -45,10 +45,11 @@ def backup():
                 subprocess.run(['restic', 'backup', '--stdin', '--stdin-filename', 'atom.dump',
                                 '--tag', 'atom-core'], stdin=source, check=True, timeout=1800)
             # Research worker SQLite (user articles) — only when the research
-            # profile is up; skipped silently otherwise.
+            # profile is up; skipped silently otherwise (or when the probe
+            # itself yields nothing usable).
             qm = subprocess.run(compose + ['ps', '-q', 'quantmind'], capture_output=True,
                                 text=True, check=True, timeout=120)
-            if qm.stdout.strip():
+            if (getattr(qm, 'stdout', '') or '').strip():
                 research_local = Path(staging) / 'research.db'
                 run(compose + ['cp', 'quantmind:/data/research.db', str(research_local)])
                 research_local.chmod(0o600)
@@ -59,7 +60,7 @@ def backup():
         # Only advance freshness after a fully successful upload.
         target = state_dir / 'backup-success.json'
         temporary = state_dir / ('backup-success-' + str(uuid4()) + '.tmp')
-        temporary.write_text(json.dumps({'completed_at': datetime.now(timezone.utc).isoformat()}))
+        temporary.write_text(json.dumps({'completed_at': datetime.now(UTC).isoformat()}))
         temporary.chmod(0o600)
         temporary.replace(target)
     finally:
