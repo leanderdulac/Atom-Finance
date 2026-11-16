@@ -26,7 +26,10 @@ def authorize(authorization: str = Header(default="")):
         raise HTTPException(401, "Invalid service credentials")
 
 
-app = FastAPI(title="ATOM Research", dependencies=[Depends(authorize)])
+# /health stays public: the Docker healthcheck calls it without credentials, and
+# it reveals only a presence boolean (same policy as the main backend).
+# Every data route carries Depends(authorize) explicitly.
+app = FastAPI(title="ATOM Research")
 
 
 class ExtractRequest(BaseModel):
@@ -72,7 +75,7 @@ def health():
     return {"status": "healthy", "configured": bool(os.getenv("OPENAI_API_KEY"))}
 
 
-@app.post("/papers", status_code=201)
+@app.post("/papers", status_code=201, dependencies=[Depends(authorize)])
 async def extract(req: ExtractRequest):
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(503, "Configure OPENAI_API_KEY no serviço de pesquisa.")
@@ -132,7 +135,7 @@ async def extract(req: ExtractRequest):
     return payload
 
 
-@app.get("/papers")
+@app.get("/papers", dependencies=[Depends(authorize)])
 def list_papers(owner: str, limit: int = 30):
     with connect() as db:
         return [
@@ -144,7 +147,7 @@ def list_papers(owner: str, limit: int = 30):
         ]
 
 
-@app.get("/papers/{paper_id}")
+@app.get("/papers/{paper_id}", dependencies=[Depends(authorize)])
 def get_paper(paper_id: UUID, owner: str):
     with connect() as db:
         row = db.execute(

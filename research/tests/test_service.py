@@ -60,7 +60,18 @@ class ResearchTests(unittest.TestCase):
         )
 
     def test_credentials_and_missing_configuration(self):
-        self.assertEqual(TestClient(app).get("/health").status_code, 401)
+        # /health is public (Docker healthcheck has no token); data routes are not.
+        self.assertEqual(TestClient(app).get("/health").status_code, 200)
+        anonymous = TestClient(app)
+        self.assertEqual(
+            anonymous.get("/papers", params={"owner": "a"}).status_code, 401
+        )
+        self.assertEqual(
+            anonymous.post(
+                "/papers", json={"owner": "a", "kind": "text", "content": "paper"}
+            ).status_code,
+            401,
+        )
         with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
             self.assertFalse(self.client.get("/health").json()["configured"])
             self.assertEqual(
