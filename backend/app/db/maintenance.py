@@ -14,6 +14,7 @@ import getpass
 import os
 import subprocess
 from pathlib import Path
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 
 def _database_url() -> str:
@@ -23,22 +24,44 @@ def _database_url() -> str:
     return url.replace("postgresql+asyncpg://", "postgresql://")
 
 
+def _passwordless_url_and_env() -> tuple[str, dict[str, str]]:
+    """Split the password out of the URL: argv is visible in ps/auditd, env is not.
+
+    Returns (url_without_password, env_with_PGPASSWORD).
+    """
+    parts = urlsplit(_database_url())
+    env = dict(os.environ)
+    if parts.password:
+        env["PGPASSWORD"] = unquote(parts.password)
+    netloc = parts.hostname or ""
+    if parts.port:
+        netloc += f":{parts.port}"
+    if parts.username:
+        netloc = f"{parts.username}@{netloc}"
+    clean = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    return clean, env
+
+
 def backup(destination: Path) -> Path:
     destination = destination.absolute()
     if destination.exists():
         raise FileExistsError(f"{destination} already exists — refusing to overwrite.")
+    url, env = _passwordless_url_and_env()
     subprocess.run(
-        ["pg_dump", "--format=custom", "--file", str(destination), _database_url()],
+        ["pg_dump", "--format=custom", "--file", str(destination), url],
         check=True,
+        env=env,
     )
     return destination
 
 
 def restore(source: Path) -> None:
     source = source.resolve(strict=True)
+    url, env = _passwordless_url_and_env()
     subprocess.run(
-        ["pg_restore", "--clean", "--if-exists", "--no-owner", "--dbname", _database_url(), str(source)],
+        ["pg_restore", "--clean", "--if-exists", "--no-owner", "--dbname", url, str(source)],
         check=True,
+        env=env,
     )
 
 

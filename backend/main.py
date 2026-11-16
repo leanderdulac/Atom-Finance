@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -45,8 +45,8 @@ from app.core.cache import Cache  # noqa: E402
 from app.core.limiter import limiter
 from app.core.observability import configure_logging, init_sentry, request_id_middleware
 from app.core.runtime import exclusive_runtime
-from app.core.security import get_current_user
-from app.db.database import readiness
+from app.core.security import get_current_user, is_production
+from app.db.database import ping
 from app.db.postgres import close_pool
 
 configure_logging()
@@ -100,9 +100,9 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
-    docs_url=None if os.getenv("ATOM_ENV") == "production" else "/docs",
-    redoc_url=None if os.getenv("ATOM_ENV") == "production" else "/redoc",
-    openapi_url=None if os.getenv("ATOM_ENV") == "production" else "/openapi.json",
+    docs_url=None if is_production() else "/docs",
+    redoc_url=None if is_production() else "/redoc",
+    openapi_url=None if is_production() else "/openapi.json",
 )
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
@@ -123,8 +123,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_parse_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
 # ── Prometheus instrumentação ────────────────────────────────────────────────
@@ -184,13 +184,16 @@ async def response_security(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
 # Backstop for request-buffering DoS: Starlette buffers the whole body before
 # the route schema validates it, and this app runs single-worker. Reverse
 # proxies should cap bodies first (nginx client_max_body_size); this guards a
-# directly-exposed backend. Oversize → 413 before the body is read.
+# directly-exposed backend. Oversize → 413, measured on bytes actually
+# consumed (a declared Content-Length alone misses chunked bodies).
 _MAX_BODY_BYTES = int(os.getenv("ATOM_MAX_BODY_BYTES", str(5 * 1024 * 1024)))
 
 
@@ -199,6 +202,34 @@ async def body_size_guard(request, call_next):
     raw = request.headers.get("content-length")
     if raw is not None and raw.isdigit() and int(raw) > _MAX_BODY_BYTES:
         return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+
+    # A declared length alone misses chunked bodies, so drain and count the
+    # bytes actually sent (bounded: stop one chunk past the cap). Oversize →
+    # 413 before the route runs, so no handler ever observes a truncated body.
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        message = await request.receive()
+        if message["type"] != "http.request":
+            break
+        total += len(message.get("body", b""))
+        if total > _MAX_BODY_BYTES:
+            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+        chunks.append(message.get("body", b""))
+        if not message.get("more_body"):
+            break
+
+    body = b"".join(chunks)
+    sent = False
+
+    async def _replay():
+        nonlocal sent
+        if sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request._receive = _replay  # pyright: ignore[reportAttributeAccessIssue]
     return await call_next(request)
 
 
@@ -243,10 +274,10 @@ def _health_payload() -> dict:
 
 
 @app.get("/api/health")
-@limiter.exempt
-async def health_check():
+@limiter.limit("30/minute")
+async def health_check(request: Request):
     try:
-        await readiness()
+        await ping()
     except Exception:
         logger.exception("Database readiness failed")
         return JSONResponse(status_code=503, content={"status": "unavailable"})

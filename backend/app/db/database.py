@@ -95,13 +95,13 @@ async def create_user(username: str, email: str, password_hash: str, role: str =
             "VALUES ($1, $2, $3, $4, $5) RETURNING id",
             username.lower().strip(), email.lower().strip(), password_hash, role, datetime.now(UTC),
         )
-        logger.info("User created: %s (id=%d)", username, row_id)
+        logger.info("User created: id=%d", row_id)
         return row_id
     except asyncpg.UniqueViolationError:
-        logger.warning("Duplicate user attempt: %s / %s", username, email)
+        logger.warning("Duplicate user registration attempt")
         return None
     except Exception as exc:
-        logger.error("Failed to create user %s: %s", username, exc)
+        logger.error("Failed to create user: %s", exc)
         return None
 
 
@@ -116,7 +116,7 @@ async def get_user_by_username(username: str) -> dict | None:
         )
         return dict(row) if row else None
     except Exception as exc:
-        logger.error("Failed to get user %s: %s", username, exc)
+        logger.error("Failed to get user by username: %s", exc)
         return None
 
 
@@ -131,7 +131,7 @@ async def get_user_by_email(email: str) -> dict | None:
         )
         return dict(row) if row else None
     except Exception as exc:
-        logger.error("Failed to get user by email %s: %s", email, exc)
+        logger.error("Failed to get user by email: %s", exc)
         return None
 
 
@@ -166,6 +166,9 @@ async def readiness() -> None:
     DDL is transactional in Postgres: CREATE TABLE must commit on its own, in
     a separate transaction from the probe write, or rolling back the probe
     would undo the table too.
+
+    Startup-only: the public /api/health endpoint uses ping() below, which is
+    read-only, so unauthenticated polling can never generate DDL or writes.
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -178,6 +181,13 @@ async def readiness() -> None:
             )
         finally:
             await tx.rollback()
+
+
+async def ping() -> None:
+    """Read-only liveness probe for the public health endpoint (SELECT 1)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.fetchval("SELECT 1")
 
 
 # ── Refresh tokens (HttpOnly-cookie sessions) ─────────────────────────────

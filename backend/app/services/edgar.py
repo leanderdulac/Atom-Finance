@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import os
 import re
-import xml.etree.ElementTree as ET
 from typing import Any
 
+import defusedxml.ElementTree as ET
 import httpx
 
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"

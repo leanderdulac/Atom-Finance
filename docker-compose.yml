@@ -1,14 +1,16 @@
+# Development stack: all published ports bind to loopback only, and the dev
+# database password comes from the environment (with a local-only default).
 services:
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - QUANTMIND_URL=http://quantmind:8010
       - QUANTMIND_SERVICE_TOKEN=${QUANTMIND_SERVICE_TOKEN:-}
-      - ATOM_DATABASE_URL=postgresql+asyncpg://atom:atom_dev@postgres:5432/atom_dev
+      - ATOM_DATABASE_URL=postgresql+asyncpg://atom:${ATOM_DEV_DB_PASSWORD:-atom_dev}@postgres:5432/atom_dev
       - REDIS_URL=redis://redis:6379/0
       - FRONTEND_URL=http://localhost:5173
     depends_on:
@@ -38,7 +40,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     volumes:
       - ./src:/app/src
       - ./public:/app/public
@@ -47,16 +49,16 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: atom
-      POSTGRES_PASSWORD: atom_dev
+      POSTGRES_PASSWORD: ${ATOM_DEV_DB_PASSWORD:-atom_dev}
       POSTGRES_DB: atom_dev
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

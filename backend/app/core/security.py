@@ -61,17 +61,39 @@ if _ENV == "production" and len(SECRET_KEY.encode()) < 32:
     raise RuntimeError("Production SECRET_KEY must contain at least 32 bytes")
 
 _ALGORITHM = "HS256"
+
+
+def _clamped_int_env(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Parse an int env var, failing closed outside [minimum, maximum].
+
+    A zero/negative TTL would break every session; an unbounded one would
+    mint near-eternal JWTs. Refuse to guess — crash at import instead.
+    """
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        raise RuntimeError(f"{name} must be an integer") from None
+    if not minimum <= value <= maximum:
+        raise RuntimeError(f"{name} must be within [{minimum}, {maximum}]")
+    return value
+
+
 # Short-lived access token (kept only in front-end memory, never localStorage).
-_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+_ACCESS_TOKEN_EXPIRE_MINUTES = _clamped_int_env("ACCESS_TOKEN_EXPIRE_MINUTES", 30, 5, 120)
 # Long-lived opaque refresh token, carried in an HttpOnly cookie and rotated on use.
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "45"))
+REFRESH_TOKEN_EXPIRE_DAYS = _clamped_int_env("REFRESH_TOKEN_EXPIRE_DAYS", 45, 1, 90)
 REFRESH_COOKIE = "atom_refresh"
 
 _bearer = HTTPBearer(auto_error=False)
 
 
 def _is_production() -> bool:
-    return os.getenv("ATOM_ENV", "development").lower() == "production"
+    return is_production()
+
+
+def is_production() -> bool:
+    """Single normalisation point: `Production`, ` PRODUCTION `, etc. all match."""
+    return os.getenv("ATOM_ENV", "development").strip().lower() == "production"
 
 
 def hash_password(password: str) -> str:

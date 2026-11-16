@@ -16,6 +16,7 @@ pandas~=2.2.3
 # Data Sources
 yfinance>=0.2.58
 requests>=2.33.0,<3
+defusedxml>=0.7.1  # entity-expansion-safe SEC XML parsing (edgar.py)
 
 # Machine Learning
 scikit-learn~=1.5.2

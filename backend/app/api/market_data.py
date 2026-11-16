@@ -1,19 +1,55 @@
 """Market Data API with OpenBB, Yahoo Finance and synthetic fallbacks."""
 
+import asyncio
+from collections.abc import Callable
 from datetime import date, timedelta
-from typing import Literal
+from typing import Any, Literal, TypeVar
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Path, Query, Request
 
 from app.core.limiter import limiter
+from app.core.symbols import SYMBOL_MAX_LENGTH, SYMBOL_RE, validate_symbol
 from app.models.pricing import BlackScholes
 from app.services.brapi_service import BrapiService, _is_br_ticker
 from app.services.data_fetcher import DataFetcher
 from app.services.openbb_service import OpenBBService
 
 router = APIRouter()
+
+T = TypeVar("T")
+
+# External providers (requests/yfinance) are synchronous: never call them on
+# the event loop. Offload to a worker thread and bound the wait so one slow
+# provider degrades to the next fallback instead of stalling the worker.
+_PROVIDER_TIMEOUT_S = 15.0
+
+
+async def _run_blocking(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T | None:
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(fn, *args, **kwargs), timeout=_PROVIDER_TIMEOUT_S
+        )
+    except TimeoutError:
+        return None
+
+
+def _ticker_path() -> Any:
+    """Validated `{ticker}` path param shared by every market-data route."""
+    return Path(
+        ...,
+        max_length=SYMBOL_MAX_LENGTH,
+        pattern=SYMBOL_RE.pattern,
+        description="Market symbol, e.g. PETR4, AAPL, BTC-USD",
+    )
+
+
+def _clean_ticker(ticker: str) -> str:
+    try:
+        return validate_symbol(ticker)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 # Market data endpoints hit external APIs — limit to 30 req/min per IP.
 # (Using shared limiter from app.core.limiter)
@@ -269,23 +305,28 @@ async def b3_macro():
 
 @router.get("/quote/{ticker}")
 @limiter.limit("30/minute")
-async def get_quote(request: Request, ticker: str, provider: ProviderName = Query(default="auto")):
+async def get_quote(
+    request: Request,
+    ticker: str = _ticker_path(),
+    provider: ProviderName = Query(default="auto"),
+):
     """Get quote — brapi (BR tickers) → OpenBB → Yahoo Finance → synthetic fallback."""
+    ticker = _clean_ticker(ticker)
     is_br = _is_br_ticker(ticker)
 
     # brapi first for Brazilian tickers
     if provider in {"auto", "brapi"} and (is_br or provider == "brapi"):
-        quote = BrapiService.get_quote(ticker)
+        quote = await _run_blocking(BrapiService.get_quote, ticker)
         if quote:
             return quote
 
     if provider in {"auto", "openbb", "openbb_yfinance"}:
-        quote = OpenBBService.get_quote(ticker, provider="yfinance")
+        quote = await _run_blocking(OpenBBService.get_quote, ticker, provider="yfinance")
         if quote:
             return quote
 
     if provider in {"auto", "yfinance"}:
-        quote = _quote_from_yfinance(ticker)
+        quote = await _run_blocking(_quote_from_yfinance, ticker)
         if quote:
             return quote
 
@@ -296,23 +337,25 @@ async def get_quote(request: Request, ticker: str, provider: ProviderName = Quer
 @limiter.limit("20/minute")
 async def get_history(
     request: Request,
-    ticker: str,
-    days: int = 252,
+    ticker: str = _ticker_path(),
+    days: int = Query(default=252, ge=1, le=3650),
     period: str = "1y",
     provider: ProviderName = Query(default="auto"),
 ):
     """Get historical OHLCV data with provider fallbacks."""
+    ticker = _clean_ticker(ticker)
     is_br = _is_br_ticker(ticker)
 
     # brapi first for Brazilian tickers
     if provider in {"auto", "brapi"} and (is_br or provider == "brapi"):
-        history = BrapiService.get_history(ticker, days)
+        history = await _run_blocking(BrapiService.get_history, ticker, days)
         if history:
             return history
 
     if provider in {"auto", "openbb", "openbb_yfinance"}:
         start_date = (date.today() - timedelta(days=days)).isoformat()
-        df = OpenBBService.get_historical_data(
+        df = await _run_blocking(
+            OpenBBService.get_historical_data,
             ticker,
             provider="yfinance",
             interval="1d",
@@ -337,7 +380,7 @@ async def get_history(
                 }
 
     if provider in {"auto", "yfinance"}:
-        history = _history_from_yfinance(ticker, days, period)
+        history = await _run_blocking(_history_from_yfinance, ticker, days, period)
         if history:
             return history
 
@@ -345,13 +388,14 @@ async def get_history(
 
 
 @router.get("/profile/{ticker}")
-async def get_profile(ticker: str):
+async def get_profile(ticker: str = _ticker_path()):
     """Get company profile — OpenBB → Yahoo Finance → synthetic fallback."""
-    profile = OpenBBService.get_profile(ticker, provider="yfinance")
+    ticker = _clean_ticker(ticker)
+    profile = await _run_blocking(OpenBBService.get_profile, ticker, provider="yfinance")
     if profile:
         return profile
 
-    quote = _quote_from_yfinance(ticker) or _synthetic_quote(ticker)
+    quote = await _run_blocking(_quote_from_yfinance, ticker) or _synthetic_quote(ticker)
     return {
         "symbol": ticker.upper(),
         "name": ticker.upper(),
@@ -364,9 +408,9 @@ async def get_profile(ticker: str):
 
 
 @router.get("/search")
-async def search_market(query: str):
+async def search_market(query: str = Query(..., min_length=1, max_length=64)):
     """Search symbols through OpenBB."""
-    results = OpenBBService.search_equity(query, provider="sec")
+    results = await _run_blocking(OpenBBService.search_equity, query, provider="sec")
     if results:
         return {"query": query, "results": results, "source": "openbb"}
     return {
@@ -377,15 +421,16 @@ async def search_market(query: str):
 
 
 @router.get("/volatility/{ticker}")
-async def get_volatility(ticker: str):
+async def get_volatility(ticker: str = _ticker_path()):
     """Get implied volatility metrics — options → historical → synthetic."""
-    vol_data = DataFetcher.get_volatility_data(ticker)
+    ticker = _clean_ticker(ticker)
+    vol_data = await _run_blocking(DataFetcher.get_volatility_data, ticker)
     if vol_data:
         vol_data["provider"] = "yfinance"
         vol_data["source"] = "yfinance"
         return vol_data
 
-    returns_data = DataFetcher.calculate_returns(ticker, period="1y")
+    returns_data = await _run_blocking(DataFetcher.calculate_returns, ticker, period="1y")
     if returns_data:
         iv = returns_data["annual_volatility"] / 100
         return {
@@ -410,9 +455,13 @@ async def get_volatility(ticker: str):
 
 
 @router.get("/returns/{ticker}")
-async def get_returns(ticker: str, period: str = "1y"):
+async def get_returns(
+    ticker: str = _ticker_path(),
+    period: str = Query(default="1y", max_length=8),
+):
     """Get returns and risk metrics."""
-    returns_data = DataFetcher.calculate_returns(ticker, period=period)
+    ticker = _clean_ticker(ticker)
+    returns_data = await _run_blocking(DataFetcher.calculate_returns, ticker, period=period)
     if returns_data:
         returns_data["provider"] = "yfinance"
         returns_data["source"] = "yfinance"
@@ -433,15 +482,20 @@ async def get_returns(ticker: str, period: str = "1y"):
 
 @router.get("/options-chain/{ticker}")
 @limiter.limit("10/minute")
-async def get_options_chain(request: Request, ticker: str, provider: ProviderName = Query(default="auto")):
+async def get_options_chain(
+    request: Request,
+    ticker: str = _ticker_path(),
+    provider: ProviderName = Query(default="auto"),
+):
     """Get options chain with provider fallbacks."""
+    ticker = _clean_ticker(ticker)
     if provider in {"auto", "openbb", "openbb_cboe"}:
-        chain = OpenBBService.get_options_chain(ticker, provider="cboe")
+        chain = await _run_blocking(OpenBBService.get_options_chain, ticker, provider="cboe")
         if chain and chain.get("chain"):
             return chain
 
     if provider in {"auto", "yfinance", "openbb_yfinance"}:
-        chain = _options_from_yfinance(ticker)
+        chain = await _run_blocking(_options_from_yfinance, ticker)
         if chain and chain.get("chain"):
             return chain
 

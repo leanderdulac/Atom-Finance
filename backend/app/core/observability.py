@@ -9,11 +9,17 @@ does nothing unless `SENTRY_DSN` is set, so every environment without it
 import contextvars
 import logging
 import os
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 
 from starlette.requests import Request
 from starlette.responses import Response
+
+# Inbound request ids are reflected into a response header and every log line:
+# anything outside this allowlist (e.g. CR/LF) is replaced with a fresh UUID
+# to block log forging and response-splitting.
+_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9-]{1,64}")
 
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
@@ -39,7 +45,8 @@ async def request_id_middleware(
     thread its own trace through, but always generates one if absent —
     never leaves a request uncorrelated.
     """
-    req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    inbound = (request.headers.get("X-Request-ID") or "").strip()
+    req_id = inbound if _REQUEST_ID_RE.fullmatch(inbound) else str(uuid.uuid4())
     token = request_id_var.set(req_id)
     try:
         response = await call_next(request)
