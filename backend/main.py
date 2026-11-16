@@ -200,36 +200,26 @@ _MAX_BODY_BYTES = int(os.getenv("ATOM_MAX_BODY_BYTES", str(5 * 1024 * 1024)))
 @app.middleware("http")
 async def body_size_guard(request, call_next):
     raw = request.headers.get("content-length")
-    if raw is not None and raw.isdigit() and int(raw) > _MAX_BODY_BYTES:
-        return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+    if raw is not None and raw.isdigit():
+        if int(raw) > _MAX_BODY_BYTES:
+            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+        # Declared length is within budget: don't touch the channel at all.
+        # (Draining raw ASGI messages here corrupts outer BaseHTTPMiddleware
+        # request caching — SlowAPI — so lengthless bodies go through
+        # request.stream() below instead.)
+        return await call_next(request)
 
-    # A declared length alone misses chunked bodies, so drain and count the
-    # bytes actually sent (bounded: stop one chunk past the cap). Oversize →
-    # 413 before the route runs, so no handler ever observes a truncated body.
+    # No trustworthy length (e.g. chunked): stream with early abort, then seed
+    # the body cache every downstream read serves from. Oversize → 413 before
+    # the route runs, so no handler ever observes a truncated body.
     chunks: list[bytes] = []
     total = 0
-    while True:
-        message = await request.receive()
-        if message["type"] != "http.request":
-            break
-        total += len(message.get("body", b""))
+    async for chunk in request.stream():
+        total += len(chunk)
         if total > _MAX_BODY_BYTES:
             return JSONResponse(status_code=413, content={"detail": "Request body too large"})
-        chunks.append(message.get("body", b""))
-        if not message.get("more_body"):
-            break
-
-    body = b"".join(chunks)
-    sent = False
-
-    async def _replay():
-        nonlocal sent
-        if sent:
-            return {"type": "http.request", "body": b"", "more_body": False}
-        sent = True
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request._receive = _replay  # pyright: ignore[reportAttributeAccessIssue]
+        chunks.append(chunk)
+    request._body = b"".join(chunks)
     return await call_next(request)
 
 
