@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, CircularProgress,
   Alert, Chip, Grid, LinearProgress, Divider, TextField,
@@ -430,6 +430,9 @@ export default function AIReportPage() {
   const [rateLimited, setRateLimited] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ step: number; total: number; message: string } | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
+
+  // Abort an in-flight stream when leaving the page: no orphan SSE, no setState after unmount.
+  useEffect(() => () => { abortRef.current?.(); abortRef.current = null; }, []);
 
   const runAnalysis = (t?: string) => {
     const sym = (t || ticker).toUpperCase().trim();

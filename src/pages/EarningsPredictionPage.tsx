@@ -61,6 +61,7 @@ export default function EarningsPredictionPage() {
   const [ticker, setTicker] = useState('');
   const [fetchingTicker, setFetchingTicker] = useState(false);
   const [useOptions, setUseOptions] = useState(false);
+  const [invalid, setInvalid] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,17 +101,34 @@ export default function EarningsPredictionPage() {
     setUseOptions(true);
   };
 
+  const parseObj = (obj: Record<string, string>, section: string) => {
+    const out: Record<string, number> = {};
+    const bad: string[] = [];
+    for (const [k, v] of Object.entries(obj)) {
+      // Never coerce invalid input to 0: a verdict computed over silent
+      // zeros looks valid. Reject empty/non-numeric upfront instead.
+      if (v.trim() === '' || !Number.isFinite(Number(v))) bad.push(`${section}:${k}`);
+      else out[k] = Number(v);
+    }
+    return { out, bad };
+  };
+
   const handleRun = async () => {
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const parseObj = (obj: any) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, parseFloat(v as string) || 0]));
-      const payload: any = {
-        current_period: parseObj(current),
-        previous_period: parseObj(previous)
-      };
-      if (useOptions) payload.options = parseObj(options);
+      const cur = parseObj(current, 'current');
+      const prev = parseObj(previous, 'previous');
+      const opt = useOptions ? parseObj(options, 'options') : { out: {}, bad: [] as string[] };
+      const bad = [...cur.bad, ...prev.bad, ...opt.bad];
+      setInvalid(bad);
+      if (bad.length) {
+        setError(`Preencha ${bad.length} campo(s) com números válidos (destacados em vermelho).`);
+        return;
+      }
+      const payload: any = { current_period: cur.out, previous_period: prev.out };
+      if (useOptions) payload.options = opt.out;
       const res = await api.earningsPrediction(payload);
       setResult(res.analysis);
     } catch (err: any) {
@@ -120,7 +138,7 @@ export default function EarningsPredictionPage() {
     }
   };
 
-  const renderGroupedInputs = (data: any, setter: any, title: string) => (
+  const renderGroupedInputs = (data: any, setter: any, title: string, section: string) => (
     <Box>
       <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: 'primary.main', mb: 2, textAlign: 'center', fontSize: '1rem' }}>
         {title}
@@ -136,8 +154,10 @@ export default function EarningsPredictionPage() {
                 <TextField
                   label={labels[k].label}
                   value={data[k]}
-                  onChange={(e) => setter({ ...data, [k]: e.target.value })}
+                  onChange={(e) => { setter({ ...data, [k]: e.target.value }); setInvalid(ids => ids.filter(id => id !== `${section}:${k}`)); }}
                   fullWidth size="small" type="number" variant="outlined"
+                  error={invalid.includes(`${section}:${k}`)}
+                  helperText={invalid.includes(`${section}:${k}`) ? 'Número obrigatório' : undefined}
                   sx={{ '& .MuiInputBase-root': { fontSize: '0.85rem' } }}
                   InputProps={{
                     endAdornment: (
@@ -209,10 +229,10 @@ export default function EarningsPredictionPage() {
 
         <Grid container spacing={4}>
           <Grid size={{ xs: 12, md: 6 }} >
-            {renderGroupedInputs(previous, setPrevious, "Ano Anterior (T-1)")}
+            {renderGroupedInputs(previous, setPrevious, "Ano Anterior (T-1)", "previous")}
           </Grid>
           <Grid size={{ xs: 12, md: 6 }} >
-            {renderGroupedInputs(current, setCurrent, "Trimestre Atual (T-0)")}
+            {renderGroupedInputs(current, setCurrent, "Trimestre Atual (T-0)", "current")}
           </Grid>
         </Grid>
 
@@ -232,9 +252,10 @@ export default function EarningsPredictionPage() {
                 <TextField
                   label={optionsLabels[k]}
                   value={options[k]}
-                  onChange={(e) => setOptions({ ...options, [k]: e.target.value })}
+                  onChange={(e) => { setOptions({ ...options, [k]: e.target.value }); setInvalid(ids => ids.filter(id => id !== `options:${k}`)); }}
                   fullWidth size="small" type="number" variant="outlined"
-                  helperText={optionsHints[k]}
+                  error={invalid.includes(`options:${k}`)}
+                  helperText={invalid.includes(`options:${k}`) ? 'Número obrigatório' : optionsHints[k]}
                 />
               </Grid>
             ))}

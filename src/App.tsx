@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-ro
 import {
   Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText,
   AppBar, Toolbar, Typography, IconButton, Divider, Tooltip, Chip, useMediaQuery,
-  CircularProgress,
+  CircularProgress, Stack, Button,
 } from '@mui/material';
 import {
   ShowChart, Assessment, AccountBalance, Psychology, Warning,
@@ -60,6 +60,22 @@ function RouteFallback() {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
       <CircularProgress size={32} />
+    </Box>
+  );
+}
+
+function NotFound() {
+  const navigate = useNavigate();
+  return (
+    <Box sx={{ maxWidth: 560, mx: 'auto', mt: 8, textAlign: 'center' }}>
+      <Typography variant="h4" gutterBottom>Página não encontrada</Typography>
+      <Typography color="text.secondary" sx={{ mb: 3 }}>
+        O endereço não existe neste piloto. Volte ao diário ou ao laboratório.
+      </Typography>
+      <Stack direction="row" spacing={2} justifyContent="center">
+        <Button variant="contained" onClick={() => navigate('/dashboard')}>Diário</Button>
+        <Button variant="outlined" onClick={() => navigate('/ml')}>Laboratório Quant</Button>
+      </Stack>
     </Box>
   );
 }
@@ -307,6 +323,7 @@ function AppLayout() {
           <Route path="/earnings-predictor" element={<ProtectedRoute><EarningsPredictionPage /></ProtectedRoute>} />
           <Route path="/alpha-engine" element={<ProtectedRoute><AlphaCombinationPage /></ProtectedRoute>} />
           <Route path="/binance" element={<ProtectedRoute><BinanceDashboard /></ProtectedRoute>} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
         </Suspense>
       </Box>
@@ -330,10 +347,14 @@ function AuthStatusButton() {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   React.useEffect(() => {
-    if (!loading && !isAuthenticated) navigate('/login', { replace: true });
-  }, [loading, isAuthenticated, navigate]);
-  if (loading || !isAuthenticated) return null;
+    if (!loading && !isAuthenticated) {
+      navigate('/login', { replace: true, state: { from: location.pathname + location.search } });
+    }
+  }, [loading, isAuthenticated, navigate, location]);
+  if (loading) return <RouteFallback />;
+  if (!isAuthenticated) return null;
   return <>{children}</>;
 }
 

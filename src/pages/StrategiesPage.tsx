@@ -81,10 +81,10 @@ export default function StrategiesPage() {
           res = await api.straddle({ ...base, strike: params.strike });
           break;
         case 'iron_condor':
-          res = await api.ironCondor({ ...base });
+          res = await api.ironCondor({ ...base, k1: params.k1, k2: params.k2, k3: params.k4, k4: params.k5 });
           break;
         case 'butterfly':
-          res = await api.butterfly({ ...base });
+          res = await api.butterfly({ ...base, k1: params.k1, k2: params.k3, k3: params.k5 });
           break;
         case 'custom':
           res = await api.strategy({
@@ -155,6 +155,22 @@ export default function StrategiesPage() {
                   <TextField label="Strike" type="number" value={params.strike}
                     onChange={(e) => update('strike', +e.target.value)} fullWidth />
                 )}
+
+                {strategyType === 'iron_condor' && (<>
+                  <Typography variant="subtitle2">Strikes do condor (k1 &lt; k2 &lt; k3 &lt; k4)</Typography>
+                  {([['k1', 'K1 — put comprada'], ['k2', 'K2 — put vendida'], ['k4', 'K3 — call vendida'], ['k5', 'K4 — call comprada']] as const).map(([key, label]) => (
+                    <TextField key={key} label={label} type="number" value={params[key]}
+                      onChange={(e) => update(key, +e.target.value)} fullWidth />
+                  ))}
+                </>)}
+
+                {strategyType === 'butterfly' && (<>
+                  <Typography variant="subtitle2">Strikes do butterfly (simétrico em k3)</Typography>
+                  {([['k1', 'K1 — asa inferior'], ['k3', 'K2 — corpo'], ['k5', 'K3 — asa superior']] as const).map(([key, label]) => (
+                    <TextField key={key} label={label} type="number" value={params[key]}
+                      onChange={(e) => update(key, +e.target.value)} fullWidth />
+                  ))}
+                </>)}
 
                 <Button variant="contained" onClick={runStrategy} disabled={loading} fullWidth>
                   {loading ? <CircularProgress size={20} /> : 'Analyze Strategy'}

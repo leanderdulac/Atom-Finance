@@ -10,20 +10,28 @@ export default function ExperimentsPage() {
   const [items, setItems] = useState<ExperimentSummary[]>([]);
   const [total, setTotal] = useState(0); const [offset, setOffset] = useState(0);
   const [detail, setDetail] = useState<ExperimentDetail | null>(null);
-  const [busy, setBusy] = useState(true); const [error, setError] = useState('');
+  const [busy, setBusy] = useState(true);
+  const [listError, setListError] = useState('');
+  const [detailError, setDetailError] = useState('');
+  const [reviewError, setReviewError] = useState('');
   const [decision, setDecision] = useState<'discard' | 'investigate'>('investigate');
   const [rationale, setRationale] = useState(''); const [saving, setSaving] = useState(false);
   useEffect(() => {
-    let active = true; setBusy(true); setError(''); setDetail(null); setRationale('');
-    Promise.all([api.experiments(offset), id ? api.experiment(id) : Promise.resolve(null)])
-      .then(([list, selected]) => { if (active) { setItems(list.items); setTotal(list.total); setDetail(selected); } })
-      .catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setBusy(false); });
+    let active = true; setBusy(true); setListError(''); setDetailError(''); setDetail(null); setRationale('');
+    // List and detail load independently: a bad ?id= must never hide the journal.
+    api.experiments(offset)
+      .then(list => { if (active) { setItems(list.items); setTotal(list.total); } })
+      .catch(e => { if (active) setListError(e instanceof Error ? e.message : 'Falha ao carregar o diário.'); });
+    (id ? api.experiment(id) : Promise.resolve(null))
+      .then(selected => { if (active) setDetail(selected); })
+      .catch(e => { if (active) setDetailError(e instanceof Error ? e.message : 'Falha ao carregar o registro.'); })
+      .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
   }, [id, offset]);
   async function saveReview() {
-    if (!detail) return; setSaving(true); setError('');
+    if (!detail) return; setSaving(true); setReviewError('');
     try { setDetail(await api.reviewExperiment(detail.id, decision, rationale.trim())); setRationale(''); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Falha ao registrar decisão.'); }
+    catch (e) { setReviewError(e instanceof Error ? e.message : 'Falha ao registrar decisão.'); }
     finally { setSaving(false); }
   }
   function download() {
@@ -42,8 +50,8 @@ export default function ExperimentsPage() {
       <Button variant="outlined" onClick={() => navigate('/research')}>Explorar um artigo</Button>
     </Stack>
     <Alert severity="info">Um resultado favorável ainda exige teste independente. O diário inclui falhas e repetições; escolher apenas o melhor teste pode produzir uma conclusão enganosa.</Alert>
-    {error && <Alert severity="error">{error}</Alert>}
-    {busy ? <Typography role="status">Carregando diário…</Typography> : !error && <>
+    {listError && <Alert severity="error">{listError}</Alert>}
+    {busy ? <Typography role="status">Carregando diário…</Typography> : !listError && <>
       <Typography variant="h6">{total} tentativa{total === 1 ? '' : 's'} registrada{total === 1 ? '' : 's'}</Typography>
       {!total && <Card><CardContent><Typography variant="h6">Comece com uma pergunta que possa ser refutada</Typography>
         <Typography sx={{ my: 2 }}>Exemplo: momentum de 20 dias mantém resultado líquido positivo em diferentes janelas, após custos e controle de volatilidade?</Typography>
@@ -56,6 +64,7 @@ export default function ExperimentsPage() {
           <Box><Button onClick={() => setParams({ id: item.id })}>Abrir registro</Button></Box>
         </CardContent></Card>)}</Stack>
       {total > 50 && <Stack direction="row" spacing={2}><Button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 50))}>Anteriores</Button><Button disabled={offset + 50 >= total} onClick={() => setOffset(offset + 50)}>Próximos</Button></Stack>}
+      {id && detailError && <Alert severity="error">Registro {id} indisponível: {detailError}</Alert>}
       {detail && <Card><CardContent><Stack spacing={2}>
         <Typography variant="h5" component="h2">Registro do experimento</Typography>
         <Typography>{detail.inputs.hypothesis}</Typography>
@@ -74,6 +83,7 @@ export default function ExperimentsPage() {
           <TextField select label="Decisão" value={decision} disabled={saving} onChange={e => setDecision(e.target.value as 'discard' | 'investigate')}><MenuItem value="investigate">Investigar com novos dados</MenuItem><MenuItem value="discard">Descartar esta hipótese</MenuItem></TextField>
           <TextField label="Justificativa e próximo teste" multiline minRows={2} value={rationale} disabled={saving} onChange={e => setRationale(e.target.value)} helperText="Mínimo de 20 caracteres. Novas decisões são acrescentadas ao histórico, sem apagar as anteriores." inputProps={{ maxLength: 2000 }} />
           <Button variant="outlined" disabled={saving || rationale.trim().length < 20} onClick={saveReview}>{saving ? 'Registrando…' : 'Registrar decisão'}</Button>
+          {reviewError && <Alert severity="error">{reviewError}</Alert>}
           {detail.reviews.map(review => <Box key={review.id}><Typography variant="subtitle2">{review.decision === 'discard' ? 'Descartar' : 'Investigar'} · {new Date(review.created_at).toLocaleString('pt-BR')}</Typography><Typography variant="body2">{review.rationale}</Typography></Box>)}
           <Typography variant="h6">Limitações</Typography>{report.limitations.map(item => <Typography variant="body2" key={item}>{item}</Typography>)}
         </>}

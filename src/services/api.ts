@@ -60,6 +60,29 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// Centralized binary download: same 401-refresh contract as request(), plus a
+// content-type guard so an expired session never saves a JSON error as a file.
+export async function downloadBlob(path: string, body: unknown, expectedType: string): Promise<Blob> {
+  const doFetch = () => fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    body: JSON.stringify(body),
+  });
+  let res = await doFetch();
+  if (res.status === 401 && await refreshAccessToken()) {
+    res = await doFetch();
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(err?.detail || `Download falhou (${res.status})`);
+  }
+  const ctype = res.headers.get('content-type') || '';
+  if (!ctype.includes(expectedType)) {
+    throw new Error(`Resposta inesperada do servidor (${ctype || 'sem content-type'})`);
+  }
+  return res.blob();
+}
+
 export interface ResearchPaper {
   id: string;
   root_node_id: string;
@@ -69,6 +92,87 @@ export interface ResearchPaper {
   as_of: string;
 }
 export interface ResearchSummary { id: string; title: string; created_at: string }
+
+// ── Request/response contracts ──────────────────────────────────────────────
+// These mirror the Pydantic models in backend/app/api/*.py — keep field names
+// snake_case and optional exactly where the backend gives them defaults.
+export type OptionType = 'call' | 'put';
+export interface PricingRequest {
+  spot: number; strike: number; maturity: number;
+  rate?: number; sigma?: number; option_type?: OptionType; dividend_yield?: number;
+}
+export interface MonteCarloRequest extends PricingRequest { n_simulations?: number; n_steps?: number }
+export interface BinomialRequest extends PricingRequest { american?: boolean; n_steps?: number }
+export interface FiniteDiffRequest extends PricingRequest { american?: boolean; n_S?: number; n_t?: number }
+export interface IVRequest { market_price: number; spot: number; strike: number; maturity: number; rate?: number; option_type?: OptionType }
+export interface SurfaceRequest { spot: number; rate?: number; strikes?: number[]; maturities?: number[]; option_type?: OptionType }
+export interface StrategyLeg { strike: number; type: OptionType; position: 'long' | 'short'; quantity?: number }
+export interface StrategyRequest { spot: number; sigma?: number; rate?: number; maturity?: number; legs: StrategyLeg[] }
+export interface PresetStrategyRequest { spot: number; sigma?: number; rate?: number; maturity?: number }
+export interface Greeks { delta: number; gamma: number; theta: number; vega: number; rho: number }
+export interface PricingResult { model: string; price: number; greeks: Greeks; inputs: Record<string, unknown> }
+
+export interface VaRRequest {
+  returns: number[]; confidence?: number; portfolio_value?: number; holding_period?: number;
+  method?: 'historical' | 'parametric' | 'monte_carlo'; distribution?: 'normal' | 't';
+}
+export interface StressTestRequest { portfolio: Record<string, number>; scenario?: string | null; portfolio_value?: number }
+export interface GARCHRequest { returns: number[]; forecast_horizon?: number }
+export interface HestonRequest {
+  S0?: number; v0?: number; mu?: number; kappa?: number; theta?: number;
+  xi?: number; rho?: number; T?: number; n_paths?: number;
+}
+
+export interface PortfolioRequest {
+  returns: number[][]; asset_names?: string[] | null; risk_free_rate?: number;
+  allow_short?: boolean; shrinkage?: 'none' | 'ledoit_wolf';
+}
+export interface BlackLittermanRequest extends PortfolioRequest {
+  views: Record<string, number>; market_weights?: Record<string, number> | null;
+}
+
+export interface TailRiskRequest { returns: number[] }
+
+export interface BacktestRequest {
+  prices: number[]; strategy?: 'sma_crossover' | 'mean_reversion' | 'momentum' | 'rsi';
+  params?: Record<string, unknown> | null; initial_capital?: number;
+  commission?: number; slippage?: number; data_source?: string;
+}
+
+export interface NeuralSDERequest {
+  y0?: number; t_start?: number; t_end?: number; n_steps?: number; n_paths?: number;
+  state_size?: number; hidden_size?: number; method?: 'euler' | 'milstein'; seed?: number | null;
+}
+
+export interface BetaRequest { asset_returns: number[]; market_returns: number[]; risk_free_rate?: number; market_premium?: number }
+export interface KellyRequest { win_rate: number; payout_ratio: number; fraction?: number }
+export interface GBMRequest { S0: number; mu?: number; sigma?: number; T?: number; n_steps?: number; n_paths?: number; seed?: number | null }
+export interface GBMAsset { ticker: string; S0: number; mu?: number; sigma?: number }
+export interface GBMMultiRequest {
+  assets: GBMAsset[]; T?: number; n_steps?: number; n_paths?: number;
+  corr_matrix?: number[][] | null; seed?: number | null;
+}
+
+export interface IbovespaSimulateRequest { n_paths?: number; T?: number; seed?: number | null }
+export interface IbovespaRLRequest {
+  profile?: 'conservador' | 'agressivo'; n_paths?: number; T?: number;
+  n_iterations?: number; initial_capital?: number; seed?: number | null;
+}
+
+export interface KellyCryptoRequest { symbol: string; win_prob: number; payout_ratio: number; bankroll_override?: number | null; fraction?: number }
+export interface BinanceTicker { symbol: string; price: string }
+export interface BinanceDepth { bids: [string, string][]; asks: [string, string][] }
+
+export interface AutopilotRequest { capital: number; horizon_days: number }
+
+export interface FinancialPeriod {
+  revenue: number; gross_profit: number; operating_income: number; interest_expense: number;
+  net_income: number; cfo: number; cash_equivalents: number; current_assets: number;
+  current_liabilities: number; inventory: number; accounts_receivable: number;
+  total_assets: number; total_debt: number; total_equity: number;
+}
+export interface OptionsData { S: number; K: number; T: number; r: number; C: number }
+export interface EarningsPredictionRequest { current_period: FinancialPeriod; previous_period: FinancialPeriod; options?: OptionsData | null }
 
 export interface QuantMetrics {
   gross_return_pct: number; net_return_pct: number; sharpe_net: number;
@@ -110,9 +214,9 @@ export const api = {
   reviewExperiment: (id: string, decision: string, rationale: string) => request<ExperimentDetail>(`/ml/experiments/${encodeURIComponent(id)}/reviews`, { method: 'POST', body: JSON.stringify({ decision, rationale }) }),
   researchMarketHistory: (ticker: string) => request<{close: number[]; dates: string[]; provider?: string; source?: string}>(`/market-data/history/${encodeURIComponent(ticker)}?days=1825&period=5y&provider=yfinance`),
   quantEvaluate: (data: object) => request<QuantExperiment>('/ml/evaluate', { method: 'POST', body: JSON.stringify(data) }),
-  screenerTopPicks: () => request<any[]>('/screener/top-picks'),
-  autopilotGenerate: (data: { capital: number; horizon_days: number }) =>
-    request<any>('/autopilot/generate', { method: 'POST', body: JSON.stringify(data) }),
+  screenerTopPicks: <T = unknown[]>() => request<T>('/screener/top-picks'),
+  autopilotGenerate: <T = unknown>(data: AutopilotRequest) =>
+    request<T>('/autopilot/generate', { method: 'POST', body: JSON.stringify(data) }),
   researchHistory: () => request<ResearchSummary[]>('/research/papers'),
   researchPaper: (id: string) => request<ResearchPaper>(`/research/papers/${encodeURIComponent(id)}`),
   researchExtract: (kind: 'text' | 'arxiv', content: string) => request<ResearchPaper>('/research/papers', { method: 'POST', body: JSON.stringify({ kind, content }) }),
@@ -129,67 +233,76 @@ export const api = {
   me: () => request<{ username: string; email?: string; role?: string }>('/auth/me'),
 
   // Pricing
-  blackScholes: (data: any) => request('/pricing/black-scholes', { method: 'POST', body: JSON.stringify(data) }),
-  monteCarlo: (data: any) => request('/pricing/monte-carlo', { method: 'POST', body: JSON.stringify(data) }),
-  binomial: (data: any) => request('/pricing/binomial', { method: 'POST', body: JSON.stringify(data) }),
-  finiteDifference: (data: any) => request('/pricing/finite-difference', { method: 'POST', body: JSON.stringify(data) }),
-  impliedVolatility: (data: any) => request('/pricing/implied-volatility', { method: 'POST', body: JSON.stringify(data) }),
-  volSurface: (data: any) => request('/pricing/volatility-surface', { method: 'POST', body: JSON.stringify(data) }),
-  compareModels: (data: any) => request('/pricing/compare', { method: 'POST', body: JSON.stringify(data) }),
-  strategy: (data: any) => request('/pricing/strategy', { method: 'POST', body: JSON.stringify(data) }),
-  straddle: (data: any) => request(`/pricing/strategy/straddle?strike=${data.strike}`, { method: 'POST', body: JSON.stringify(data) }),
-  ironCondor: (data: any) => request('/pricing/strategy/iron-condor', { method: 'POST', body: JSON.stringify(data) }),
-  butterfly: (data: any) => request('/pricing/strategy/butterfly', { method: 'POST', body: JSON.stringify(data) }),
+  blackScholes: (data: PricingRequest) => request<PricingResult>('/pricing/black-scholes', { method: 'POST', body: JSON.stringify(data) }),
+  monteCarlo: (data: MonteCarloRequest) => request<unknown>('/pricing/monte-carlo', { method: 'POST', body: JSON.stringify(data) }),
+  binomial: (data: BinomialRequest) => request<unknown>('/pricing/binomial', { method: 'POST', body: JSON.stringify(data) }),
+  finiteDifference: (data: FiniteDiffRequest) => request<unknown>('/pricing/finite-difference', { method: 'POST', body: JSON.stringify(data) }),
+  impliedVolatility: (data: IVRequest) => request<unknown>('/pricing/implied-volatility', { method: 'POST', body: JSON.stringify(data) }),
+  volSurface: (data: SurfaceRequest) => request<unknown>('/pricing/volatility-surface', { method: 'POST', body: JSON.stringify(data) }),
+  compareModels: (data: PricingRequest) => request<unknown>('/pricing/compare', { method: 'POST', body: JSON.stringify(data) }),
+  strategy: (data: StrategyRequest) => request<unknown>('/pricing/strategy', { method: 'POST', body: JSON.stringify(data) }),
+  straddle: (data: PresetStrategyRequest & { strike: number }) => {
+    const { strike, ...body } = data;
+    return request<unknown>(`/pricing/strategy/straddle?strike=${strike}`, { method: 'POST', body: JSON.stringify(body) });
+  },
+  ironCondor: (data: PresetStrategyRequest & { k1: number; k2: number; k3: number; k4: number }) => {
+    const { k1, k2, k3, k4, ...body } = data;
+    return request<unknown>(`/pricing/strategy/iron-condor?k1=${k1}&k2=${k2}&k3=${k3}&k4=${k4}`, { method: 'POST', body: JSON.stringify(body) });
+  },
+  butterfly: (data: PresetStrategyRequest & { k1: number; k2: number; k3: number }) => {
+    const { k1, k2, k3, ...body } = data;
+    return request<unknown>(`/pricing/strategy/butterfly?k1=${k1}&k2=${k2}&k3=${k3}`, { method: 'POST', body: JSON.stringify(body) });
+  },
 
   // Risk
-  var: (data: any) => request('/risk/var', { method: 'POST', body: JSON.stringify(data) }),
-  varAll: (data: any) => request('/risk/var/all-methods', { method: 'POST', body: JSON.stringify(data) }),
-  stressTest: (data: any) => request('/risk/stress-test', { method: 'POST', body: JSON.stringify(data) }),
-  garch: (data: any) => request('/risk/garch', { method: 'POST', body: JSON.stringify(data) }),
-  heston: (data: any) => request('/risk/heston', { method: 'POST', body: JSON.stringify(data) }),
+  var: (data: VaRRequest) => request<unknown>('/risk/var', { method: 'POST', body: JSON.stringify(data) }),
+  varAll: <T = unknown>(data: VaRRequest) => request<T>('/risk/var/all-methods', { method: 'POST', body: JSON.stringify(data) }),
+  stressTest: (data: StressTestRequest) => request<unknown>('/risk/stress-test', { method: 'POST', body: JSON.stringify(data) }),
+  garch: (data: GARCHRequest) => request<unknown>('/risk/garch', { method: 'POST', body: JSON.stringify(data) }),
+  heston: (data: HestonRequest) => request<unknown>('/risk/heston', { method: 'POST', body: JSON.stringify(data) }),
 
   // Portfolio
-  efficientFrontier: (data: any) => request('/portfolio/efficient-frontier', { method: 'POST', body: JSON.stringify(data) }),
-  maxSharpe: (data: any) => request('/portfolio/max-sharpe', { method: 'POST', body: JSON.stringify(data) }),
-  riskParity: (data: any) => request('/portfolio/risk-parity', { method: 'POST', body: JSON.stringify(data) }),
-  blackLitterman: (data: any) => request('/portfolio/black-litterman', { method: 'POST', body: JSON.stringify(data) }),
+  efficientFrontier: (data: PortfolioRequest) => request<unknown>('/portfolio/efficient-frontier', { method: 'POST', body: JSON.stringify(data) }),
+  maxSharpe: (data: PortfolioRequest) => request<unknown>('/portfolio/max-sharpe', { method: 'POST', body: JSON.stringify(data) }),
+  riskParity: (data: PortfolioRequest) => request<unknown>('/portfolio/risk-parity', { method: 'POST', body: JSON.stringify(data) }),
+  blackLitterman: (data: BlackLittermanRequest) => request<unknown>('/portfolio/black-litterman', { method: 'POST', body: JSON.stringify(data) }),
 
   // Tail risk
-  tailRisk: (data: any) => request('/black-swan/tail-risk', { method: 'POST', body: JSON.stringify(data) }),
-  regimeChange: (data: any) => request('/black-swan/regime-change', { method: 'POST', body: JSON.stringify(data) }),
-  blackSwanFull: (data: any) => request('/black-swan/full-analysis', { method: 'POST', body: JSON.stringify(data) }),
+  tailRisk: (data: TailRiskRequest) => request<unknown>('/black-swan/tail-risk', { method: 'POST', body: JSON.stringify(data) }),
+  regimeChange: (data: TailRiskRequest) => request<unknown>('/black-swan/regime-change', { method: 'POST', body: JSON.stringify(data) }),
+  blackSwanFull: (data: TailRiskRequest) => request<unknown>('/black-swan/full-analysis', { method: 'POST', body: JSON.stringify(data) }),
   blackSwanDemo: () => request('/black-swan/demo'),
 
   // Market Data
   marketProviders: () => request('/market-data/providers'),
-  quote: (ticker: string, provider = 'auto') => request(`/market-data/quote/${ticker}?provider=${provider}`),
-  history: (ticker: string, days?: number, provider = 'auto') => request(`/market-data/history/${ticker}?days=${days || 252}&provider=${provider}`),
-  profile: (ticker: string) => request(`/market-data/profile/${ticker}`),
+  quote: (ticker: string, provider = 'auto') => request(`/market-data/quote/${encodeURIComponent(ticker)}?provider=${encodeURIComponent(provider)}`),
+  history: (ticker: string, days?: number, provider = 'auto') => request(`/market-data/history/${encodeURIComponent(ticker)}?days=${days || 252}&provider=${encodeURIComponent(provider)}`),
+  profile: (ticker: string) => request(`/market-data/profile/${encodeURIComponent(ticker)}`),
   search: (query: string) => request(`/market-data/search?query=${encodeURIComponent(query)}`),
-  optionsChain: (ticker: string, provider = 'auto') => request(`/market-data/options-chain/${ticker}?provider=${provider}`),
-  volatility: (ticker: string) => request(`/market-data/volatility/${ticker}`),
-  returns: (ticker: string, period = '1y') => request(`/market-data/returns/${ticker}?period=${period}`),
+  optionsChain: (ticker: string, provider = 'auto') => request(`/market-data/options-chain/${encodeURIComponent(ticker)}?provider=${encodeURIComponent(provider)}`),
+  volatility: (ticker: string) => request(`/market-data/volatility/${encodeURIComponent(ticker)}`),
+  returns: (ticker: string, period = '1y') => request(`/market-data/returns/${encodeURIComponent(ticker)}?period=${encodeURIComponent(period)}`),
 
   // Backtesting
-  backtest: (data: any) => request('/backtesting/run', { method: 'POST', body: JSON.stringify(data) }),
+  backtest: <T = unknown>(data: BacktestRequest) => request<T>('/backtesting/run', { method: 'POST', body: JSON.stringify(data) }),
 
   // Neural SDE
   neuralSdeStatus: () => request('/neural-sde/status'),
   neuralSdeDemo: () => request('/neural-sde/demo'),
-  neuralSdeSimulate: (data: any) => request('/neural-sde/simulate', { method: 'POST', body: JSON.stringify(data) }),
+  neuralSdeSimulate: <T = unknown>(data: NeuralSDERequest) => request<T>('/neural-sde/simulate', { method: 'POST', body: JSON.stringify(data) }),
 
   // CAPM & Kelly
   capmDemo: () => request('/capm/demo'),
-  capmBeta: (data: any) => request('/capm/beta', { method: 'POST', body: JSON.stringify(data) }),
-  capmKelly: (data: any) => request('/capm/kelly', { method: 'POST', body: JSON.stringify(data) }),
-  capmGbm: (data: any) => request('/capm/gbm', { method: 'POST', body: JSON.stringify(data) }),
-  capmGbmMulti: (data: any) => request('/capm/gbm-multi', { method: 'POST', body: JSON.stringify(data) }),
+  capmBeta: (data: BetaRequest) => request<unknown>('/capm/beta', { method: 'POST', body: JSON.stringify(data) }),
+  capmKelly: (data: KellyRequest) => request<unknown>('/capm/kelly', { method: 'POST', body: JSON.stringify(data) }),
+  capmGbm: (data: GBMRequest) => request<unknown>('/capm/gbm', { method: 'POST', body: JSON.stringify(data) }),
+  capmGbmMulti: (data: GBMMultiRequest) => request<unknown>('/capm/gbm-multi', { method: 'POST', body: JSON.stringify(data) }),
   capmGbmMultiDemo: () => request('/capm/gbm-multi/demo'),
 
   // Ibovespa Dashboard (18 assets + RL CEM)
   ibovespaAssets: () => request('/ibovespa/assets'),
-  ibovespaSimulate: (data: any) => request('/ibovespa/simulate', { method: 'POST', body: JSON.stringify(data) }),
-  ibovespaRLOptimize: (data: any) => request('/ibovespa/rl-optimize', { method: 'POST', body: JSON.stringify(data) }),
+  ibovespaSimulate: (data: IbovespaSimulateRequest) => request<unknown>('/ibovespa/simulate', { method: 'POST', body: JSON.stringify(data) }),
+  ibovespaRLOptimize: (data: IbovespaRLRequest) => request<unknown>('/ibovespa/rl-optimize', { method: 'POST', body: JSON.stringify(data) }),
   ibovespaDemo: () => request('/ibovespa/demo'),
 
   // AI Analysis Report
@@ -198,17 +311,25 @@ export const api = {
   aiAnalysisStream: (
     ticker: string,
     onProgress: (step: number, total: number, message: string) => void,
-    onResult: (data: any) => void,
+    onResult: (data: Record<string, unknown>) => void,
     onError: (msg: string) => void,
   ): (() => void) => {
     const controller = new AbortController();
-    fetch('/api/reports/ai-analysis/stream', {
+    const doStream = () => fetch('/api/reports/ai-analysis/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ ticker }),
       signal: controller.signal,
-    }).then(async (res) => {
-      if (!res.ok) { onError('Erro ao iniciar análise'); return; }
+    });
+    doStream().then(async (res) => {
+      if (res.status === 401 && await refreshAccessToken()) {
+        res = await doStream();
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => null) as { detail?: string } | null;
+        onError(err?.detail || `Erro ao iniciar análise (${res.status})`);
+        return;
+      }
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -240,17 +361,17 @@ export const api = {
   },
 
   // Binance Crypto
-  binancePrice: (symbol: string) => request<any>(`/binance/price/${symbol}`),
-  binanceTickers: () => request<any[]>('/binance/tickers'),
-  binanceDepth: (symbol: string, limit = 100) => request<any>(`/binance/depth/${symbol}?limit=${limit}`),
-  binanceKellySizing: (data: any) => request<any>('/binance/kelly-sizing', { method: 'POST', body: JSON.stringify(data) }),
-  binanceFuturesAccount: () => request<any>('/binance/futures/account'),
-  binanceFuturesPrice: (symbol: string) => request<any>(`/binance/futures/price/${symbol}`),
+  binancePrice: (symbol: string) => request<BinanceTicker>(`/binance/price/${encodeURIComponent(symbol)}`),
+  binanceTickers: () => request<BinanceTicker[]>('/binance/tickers'),
+  binanceDepth: (symbol: string, limit = 100) => request<BinanceDepth>(`/binance/depth/${encodeURIComponent(symbol)}?limit=${limit}`),
+  binanceKellySizing: (data: KellyCryptoRequest) => request<unknown>('/binance/kelly-sizing', { method: 'POST', body: JSON.stringify(data) }),
+  binanceFuturesAccount: () => request<unknown>('/binance/futures/account'),
+  binanceFuturesPrice: (symbol: string) => request<BinanceTicker>(`/binance/futures/price/${encodeURIComponent(symbol)}`),
 
   // Report History
-  reportHistory: (limit = 20) => request<any[]>(`/reports/history?limit=${limit}`),
-  reportHistoryTicker: (ticker: string, limit = 10) => request<any[]>(`/reports/history/${ticker}?limit=${limit}`),
-  reportDetail: (id: number) => request<any>(`/reports/history/detail/${id}`),
+  reportHistory: (limit = 20) => request<unknown[]>(`/reports/history?limit=${limit}`),
+  reportHistoryTicker: (ticker: string, limit = 10) => request<unknown[]>(`/reports/history/${encodeURIComponent(ticker)}?limit=${limit}`),
+  reportDetail: (id: number) => request<unknown>(`/reports/history/detail/${id}`),
 
   // AI Proxy (Perplexity via backend — key never exposed to client)
   aiRefine: (code: string, instruction?: string) =>
@@ -260,35 +381,35 @@ export const api = {
     ),
 
   // Earnings Directional Prediction (Kim et al., Schadner)
-  earningsPrediction: (data: any) => request<{ analysis: string }>('/reports/earnings-prediction', { method: 'POST', body: JSON.stringify(data) }),
+  earningsPrediction: (data: EarningsPredictionRequest) => request<{ analysis: string }>('/reports/earnings-prediction', { method: 'POST', body: JSON.stringify(data) }),
 
   // Fetch financials from ticker (yfinance)
-  getTickerFinancials: (ticker: string) => request<{ current: any, previous: any }>(`/reports/ticker-financials/${ticker}`),
+  getTickerFinancials: (ticker: string) => request<{ current: FinancialPeriod | null, previous: FinancialPeriod | null }>(`/reports/ticker-financials/${encodeURIComponent(ticker)}`),
 
-  deskHestonPrice: (data: object) => request<any>('/desk/heston/price', { method: 'POST', body: JSON.stringify(data) }),
-  deskHestonCalibrate: (data: object) => request<any>('/desk/heston/calibrate', { method: 'POST', body: JSON.stringify(data) }),
-  deskEngleGranger: (data: object) => request<any>('/desk/pairs/engle-granger', { method: 'POST', body: JSON.stringify(data) }),
-  deskJohansen: (data: object) => request<any>('/desk/pairs/johansen', { method: 'POST', body: JSON.stringify(data) }),
-  deskPairsBacktest: (data: object) => request<any>('/desk/pairs/backtest', { method: 'POST', body: JSON.stringify(data) }),
-  deskMarketMaking: (data: object) => request<any>('/desk/market-making/quotes', { method: 'POST', body: JSON.stringify(data) }),
-  deskFamaFrench: (data: object) => request<any>('/desk/fama-french/decompose', { method: 'POST', body: JSON.stringify(data) }),
-  deskMeanReversion: (data: object) => request<any>('/desk/mean-reversion/scan', { method: 'POST', body: JSON.stringify(data) }),
-  deskPerpArb: (data: object) => request<any>('/desk/perp-arb/scan', { method: 'POST', body: JSON.stringify(data) }),
-  deskPerpLive: (symbol = 'BTCUSDT') => request<any>(`/desk/perp-arb/live?symbol=${encodeURIComponent(symbol)}`),
-  deskInsiderClusters: (data: object) => request<any>('/desk/insider-clusters/detect', { method: 'POST', body: JSON.stringify(data) }),
-  deskEdgar: (data: object) => request<any>('/desk/insider-clusters/edgar', { method: 'POST', body: JSON.stringify(data) }),
-  deskRegime: (data: object) => request<any>('/desk/regime/evaluate', { method: 'POST', body: JSON.stringify(data) }),
-  deskRegimeLive: (flatten = false) =>
-    request<any>(`/desk/regime/live?flatten=${flatten ? 'true' : 'false'}`, { method: 'POST', body: '{}' }),
-  deskWinnersCurseSimulate: (data: object) =>
-    request<any>('/desk/winners-curse/simulate', { method: 'POST', body: JSON.stringify(data) }),
-  deskWinnersCurseDeflate: (data: object) =>
-    request<any>('/desk/winners-curse/deflate', { method: 'POST', body: JSON.stringify(data) }),
-  deskForwardTest: (data: object) =>
-    request<any>('/desk/forward-test/evaluate', { method: 'POST', body: JSON.stringify(data) }),
-  deskTargetChoice: (data: object) =>
-    request<any>('/desk/target-choice/evaluate', { method: 'POST', body: JSON.stringify(data) }),
-  deskErrorMaximizer: (data: object) =>
-    request<any>('/desk/error-maximizer/evaluate', { method: 'POST', body: JSON.stringify(data) }),
-  deskDoctrine: () => request<any>('/desk/doctrine'),
+  deskHestonPrice: <T = unknown>(data: object) => request<T>('/desk/heston/price', { method: 'POST', body: JSON.stringify(data) }),
+  deskHestonCalibrate: <T = unknown>(data: object) => request<T>('/desk/heston/calibrate', { method: 'POST', body: JSON.stringify(data) }),
+  deskEngleGranger: <T = unknown>(data: object) => request<T>('/desk/pairs/engle-granger', { method: 'POST', body: JSON.stringify(data) }),
+  deskJohansen: <T = unknown>(data: object) => request<T>('/desk/pairs/johansen', { method: 'POST', body: JSON.stringify(data) }),
+  deskPairsBacktest: <T = unknown>(data: object) => request<T>('/desk/pairs/backtest', { method: 'POST', body: JSON.stringify(data) }),
+  deskMarketMaking: <T = unknown>(data: object) => request<T>('/desk/market-making/quotes', { method: 'POST', body: JSON.stringify(data) }),
+  deskFamaFrench: <T = unknown>(data: object) => request<T>('/desk/fama-french/decompose', { method: 'POST', body: JSON.stringify(data) }),
+  deskMeanReversion: <T = unknown>(data: object) => request<T>('/desk/mean-reversion/scan', { method: 'POST', body: JSON.stringify(data) }),
+  deskPerpArb: <T = unknown>(data: object) => request<T>('/desk/perp-arb/scan', { method: 'POST', body: JSON.stringify(data) }),
+  deskPerpLive: <T = unknown>(symbol = 'BTCUSDT') => request<T>(`/desk/perp-arb/live?symbol=${encodeURIComponent(symbol)}`),
+  deskInsiderClusters: <T = unknown>(data: object) => request<T>('/desk/insider-clusters/detect', { method: 'POST', body: JSON.stringify(data) }),
+  deskEdgar: <T = unknown>(data: object) => request<T>('/desk/insider-clusters/edgar', { method: 'POST', body: JSON.stringify(data) }),
+  deskRegime: <T = unknown>(data: object) => request<T>('/desk/regime/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskRegimeLive: <T = unknown>(flatten = false) =>
+    request<T>(`/desk/regime/live?flatten=${flatten ? 'true' : 'false'}`, { method: 'POST', body: '{}' }),
+  deskWinnersCurseSimulate: <T = unknown>(data: object) =>
+    request<T>('/desk/winners-curse/simulate', { method: 'POST', body: JSON.stringify(data) }),
+  deskWinnersCurseDeflate: <T = unknown>(data: object) =>
+    request<T>('/desk/winners-curse/deflate', { method: 'POST', body: JSON.stringify(data) }),
+  deskForwardTest: <T = unknown>(data: object) =>
+    request<T>('/desk/forward-test/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskTargetChoice: <T = unknown>(data: object) =>
+    request<T>('/desk/target-choice/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskErrorMaximizer: <T = unknown>(data: object) =>
+    request<T>('/desk/error-maximizer/evaluate', { method: 'POST', body: JSON.stringify(data) }),
+  deskDoctrine: <T = unknown>() => request<T>('/desk/doctrine'),
 };
