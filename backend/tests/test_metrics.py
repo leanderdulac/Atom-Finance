@@ -29,8 +29,20 @@ def test_metrics_reject_invalid_token():
     assert response.status_code == 401
 
 
-def test_metrics_requires_bearer_with_token():
+def test_metrics_rejects_token_for_unknown_user():
+    # A well-formed JWT for a nonexistent/deleted account must not read metrics.
     response = TestClient(main.app).get("/api/metrics", headers=TOKEN)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_metrics_requires_bearer_with_token():
+    from app.core.security import hash_password
+    from app.db.database import create_user
+
+    await create_user("metrics_reader", "metrics@example.test", hash_password("a-secure-test-password"))
+    headers = {"Authorization": "Bearer " + create_access_token("metrics_reader")}
+    response = TestClient(main.app).get("/api/metrics", headers=headers)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain")
     body = response.text
