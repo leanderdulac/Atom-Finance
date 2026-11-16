@@ -93,13 +93,14 @@ class GaussianCopula:
             interpretation="Dependência simétrica, sem clustering de cauda — condições normais de mercado.",
         )
 
-    def simulate(self, n: int, corr_matrix: np.ndarray | None = None) -> np.ndarray:
+    def simulate(self, n: int, corr_matrix: np.ndarray | None = None, seed: int | None = None) -> np.ndarray:
+        rng = np.random.default_rng(seed)
         R = corr_matrix if corr_matrix is not None else self.corr_matrix
         if R is None:
             raise RuntimeError("Model not fitted — call fit() first, or pass corr_matrix explicitly.")
         L = np.linalg.cholesky(R)
         d = R.shape[0]
-        z = np.random.standard_normal((n, d))
+        z = rng.standard_normal((n, d))
         return _clip(stats.norm.cdf(z @ L.T))
 
 
@@ -201,13 +202,14 @@ class StudentTCopula:
             interpretation=f"Caudas pesadas simétricas (ν≈{self.df:.0f}). Ativos crasham E explodem juntos — λ={td:.3f}.",
         )
 
-    def simulate(self, n: int) -> np.ndarray:
+    def simulate(self, n: int, seed: int | None = None) -> np.ndarray:
+        rng = np.random.default_rng(seed)
         if self.corr_matrix is None or self.df is None:
             raise RuntimeError("Model not fitted — call fit() first.")
         d = self.corr_matrix.shape[0]
         L = np.linalg.cholesky(self.corr_matrix)
-        z = np.random.standard_normal((n, d))
-        chi2 = np.random.chisquare(self.df, size=n)
+        z = rng.standard_normal((n, d))
+        chi2 = rng.chisquare(self.df, size=n)
         t_samples = z @ L.T / np.sqrt(chi2[:, None] / self.df)
         return _clip(stats.t.cdf(t_samples, df=self.df))
 
@@ -267,11 +269,12 @@ class ClaytonCopula:
             interpretation=f"Dependência de cauda inferior forte (θ={self.theta:.2f}). Ativos crasham juntos — λ_L={tail_l:.3f}.",
         )
 
-    def simulate(self, n: int) -> np.ndarray:
+    def simulate(self, n: int, seed: int | None = None) -> np.ndarray:
+        rng = np.random.default_rng(seed)
         if self.theta is None:
             raise RuntimeError("Model not fitted — call fit() first.")
-        u = np.random.uniform(0, 1, n)
-        t = np.random.uniform(0, 1, n)
+        u = rng.uniform(0, 1, n)
+        t = rng.uniform(0, 1, n)
         # Conditional quantile of Clayton
         v = u * (t ** (-self.theta / (1.0 + self.theta)) - 1.0 + u ** self.theta) ** (-1.0 / self.theta)
         return _clip(np.column_stack([u, v]))
@@ -336,20 +339,21 @@ class GumbelCopula:
             interpretation=f"Dependência de cauda superior forte (θ={self.theta:.2f}). Ativos explodem juntos — λ_U={tail_u:.3f}.",
         )
 
-    def simulate(self, n: int) -> np.ndarray:
+    def simulate(self, n: int, seed: int | None = None) -> np.ndarray:
         """Marshall-Olkin frailty simulation."""
+        rng = np.random.default_rng(seed)
         if self.theta is None:
             raise RuntimeError("Model not fitted — call fit() first.")
         alpha = 1.0 / self.theta
         # Stable frailty via Chambers-Mallows-Stuck method (α-stable, β=1)
-        uniform_samples = np.random.uniform(0, np.pi, n)
-        exp_samples = np.random.exponential(1.0, n)
+        uniform_samples = rng.uniform(0, np.pi, n)
+        exp_samples = rng.exponential(1.0, n)
         S = (
             np.sin(alpha * uniform_samples) / (np.sin(uniform_samples) ** (1.0 / alpha))
             * (np.sin((1.0 - alpha) * uniform_samples) / exp_samples) ** ((1.0 - alpha) / alpha)
         )
-        e1 = np.random.exponential(1.0, n)
-        e2 = np.random.exponential(1.0, n)
+        e1 = rng.exponential(1.0, n)
+        e2 = rng.exponential(1.0, n)
         u1 = np.exp(-((e1 / S) ** alpha))
         u2 = np.exp(-((e2 / S) ** alpha))
         return _clip(np.column_stack([u1, u2]))
@@ -404,7 +408,8 @@ class FrankCopula:
             interpretation=f"Dependência simétrica sem clustering de cauda (θ={self.theta:.2f}). Similar à Gaussiana.",
         )
 
-    def simulate(self, n: int) -> np.ndarray:
+    def simulate(self, n: int, seed: int | None = None) -> np.ndarray:
+        rng = np.random.default_rng(seed)
         if self.theta is None:
             raise RuntimeError("Model not fitted — call fit() first.")
         # Inverse of the Frank conditional CDF F(v|u) = ∂C/∂u.
@@ -413,8 +418,8 @@ class FrankCopula:
         # This maps t∈(0,1) bijectively onto v∈(0,1). The previous code inverted
         # the wrong partial (∂C/∂v), which drove v negative and left the second
         # coordinate collapsed at the clip floor.
-        u = np.random.uniform(1e-7, 1.0 - 1e-7, n)
-        t = np.random.uniform(1e-7, 1.0 - 1e-7, n)
+        u = rng.uniform(1e-7, 1.0 - 1e-7, n)
+        t = rng.uniform(1e-7, 1.0 - 1e-7, n)
         theta = self.theta
         eu = np.exp(-theta * u)
         k = np.exp(-theta)

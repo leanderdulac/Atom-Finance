@@ -25,6 +25,21 @@ class BinanceService:
     def _get_api_secret() -> str:
         return os.getenv("BINANCE_API_SECRET", "")
 
+    @staticmethod
+    def _live_trading_enabled() -> bool:
+        """Signed (account/money) endpoints require an explicit operator flag.
+
+        Paper-only is the default: even with API keys configured, no code path
+        may touch a real account unless the operator sets ATOM_ENABLE_LIVE_TRADING=1.
+        """
+        return os.getenv("ATOM_ENABLE_LIVE_TRADING", "").strip().lower() in ("1", "true", "yes")
+
+    @classmethod
+    def _live_guard(cls) -> dict[str, Any] | None:
+        if cls._live_trading_enabled():
+            return None
+        return {"error": "Live trading disabled (ATOM_ENABLE_LIVE_TRADING is not set)"}
+
     @classmethod
     def _get_signature(cls, query_string: str) -> str:
         secret = cls._get_api_secret()
@@ -58,7 +73,7 @@ class BinanceService:
                 Cache.set(cache_key, result, ex=cls.CACHE_TTL)
                 return result
         except Exception as e:
-            logger.error(f"Error fetching Binance ticker {symbol}: {e}")
+            logger.error("Error fetching Binance ticker %s: %s", symbol, e)
             return None
 
     @classmethod
@@ -77,7 +92,7 @@ class BinanceService:
                 Cache.set(cache_key, data, ex=cls.CACHE_TTL)
                 return data
         except Exception as e:
-            logger.error(f"Error fetching Binance all tickers: {e}")
+            logger.error("Error fetching Binance all tickers: %s", e)
             return None
 
     @classmethod
@@ -91,7 +106,7 @@ class BinanceService:
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Error fetching Binance depth for {symbol}: {e}")
+            logger.error("Error fetching Binance depth for %s: %s", symbol, e)
             return None
 
     @classmethod
@@ -116,7 +131,7 @@ class BinanceService:
                 Cache.set(cache_key, result, ex=cls.CACHE_TTL)
                 return result
         except Exception as e:
-            logger.error(f"Error fetching Binance futures ticker {symbol}: {e}")
+            logger.error("Error fetching Binance futures ticker %s: %s", symbol, e)
             return None
 
     @classmethod
@@ -137,12 +152,14 @@ class BinanceService:
                 Cache.set(cache_key, data, ex=300)
                 return data
         except Exception as e:
-            logger.error(f"Error fetching Binance klines for {symbol}: {e}")
+            logger.error("Error fetching Binance klines for %s: %s", symbol, e)
             return None
 
     @classmethod
     async def get_account_info(cls) -> dict[str, Any] | None:
         """Fetch account balance and info (Spot - Signed)."""
+        if (blocked := cls._live_guard()) is not None:
+            return blocked
         api_key = cls._get_api_key()
         api_secret = cls._get_api_secret()
         if not api_key or not api_secret or api_secret == "INSERT_SECRET_HERE":
@@ -158,12 +175,14 @@ class BinanceService:
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Error fetching Binance account info: {e}")
+            logger.error("Error fetching Binance account info: %s", e)
             return {"error": str(e)}
 
     @classmethod
     async def get_futures_account(cls) -> dict[str, Any] | None:
         """Fetch futures account balance and positions (Signed)."""
+        if (blocked := cls._live_guard()) is not None:
+            return blocked
         api_key = cls._get_api_key()
         api_secret = cls._get_api_secret()
         if not api_key or not api_secret or api_secret == "INSERT_SECRET_HERE":
@@ -179,12 +198,14 @@ class BinanceService:
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Error fetching Binance futures account: {e}")
+            logger.error("Error fetching Binance futures account: %s", e)
             return {"error": str(e)}
 
     @classmethod
     async def change_leverage(cls, symbol: str, leverage: int) -> dict[str, Any] | None:
         """Change leverage for a futures symbol (Signed)."""
+        if (blocked := cls._live_guard()) is not None:
+            return blocked
         api_key = cls._get_api_key()
         api_secret = cls._get_api_secret()
         if not api_key or not api_secret or api_secret == "INSERT_SECRET_HERE":
@@ -203,7 +224,7 @@ class BinanceService:
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.error(f"Error changing leverage for {symbol}: {e}")
+            logger.error("Error changing leverage for %s: %s", symbol, e)
             return {"error": str(e)}
 
     @classmethod
@@ -215,15 +236,10 @@ class BinanceService:
         price = ticker["price"]
         bankroll = bankroll_override
         if bankroll is None:
-            acc = await cls.get_account_info()
-            if acc and "balances" in acc:
-                usdt_balance = next((b for b in acc["balances"] if b["asset"] == "USDT"), None)
-                if usdt_balance:
-                    bankroll = float(usdt_balance["free"])
-                else:
-                    bankroll = 0.0
-            else:
-                bankroll = 10000.0
+            # No account fallback: research sizing must use explicit capital,
+            # never touch the exchange account (the API layer already requires
+            # bankroll_override > 0; this is defense in depth).
+            return {"error": "bankroll_override is required; account lookup is disabled"}
         from app.models.kelly_derivatives import kelly_derivatives
         sizing = kelly_derivatives(win_prob, payout_ratio, bankroll, fraction)
         if "erro" in sizing:

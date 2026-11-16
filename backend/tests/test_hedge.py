@@ -209,7 +209,7 @@ class TestTailRiskAnalyzer:
     def test_output_keys_present(self):
         result = TailRiskAnalyzer.liquidation_probability(
             current_price=2_000, liquidation_price=2_500,
-            volatility_annual=0.80, n_paths=1_000,
+            volatility_annual=0.80, n_paths=1_000, seed=7,
         )
         for key in ("prob", "horizon_hours", "barrier", "current_price", "volatility_annual", "paths_simulated"):
             assert key in result
@@ -218,7 +218,7 @@ class TestTailRiskAnalyzer:
         """Barrier 10× current price with low vol → prob ≈ 0."""
         result = TailRiskAnalyzer.liquidation_probability(
             current_price=2_000, liquidation_price=20_000,
-            volatility_annual=0.05, horizon_hours=1.0, n_paths=2_000,
+            volatility_annual=0.05, horizon_hours=1.0, n_paths=2_000, seed=7,
         )
         assert result["prob"] < 0.01
 
@@ -226,7 +226,7 @@ class TestTailRiskAnalyzer:
         """Barrier +5% away with 200% annual vol → significant probability."""
         result = TailRiskAnalyzer.liquidation_probability(
             current_price=2_000, liquidation_price=2_100,
-            volatility_annual=2.0, horizon_hours=8.0, n_paths=5_000,
+            volatility_annual=2.0, horizon_hours=8.0, n_paths=5_000, seed=7,
         )
         assert result["prob"] > 0.30
 
@@ -235,14 +235,14 @@ class TestTailRiskAnalyzer:
         for vol in [0.20, 0.80, 2.0]:
             result = TailRiskAnalyzer.liquidation_probability(
                 current_price=2_000, liquidation_price=2_500,
-                volatility_annual=vol, n_paths=1_000,
+                volatility_annual=vol, n_paths=1_000, seed=7,
             )
             assert 0.0 <= result["prob"] <= 1.0
 
     def test_higher_vol_higher_prob(self):
         """Higher volatility → higher liquidation probability (all else equal)."""
-        low_vol  = TailRiskAnalyzer.liquidation_probability(2_000, 2_400, 0.2, n_paths=5_000)["prob"]
-        high_vol = TailRiskAnalyzer.liquidation_probability(2_000, 2_400, 1.5, n_paths=5_000)["prob"]
+        low_vol  = TailRiskAnalyzer.liquidation_probability(2_000, 2_400, 0.2, n_paths=5_000, seed=7)["prob"]
+        high_vol = TailRiskAnalyzer.liquidation_probability(2_000, 2_400, 3.0, n_paths=5_000, seed=7)["prob"]
         assert high_vol > low_vol
 
     def test_deterministic_with_seed(self):

@@ -8,10 +8,12 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date
+from urllib.parse import quote as url_quote
 
 import requests
 
 from app.core.cache import Cache
+from app.core.symbols import validate_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,11 @@ def _headers() -> dict:
     return {"Authorization": f"Bearer {tok}"} if tok else {}
 
 
+def _clean(ticker: str) -> str:
+    """Shared symbol validation (defense in depth; routes validate too)."""
+    return validate_symbol(ticker)
+
+
 def _is_br_ticker(ticker: str) -> bool:
     """Heuristic: Brazilian tickers are 4 letters + 1-2 digits (e.g. PETR4, VALE3, ITUB4F)."""
     t = ticker.upper().rstrip("F")   # strip fractional share suffix
@@ -39,15 +46,15 @@ class BrapiService:
 
     @staticmethod
     def get_quote(ticker: str) -> dict | None:
-        key = f"brapi:quote:{ticker.upper()}"
+        ticker = _clean(ticker)
+        key = f"brapi:quote:{ticker}"
         cached = Cache.get(key)
         if cached:
             return cached
 
         try:
-            url = f"{_BASE}/quote/{ticker.upper()}"
-            params = {"token": _token()} if _token() else {}
-            r = requests.get(url, params=params, headers=_headers(), timeout=8)
+            url = f"{_BASE}/quote/{url_quote(ticker, safe='')}"
+            r = requests.get(url, headers=_headers(), timeout=8)
             r.raise_for_status()
             results = r.json().get("results", [])
             if not results:
@@ -87,12 +94,12 @@ class BrapiService:
 
         try:
             # Brapi supports comma-separated tickers: /quote/PETR4,VALE3,ITUB4
-            ticker_str = ",".join([t.upper() for t in tickers])
-            url = f"{_BASE}/quote/{ticker_str}"
-            params = {"token": _token()} if _token() else {}
+            clean = [_clean(t) for t in tickers]
+            ticker_str = ",".join(clean)
+            url = f"{_BASE}/quote/{url_quote(ticker_str, safe=',')}"
             
             logger.info("Fetching brapi batch: %s", ticker_str)
-            r = requests.get(url, params=params, headers=_headers(), timeout=15)
+            r = requests.get(url, headers=_headers(), timeout=15)
             r.raise_for_status()
             
             results = r.json().get("results", [])
@@ -127,7 +134,8 @@ class BrapiService:
 
     @staticmethod
     def get_history(ticker: str, days: int = 252) -> dict | None:
-        key = f"brapi:history:{ticker.upper()}:{days}"
+        ticker = _clean(ticker)
+        key = f"brapi:history:{ticker}:{days}"
         cached = Cache.get(key)
         if cached:
             return cached
@@ -141,11 +149,10 @@ class BrapiService:
             rng = min(range_map, key=lambda k: abs(k - days))
             brapi_range = range_map[rng]
 
-            url = f"{_BASE}/quote/{ticker.upper()}"
+            url = f"{_BASE}/quote/{url_quote(ticker, safe='')}"
             params = {
                 "range": brapi_range,
                 "interval": "1d",
-                "token": _token(),
             }
             r = requests.get(url, params=params, headers=_headers(), timeout=12)
             r.raise_for_status()
@@ -207,8 +214,7 @@ class BrapiService:
             return cached
         try:
             url = f"{_BASE}/quote/list"
-            params = {"token": _token()}
-            r = requests.get(url, params=params, headers=_headers(), timeout=10)
+            r = requests.get(url, headers=_headers(), timeout=10)
             r.raise_for_status()
             stocks = r.json().get("stocks", [])
             tickers = [s["stock"] for s in stocks if s.get("stock")]
@@ -228,7 +234,7 @@ class BrapiService:
             return cached
         try:
             url = f"{_BASE}/v2/inflation"
-            params = {"country": "brazil", "token": _token()}
+            params = {"country": "brazil"}
             r = requests.get(url, params=params, headers=_headers(), timeout=8)
             r.raise_for_status()
             data = r.json()
@@ -247,7 +253,7 @@ class BrapiService:
             return cached
         try:
             url = f"{_BASE}/v2/prime-rate"
-            params = {"country": "brazil", "token": _token()}
+            params = {"country": "brazil"}
             r = requests.get(url, params=params, headers=_headers(), timeout=8)
             r.raise_for_status()
             data = r.json()

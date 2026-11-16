@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from app.core.limiter import limiter
+from app.core.numeric import FiniteFloat, NonNegativeFloat, PositiveFloat
 from app.models.pricing import (
     BinomialTree,
     BlackScholes,
@@ -19,13 +20,13 @@ router = APIRouter()
 
 
 class PricingRequest(BaseModel):
-    spot: float = Field(..., description="Current spot price", gt=0)
-    strike: float = Field(..., description="Strike price", gt=0)
-    maturity: float = Field(..., description="Time to maturity (years)", gt=0)
-    rate: float = Field(0.05, description="Risk-free rate")
-    sigma: float = Field(0.2, description="Volatility", gt=0)
+    spot: PositiveFloat = Field(..., description="Current spot price")
+    strike: PositiveFloat = Field(..., description="Strike price")
+    maturity: PositiveFloat = Field(..., description="Time to maturity (years)")
+    rate: FiniteFloat = Field(0.05, description="Risk-free rate")
+    sigma: PositiveFloat = Field(0.2, description="Volatility")
     option_type: Literal["call", "put"] = "call"
-    dividend_yield: float = Field(0.0, description="Continuous dividend yield")
+    dividend_yield: NonNegativeFloat = Field(0.0, description="Continuous dividend yield")
 
 
 class MonteCarloRequest(PricingRequest):
@@ -45,19 +46,19 @@ class FiniteDiffRequest(PricingRequest):
 
 
 class IVRequest(BaseModel):
-    market_price: float = Field(..., gt=0)
-    spot: float = Field(..., gt=0)
-    strike: float = Field(..., gt=0)
-    maturity: float = Field(..., gt=0)
-    rate: float = 0.05
+    market_price: PositiveFloat = Field(...)
+    spot: PositiveFloat = Field(...)
+    strike: PositiveFloat = Field(...)
+    maturity: PositiveFloat = Field(...)
+    rate: FiniteFloat = 0.05
     option_type: Literal["call", "put"] = "call"
 
 
 class SurfaceRequest(BaseModel):
-    spot: float = Field(..., gt=0)
-    rate: float = 0.05
-    strikes: list[float] = Field(default_factory=lambda: [80, 85, 90, 95, 100, 105, 110, 115, 120])
-    maturities: list[float] = Field(default_factory=lambda: [0.083, 0.25, 0.5, 1.0, 2.0])
+    spot: PositiveFloat = Field(...)
+    rate: FiniteFloat = 0.05
+    strikes: list[PositiveFloat] = Field(default_factory=lambda: [80, 85, 90, 95, 100, 105, 110, 115, 120])
+    maturities: list[PositiveFloat] = Field(default_factory=lambda: [0.083, 0.25, 0.5, 1.0, 2.0])
     option_type: Literal["call", "put"] = "call"
 
 

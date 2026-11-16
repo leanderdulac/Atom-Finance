@@ -27,11 +27,17 @@ def _ols(y: np.ndarray, x: np.ndarray) -> tuple[float, float, np.ndarray]:
 
 
 def _adf_tstat(residual: np.ndarray, lags: int = 1) -> float:
+    """ADF(1) t-statistic, constant, no trend.
+
+    The intercept column is load-bearing: callers compare this statistic
+    against constant-included critical values (MacKinnon residual tables in
+    engle_granger, Dickey-Fuller -2.86 in mean_reversion/target_choice).
+    """
     e = np.asarray(residual, dtype=np.float64)
     de = np.diff(e)
     y = de[lags:]
     lagged = e[lags:-1]
-    cols = [lagged]
+    cols = [np.ones_like(y), lagged]
     for lag in range(1, lags + 1):
         cols.append(de[lags - lag : len(de) - lag])
     x = np.column_stack(cols)
@@ -43,8 +49,8 @@ def _adf_tstat(residual: np.ndarray, lags: int = 1) -> float:
     df = max(len(y) - x.shape[1], 1)
     sigma2 = sse / df
     xtx_inv = np.linalg.pinv(x.T @ x)
-    se_gamma = float(np.sqrt(max(sigma2 * xtx_inv[0, 0], 1e-18)))
-    return float(coef[0] / se_gamma)
+    se_gamma = float(np.sqrt(max(sigma2 * xtx_inv[1, 1], 1e-18)))
+    return float(coef[1] / se_gamma)
 
 
 def _half_life(residual: np.ndarray) -> float:

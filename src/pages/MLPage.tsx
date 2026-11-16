@@ -63,6 +63,13 @@ export default function MLPage() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Falha na avaliação.'); }
     finally { setBusy(false); }
   }
+  const costsInvalid = [commission, slippage].some(v => !Number.isFinite(v) || v < 0 || v > 100);
+  const targetInvalid = [targetVol, maxDrawdown].some(v => !Number.isFinite(v) || v < 1 || v > 50);
+  const numericsError = costsInvalid
+    ? 'Comissão e slippage devem estar entre 0 e 100 bps.'
+    : targetInvalid
+      ? 'Alvo de volatilidade e limite de drawdown devem estar entre 1 e 50%.'
+      : '';
   function download() {
     if (!result) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }));
@@ -101,13 +108,14 @@ export default function MLPage() {
         <MenuItem value="random_forest">Random Forest — candidato não linear</MenuItem>
       </TextField>
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 2 }}>
-        <TextField label="Comissão (bps por lado)" type="number" value={commission} disabled={busy} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => { setCommission(+e.target.value); invalidate(); }} />
-        <TextField label="Slippage (bps por lado)" type="number" value={slippage} disabled={busy} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => { setSlippage(+e.target.value); invalidate(); }} />
-        <TextField label="Alvo de volatilidade anual (%)" type="number" value={targetVol} disabled={busy} inputProps={{ min: 1, max: 50 }} onChange={e => { setTargetVol(+e.target.value); invalidate(); }} />
-        <TextField label="Limite de drawdown (%)" type="number" value={maxDrawdown} disabled={busy} inputProps={{ min: 1, max: 50 }} onChange={e => { setMaxDrawdown(+e.target.value); invalidate(); }} />
+        <TextField label="Comissão (bps por lado)" type="number" value={commission} disabled={busy} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => { setCommission(+e.target.value); invalidate(); }} error={costsInvalid} helperText="0–100 bps" />
+        <TextField label="Slippage (bps por lado)" type="number" value={slippage} disabled={busy} inputProps={{ min: 0, max: 100, step: 1 }} onChange={e => { setSlippage(+e.target.value); invalidate(); }} error={costsInvalid} helperText="0–100 bps" />
+        <TextField label="Alvo de volatilidade anual (%)" type="number" value={targetVol} disabled={busy} inputProps={{ min: 1, max: 50 }} onChange={e => { setTargetVol(+e.target.value); invalidate(); }} error={targetInvalid} helperText="1–50%" />
+        <TextField label="Limite de drawdown (%)" type="number" value={maxDrawdown} disabled={busy} inputProps={{ min: 1, max: 50 }} onChange={e => { setMaxDrawdown(+e.target.value); invalidate(); }} error={targetInvalid} helperText="1–50%" />
       </Box>
+      {numericsError && <Alert severity="error">{numericsError}</Alert>}
       <Typography variant="body2" color="text.secondary">1 bp = 0,01%. Estratégia comprada ou em caixa, sem alavancagem. Sinal após o fechamento, execução no fechamento seguinte. Custos incluem rebalanceamentos e saída final.</Typography>
-      <Button type="submit" variant="contained" disabled={busy || !data || hypothesis.trim().length < 30}>{busy ? 'Processando…' : 'Avaliar fora da amostra'}</Button>
+      <Button type="submit" variant="contained" disabled={busy || !data || hypothesis.trim().length < 30 || !!numericsError}>{busy ? 'Processando…' : 'Avaliar fora da amostra'}</Button>
     </Stack></CardContent></Card>
     {result && selected && <>
       <Alert severity="warning"><strong>{result.assessment === 'insufficient_evidence' ? 'Evidência insuficiente' : 'Candidato a revisão independente'}</strong> — uso exclusivamente de pesquisa.</Alert>

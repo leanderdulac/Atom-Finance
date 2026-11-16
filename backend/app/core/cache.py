@@ -51,9 +51,19 @@ def _get_redis() -> redis.Redis | None:
 
 
 class _MemStore:
-    """Thread-unsafe but sufficient for single-process FastAPI demo usage."""
+    """Thread-unsafe but sufficient for single-process FastAPI demo usage.
 
+    Bounded LRU: cache keys embed user input (tickers), so an unbounded dict
+    is a memory-fill vector when Redis is down.
+    """
+
+    _MAX_KEYS = 10_000
     _store: dict[str, tuple[str, float]] = {}
+
+    @classmethod
+    def _touch(cls, key: str) -> None:
+        # Plain dicts stay insertion-ordered: re-insert to mark recently used.
+        cls._store[key] = cls._store.pop(key)
 
     @classmethod
     def get(cls, key: str) -> str | None:
@@ -64,11 +74,15 @@ class _MemStore:
         if time.monotonic() > expire_at:
             cls._store.pop(key, None)
             return None
+        cls._touch(key)
         return value
 
     @classmethod
     def set(cls, key: str, value: str, ex: int) -> None:
+        cls._store.pop(key, None)
         cls._store[key] = (value, time.monotonic() + ex)
+        while len(cls._store) > cls._MAX_KEYS:
+            cls._store.pop(next(iter(cls._store)))
 
     @classmethod
     def delete(cls, key: str) -> None:

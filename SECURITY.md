@@ -32,4 +32,4 @@ issues for exploitable vulnerabilities.
 | Item | Severity | Why deferred | Review when |
 |------|----------|--------------|-------------|
 | katex >=0.11 <0.18.2 (via react-katex 3.1.0, hard-pins katex ^0.16) | low | Fix requires katex 0.19.x (semver major) + react-katex downgrade — risk of breaking the formula renderer for a low-rated advisory | react-katex supports katex >=0.18, or replace react-katex with direct `katex.renderToString` |
-| 224 ESLint warnings (≈189 `no-explicit-any`) | hygiene | Warning level only; does not gate CI | Gradual campaign per touched page |
+| ~190 ESLint warnings (mostly `no-explicit-any`; 188 on 2026-11-15) | hygiene | Warning level only; does not gate CI | Gradual campaign per touched page |

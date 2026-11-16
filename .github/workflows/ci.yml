@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -41,10 +44,10 @@ jobs:
       ATOM_DATABASE_URL: postgresql+asyncpg://atom:atom_ci@localhost:5432/atom_ci
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -65,12 +68,12 @@ jobs:
 
       - name: Ruff lint
         run: |
-          pip install ruff
+          pip install ruff==0.11.13
           ruff check .
 
       - name: Static type check (basedpyright)
         run: |
-          pip install basedpyright
+          pip install basedpyright==1.31.2
           basedpyright
 
       - name: Run database migrations
@@ -81,14 +84,14 @@ jobs:
           python -m pytest tests/ \
             --tb=short \
             -q \
-            -x \
+            --maxfail=5 \
             --cov=app \
             --cov-report=term-missing \
             --cov-fail-under=50
 
       - name: Audit Python dependencies
         run: |
-          pip install pip-audit
+          pip install pip-audit==2.9.0
           pip-audit --strict
 
   # ── Frontend: TypeScript check + build ───────────────────────────────────────
@@ -97,10 +100,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # jsdom 30 and undici 8.12+ (audit-fixed) require Node >=22.19 / 22.22.
           node-version: "22.22"
@@ -116,7 +119,7 @@ jobs:
         run: npm run lint
 
       - name: Unit tests (Vitest)
-        run: npm test
+        run: npm test -- --coverage
 
       - name: TypeScript type check
         run: npx tsc --noEmit
@@ -141,9 +144,8 @@ jobs:
       ATOM_DATABASE_URL: postgresql+asyncpg://atom:atom_ci@postgres:5432/atom_ci
       ATOM_HTTP_PORT: "18080"
       ATOM_SMOKE_USER: production_test
-      ATOM_SMOKE_PASSWORD: isolated-test-only-password
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Migrations must precede the backend, not follow it: its lifespan calls
       # exclusive_runtime(), which UPDATEs the experiments table, so it cannot
       # start against an unmigrated database. Starting the stack first left the
@@ -158,7 +160,9 @@ jobs:
         run: docker compose -p atom-ci -f docker-compose.prod.yml --profile ci up -d --build --wait --wait-timeout 180
       - name: Provision test identity and verify API persistence
         run: |
-          docker compose -p atom-ci -f docker-compose.prod.yml exec -T backend python -c 'import asyncio; from app.db.database import create_user; from app.core.security import hash_password; asyncio.run(create_user("production_test", "production@example.test", hash_password("isolated-test-only-password")))'
+          SMOKE_PASSWORD="ci-smoke-$(openssl rand -hex 16)-Aa1!"
+          export ATOM_SMOKE_PASSWORD="$SMOKE_PASSWORD"
+          docker compose -p atom-ci -f docker-compose.prod.yml exec -T -e ATOM_SMOKE_PASSWORD backend python -c 'import asyncio, os; from app.db.database import create_user; from app.core.security import hash_password; asyncio.run(create_user("production_test", "production@example.test", hash_password(os.environ["ATOM_SMOKE_PASSWORD"])))'
           python3 scripts/smoke-production.py
       - name: Container logs on failure
         if: failure()

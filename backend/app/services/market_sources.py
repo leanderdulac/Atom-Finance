@@ -49,7 +49,7 @@ def number(value):
 
 def timestamp(value, *, milliseconds=False):
     try:
-        if isinstance(value,(int,float)) and value>0:
+        if isinstance(value, int | float) and value>0:
             return datetime.fromtimestamp(value/(1000 if milliseconds else 1),UTC).isoformat()
         if isinstance(value,str):
             parsed=datetime.fromisoformat(value.replace('Z','+00:00'))

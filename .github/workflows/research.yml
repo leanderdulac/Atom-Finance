@@ -1,16 +1,35 @@
 name: ATOM Research
-on: [push, pull_request]
+on:
+  push:
+    branches: [main, develop, "integration/**"]
+    paths: ["research/**", ".github/workflows/research.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["research/**", ".github/workflows/research.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   research:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: research
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements.lock && pip install -e 'quantmind[dev]'
-        working-directory: research
+          cache: pip
+          cache-dependency-path: research/requirements.lock
+      # Single resolve: the lock pins runtime deps (including ./quantmind) and
+      # the [dev] extra adds the verify toolchain (ruff/basedpyright/import-linter).
+      - run: pip install -r requirements.lock 'quantmind[dev]'
       - run: bash scripts/verify.sh
         working-directory: research/quantmind
       - run: PYTHONPATH=. python -m pytest tests -q
-        working-directory: research

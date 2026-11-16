@@ -131,13 +131,24 @@ class TestSignature:
 
 @pytest.mark.asyncio
 class TestGetAccountInfo:
-    async def test_returns_error_dict_when_credentials_missing(self):
+    async def test_blocked_without_live_trading_flag(self, monkeypatch):
+        monkeypatch.delenv("ATOM_ENABLE_LIVE_TRADING", raising=False)
+        with patch.object(BinanceService, "_get_api_key", return_value="key"), \
+             patch.object(BinanceService, "_get_api_secret", return_value="secret"), \
+             patch("app.services.binance_service.httpx.AsyncClient") as ac:
+            result = await BinanceService.get_account_info()
+            ac.assert_not_called()
+        assert result == {"error": "Live trading disabled (ATOM_ENABLE_LIVE_TRADING is not set)"}
+
+    async def test_returns_error_dict_when_credentials_missing(self, monkeypatch):
+        monkeypatch.setenv("ATOM_ENABLE_LIVE_TRADING", "1")
         with patch.object(BinanceService, "_get_api_key", return_value=""), \
              patch.object(BinanceService, "_get_api_secret", return_value=""):
             result = await BinanceService.get_account_info()
         assert result == {"error": "API Secret missing"}
 
-    async def test_returns_error_dict_on_exception(self):
+    async def test_returns_error_dict_on_exception(self, monkeypatch):
+        monkeypatch.setenv("ATOM_ENABLE_LIVE_TRADING", "1")
         cm, _ = _mock_async_client(raise_exc=RuntimeError("timeout"))
         with patch.object(BinanceService, "_get_api_key", return_value="key"), \
              patch.object(BinanceService, "_get_api_secret", return_value="secret"), \
@@ -148,12 +159,22 @@ class TestGetAccountInfo:
 
 @pytest.mark.asyncio
 class TestChangeLeverage:
-    async def test_sends_form_encoded_body_with_content_type(self):
+    async def test_blocked_without_live_trading_flag(self, monkeypatch):
+        monkeypatch.delenv("ATOM_ENABLE_LIVE_TRADING", raising=False)
+        with patch.object(BinanceService, "_get_api_key", return_value="key"), \
+             patch.object(BinanceService, "_get_api_secret", return_value="secret"), \
+             patch("app.services.binance_service.httpx.AsyncClient") as ac:
+            result = await BinanceService.change_leverage("BTCUSDT", 10)
+            ac.assert_not_called()
+        assert "Live trading disabled" in result["error"]
+
+    async def test_sends_form_encoded_body_with_content_type(self, monkeypatch):
         """Regression test: change_leverage must send the signed query string
         as `content=` with an explicit form-urlencoded Content-Type — passing
         it as a raw string via `data=` (the original code) sends the same
         bytes but drops the Content-Type header Binance's signed endpoints
         expect."""
+        monkeypatch.setenv("ATOM_ENABLE_LIVE_TRADING", "1")
         resp = _mock_response({"leverage": 10, "symbol": "BTCUSDT"})
         cm, client = _mock_async_client(response=resp)
         with patch.object(BinanceService, "_get_api_key", return_value="key"), \
@@ -167,7 +188,8 @@ class TestChangeLeverage:
         assert "content" in kwargs
         assert "signature=" in kwargs["content"]
 
-    async def test_returns_error_dict_when_credentials_missing(self):
+    async def test_returns_error_dict_when_credentials_missing(self, monkeypatch):
+        monkeypatch.setenv("ATOM_ENABLE_LIVE_TRADING", "1")
         with patch.object(BinanceService, "_get_api_key", return_value=""), \
              patch.object(BinanceService, "_get_api_secret", return_value=""):
             result = await BinanceService.change_leverage("BTCUSDT", 5)
@@ -190,9 +212,9 @@ class TestCalculateKellySizing:
             result = await BinanceService.calculate_kelly_sizing("BADSYM", win_prob=0.5, payout_ratio=1.0)
         assert "error" in result
 
-    async def test_falls_back_to_default_bankroll_when_account_has_no_balances(self):
+    async def test_requires_explicit_bankroll_without_account_lookup(self):
         with patch.object(BinanceService, "get_ticker_price", return_value={"price": 100.0}), \
-             patch.object(BinanceService, "get_account_info", return_value={"error": "no creds"}):
+             patch.object(BinanceService, "get_account_info") as account:
             result = await BinanceService.calculate_kelly_sizing("BTCUSDT", win_prob=0.6, payout_ratio=2.0)
-        # default bankroll is 10_000.0 when account info has no "balances" key
-        assert result["current_price"] == 100.0
+            account.assert_not_called()
+        assert "error" in result

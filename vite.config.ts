@@ -6,16 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/perplexity-api': {
-        target: 'https://api.perplexity.ai',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/perplexity-api/, ''),
-      },
-      '/anthropic-api': {
-        target: 'https://api.anthropic.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/anthropic-api/, ''),
-      },
+      // NOTE: no direct vendor proxies — the browser must only reach AI
+      // providers through the backend (/api/ai/*), which holds the keys.
       '/api': {
         target: process.env.ATOM_API_URL || 'http://127.0.0.1:8000',
         changeOrigin: true,

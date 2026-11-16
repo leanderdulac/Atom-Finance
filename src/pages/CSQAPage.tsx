@@ -216,6 +216,7 @@ export default function CSQAPage() {
   const [result, setResult] = useState<any>(null);
   const [running, setRunning] = useState(false);
   const [tab, setTab] = useState("overview");
+  const [calcError, setCalcError] = useState("");
 
   const set = (k: string) => (v: number) => setParams(p => ({ ...p, [k]: v }));
   const pct = (v: number) => (v * 100).toFixed(1) + "%";
@@ -225,7 +226,18 @@ export default function CSQAPage() {
 
   function run() {
     setRunning(true);
-    setTimeout(() => { setResult(runBacktest(params)); setRunning(false); }, 100);
+    setCalcError("");
+    setTimeout(() => {
+      try {
+        const next = runBacktest(params);
+        if (next == null || typeof next !== "object") throw new Error("resultado inválido");
+        setResult(next);
+      } catch (e) {
+        setCalcError(e instanceof Error ? e.message : "Falha no cálculo local.");
+      } finally {
+        setRunning(false);
+      }
+    }, 100);
   }
 
   const sr_color = result ? (result.sharpe > 3 ? "#00ff88" : result.sharpe > 1.5 ? "#ffd700" : "#ff6b6b") : "#3a5a7c";
@@ -233,6 +245,19 @@ export default function CSQAPage() {
   const phase_color = result?.csSignal?.phase?.includes("↑") ? "#00ff88" : result?.csSignal?.phase?.includes("↓") ? "#ff6b6b" : "#ffd700";
 
   const tabs = [["overview", "OVERVIEW"], ["signal", "CHERN-SIMONS"], ["bs", "BLACK-SCHOLES"], ["portfolio", "PORTFÓLIO"]];
+
+  if (calcError) {
+    return (
+      <div style={{ minHeight: "100%", background: "#050a14", color: "#c8d8e8", borderRadius: 8, padding: 32, textAlign: "center", fontFamily: "monospace" }}>
+        <div style={{ color: "#ff6b6b", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>CÁLCULO FALHOU</div>
+        <div style={{ fontSize: 12, marginBottom: 16 }}>{calcError}</div>
+        <button onClick={() => { setCalcError(""); run(); }}
+          style={{ background: "#00ff88", color: "#050a14", border: "none", borderRadius: 6, padding: "9px 20px", fontFamily: "monospace", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+          ↻ TENTAR DE NOVO
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100%", background: "#050a14", fontFamily: "'IBM Plex Mono', monospace", color: "#c8d8e8", borderRadius: "8px", overflow: "hidden", paddingBottom: "24px" }}>

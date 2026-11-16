@@ -60,7 +60,10 @@ export default function RiskPage() {
   const [liveReturns, setLiveReturns] = useState<number[] | null>(null);
   const [dataSource, setDataSource] = useState('');
 
-  const [varParams, setVarParams] = useState({
+  const [varParams, setVarParams] = useState<{
+    confidence: number; portfolio_value: number; holding_period: number;
+    method: 'historical' | 'parametric' | 'monte_carlo';
+  }>({
     confidence: 0.95,
     portfolio_value: 1000000,
     holding_period: 1,

@@ -15,7 +15,7 @@ import {
   LineChart, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts';
-import { api, getAccessToken } from '../services/api';
+import { api, downloadBlob } from '../services/api';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -137,25 +137,25 @@ function downsample<T>(arr: T[], max = 200): T[] {
   return arr.filter((_, i) => i % step === 0 || i === arr.length - 1);
 }
 
-function downloadExcel(initial: number, profile: ProfileKey, nPaths: number, T: number) {
-  const token = getAccessToken();
-  fetch('/api/ibovespa/export-excel', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ profile, n_paths: nPaths, T, initial_capital: initial }),
-  })
-    .then((r) => r.blob())
-    .then((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `b3_18ativos_${profile}_R${initial}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+async function downloadExcel(
+  initial: number, profile: ProfileKey, nPaths: number, T: number,
+  onError: (msg: string) => void,
+) {
+  try {
+    const blob = await downloadBlob(
+      '/ibovespa/export-excel',
+      { profile, n_paths: nPaths, T, initial_capital: initial },
+      'spreadsheetml',
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `b3_18ativos_${profile}_R${initial}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    onError(e instanceof Error ? e.message : 'Falha ao baixar o Excel.');
+  }
 }
 
 // ── Tooltip components ────────────────────────────────────────────────────────
@@ -373,7 +373,7 @@ export default function IbovespaDashboard() {
               </Button>
               {result && (
                 <Button variant="outlined" fullWidth startIcon={<Download />}
-                  onClick={() => downloadExcel(capital, profile, nPaths, horizon)}>
+                  onClick={() => downloadExcel(capital, profile, nPaths, horizon, setError)}>
                   Baixar Excel
                 </Button>
               )}

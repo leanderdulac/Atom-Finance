@@ -5,9 +5,10 @@ from typing import Literal
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.limiter import limiter
 from app.core.security import get_current_user
 
 router = APIRouter()
@@ -47,22 +48,26 @@ async def call_worker(method, path, **kwargs):
 
 
 @router.get("/health")
-async def health(user: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def health(request: Request, user: str = Depends(get_current_user)):
     return await call_worker("GET", "/health")
 
 
 @router.post("/papers", status_code=201)
-async def extract(req: ExtractRequest, user: str = Depends(get_current_user)):
+@limiter.limit("10/hour")
+async def extract(request: Request, req: ExtractRequest, user: str = Depends(get_current_user)):
     return await call_worker(
         "POST", "/papers", json={**req.model_dump(), "owner": user}
     )
 
 
 @router.get("/papers")
-async def papers(user: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def papers(request: Request, user: str = Depends(get_current_user)):
     return await call_worker("GET", "/papers", params={"owner": user})
 
 
 @router.get("/papers/{paper_id}")
-async def paper(paper_id: UUID, user: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def paper(request: Request, paper_id: UUID, user: str = Depends(get_current_user)):
     return await call_worker("GET", f"/papers/{paper_id}", params={"owner": user})

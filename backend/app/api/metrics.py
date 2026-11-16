@@ -61,8 +61,10 @@ async def _metrics_access(
     if credentials is None:
         raise HTTPException(401, "Metrics require a token (or ATOM_METRICS_PUBLIC=true on a trusted network)")
     from app.core.security import decode_token
+    from app.db.database import get_user_by_username
 
-    if decode_token(credentials.credentials) is None:
+    username = decode_token(credentials.credentials)
+    if username is None or await get_user_by_username(username) is None:
         raise HTTPException(401, "Invalid or expired token")
 
 

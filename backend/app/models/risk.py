@@ -98,13 +98,22 @@ class ValueAtRisk:
             cvar_pct = -(mu_h - sigma_h * float(norm.pdf(z)) / alpha)
         elif distribution == "t":
             # df is estimated (MLE) from the standardized returns, not fabricated.
+            # A standard t_nu has variance nu/(nu-2), so its quantiles must be
+            # standardized before scaling by the sample sigma — otherwise VaR/ES
+            # are overstated by sqrt(nu/(nu-2)) (~29% at nu=5).
             df_est = _estimate_student_t_df(returns)
-            z = float(t_dist.ppf(alpha, df_est))
+            std_scale = float(np.sqrt((df_est - 2.0) / df_est))
+            z = float(t_dist.ppf(alpha, df_est)) * std_scale
             var_pct = -(mu_h + z * sigma_h)
             if df_est <= 1:
                 cvar_pct = float("inf")
             else:
-                tail_factor = float(t_dist.pdf(z, df_est)) / alpha * (df_est + z ** 2) / (df_est - 1)
+                z_raw = float(t_dist.ppf(alpha, df_est))
+                tail_factor = (
+                    float(t_dist.pdf(z_raw, df_est)) / alpha
+                    * (df_est + z_raw ** 2) / (df_est - 1)
+                    * std_scale
+                )
                 cvar_pct = -mu_h + sigma_h * tail_factor
             extra["df"] = df_est
             extra["df_estimation"] = "mle_standardized"

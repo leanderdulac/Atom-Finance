@@ -59,7 +59,7 @@ export default function NeuralSDEPage() {
   const [nSteps, setNSteps] = useState(100);
   const [nPaths, setNPaths] = useState(20);
   const [hiddenSize, setHiddenSize] = useState(32);
-  const [method, setMethod] = useState('euler');
+  const [method, setMethod] = useState<'euler' | 'milstein'>('euler');
   const [seed, setSeed] = useState<number | ''>( 42);
 
   const runSimulation = async () => {
@@ -174,7 +174,7 @@ export default function NeuralSDEPage() {
                 <ToggleButtonGroup
                   exclusive fullWidth
                   value={method}
-                  onChange={(_, v) => v && setMethod(v)}
+                  onChange={(_, v) => v && setMethod(v as typeof method)}
                 >
                   <ToggleButton value="euler">Euler-Maruyama</ToggleButton>
                   <ToggleButton value="milstein">Milstein</ToggleButton>

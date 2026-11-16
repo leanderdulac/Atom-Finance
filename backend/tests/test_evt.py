@@ -9,6 +9,7 @@
 import math
 
 import numpy as np
+import pytest
 
 from app.models.evt import GeneralizedParetoDistribution, compute_evt_risk
 
@@ -24,9 +25,10 @@ def test_gpd_mle_recovers_params_with_fixed_seed():
     data = threshold + exc
     gpd = GeneralizedParetoDistribution()
     fit = gpd.fit(data, threshold_quantile=np.mean(data <= (threshold + exc[len(exc) // 2])))
-    # Just assert the optimizer converges to a sensible, heavy-tailed fit.
+    # The MLE must recover the true tail parameters, not merely converge.
     assert fit.log_likelihood == fit.log_likelihood  # not NaN
-    assert abs(fit.sigma) > 0
+    assert fit.xi == pytest.approx(xi_true, abs=0.08)
+    assert fit.sigma == pytest.approx(sigma_true, rel=0.25)
 
 
 def test_compute_evt_risk_no_fabrication_field_present():

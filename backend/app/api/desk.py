@@ -175,7 +175,8 @@ class RegimeEvaluateRequest(BaseModel):
 
 
 @router.post("/heston/price")
-async def heston_price(req: HestonPriceRequest):
+@limiter.limit("20/minute")
+async def heston_price(request: Request, req: HestonPriceRequest):
     if req.method == "cf":
         return await _run(
             HestonModel.price_option_cf,
@@ -199,7 +200,8 @@ async def heston_calibrate(request: Request, req: HestonCalibrateRequest):
 
 
 @router.post("/pairs/johansen")
-async def pairs_johansen(req: JohansenRequest):
+@limiter.limit("20/minute")
+async def pairs_johansen(request: Request, req: JohansenRequest):
     names = list(req.series.keys())
     if len(names) < 2:
         raise HTTPException(400, "Need at least two series")
@@ -217,7 +219,8 @@ async def pairs_johansen(req: JohansenRequest):
 
 
 @router.post("/pairs/engle-granger")
-async def pairs_eg(req: PairRequest):
+@limiter.limit("20/minute")
+async def pairs_eg(request: Request, req: PairRequest):
     if len(req.y) != len(req.x):
         raise HTTPException(400, "y and x must have the same length")
     try:
@@ -227,7 +230,8 @@ async def pairs_eg(req: PairRequest):
 
 
 @router.post("/pairs/backtest")
-async def pairs_bt(req: PairRequest):
+@limiter.limit("20/minute")
+async def pairs_bt(request: Request, req: PairRequest):
     if len(req.y) != len(req.x):
         raise HTTPException(400, "y and x must have the same length")
     try:
@@ -251,7 +255,8 @@ async def mm_quotes(req: QuotesRequest):
 
 
 @router.post("/market-making/simulate")
-async def mm_sim(req: MMSimRequest):
+@limiter.limit("20/minute")
+async def mm_sim(request: Request, req: MMSimRequest):
     return await _run(
         simulate_inventory,
         req.mid, req.sigma, req.gamma, req.k, req.A, req.time_remaining,
@@ -278,7 +283,8 @@ async def ff_dec(req: FFRequest):
 
 
 @router.post("/mean-reversion/scan")
-async def mr(req: MRScanRequest):
+@limiter.limit("20/minute")
+async def mr(request: Request, req: MRScanRequest):
     if len(req.universe) > 50:
         raise HTTPException(400, "Universe capped at 50 series")
     try:
@@ -288,7 +294,8 @@ async def mr(req: MRScanRequest):
 
 
 @router.post("/perp-arb/scan")
-async def perp(req: PerpArbRequest):
+@limiter.limit("20/minute")
+async def perp(request: Request, req: PerpArbRequest):
     try:
         return perp_scan([q.model_dump() for q in req.quotes], req.notional)
     except ValueError as exc:
@@ -348,7 +355,7 @@ async def insiders_edgar(request: Request, req: EdgarRequest):
 
 @router.post("/regime/evaluate")
 @limiter.limit("20/minute")
-async def regime_eval(request: Request, req: RegimeEvaluateRequest):
+async def regime_eval(request: Request, req: RegimeEvaluateRequest, owner: str = Depends(get_current_user)):
     payload = demo_payload(req.demo) if req.demo else None
     if payload is None:
         needed = (
@@ -395,14 +402,25 @@ async def regime_eval(request: Request, req: RegimeEvaluateRequest):
         "regime-history.md": render_history(result),
     }
     if req.persist:
+        import logging
         import os
         from pathlib import Path
 
+        from app.db.database import get_user_by_username
+
+        me = await get_user_by_username(owner)
+        if not me or me.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Persist requires an admin account.")
         dest = Path(os.getenv("ATOM_STRATEGY_CONTEXT_DIR") or "").expanduser()
-        if not dest.is_absolute() or not str(dest):
-            raise HTTPException(400, "persist requires ATOM_STRATEGY_CONTEXT_DIR as an absolute path")
-        write_context(dest, result)
-        result["context_dir"] = str(dest)
+        if not str(dest) or not dest.is_absolute() or dest.is_symlink():
+            raise HTTPException(400, "persist requires ATOM_STRATEGY_CONTEXT_DIR as a real absolute path")
+        try:
+            resolved = dest.resolve(strict=True)
+        except OSError:
+            raise HTTPException(400, "persist directory does not exist") from None
+        write_context(resolved, result)
+        result["context_dir"] = str(resolved)
+        logging.getLogger(__name__).warning("strategy context persisted by admin %s to %s", owner, resolved)
     return result
 
 

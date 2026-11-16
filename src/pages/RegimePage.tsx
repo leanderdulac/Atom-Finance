@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Stack, Table, TableBody,
+  Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, Stack, Table, TableBody,
   TableCell, TableHead, TableRow, Typography,
 } from '@mui/material';
 import { api } from '../services/api';
@@ -18,6 +19,7 @@ export default function RegimePage() {
   const [error, setError] = useState('');
   const [result, setResult] = useState<any>(null);
   const [kind, setKind] = useState<DemoKind | 'live'>('crisis');
+  const [confirmFlatten, setConfirmFlatten] = useState(false);
 
   const run = async (demo: DemoKind) => {
     setKind(demo);
@@ -60,10 +62,28 @@ export default function RegimePage() {
         <Button variant="outlined" disabled={loading} onClick={() => live(false)}>
           Livros públicos
         </Button>
-        <Button color="error" variant="outlined" disabled={loading} onClick={() => live(true)}>
+        <Button color="error" variant="outlined" disabled={loading} onClick={() => setConfirmFlatten(true)}>
           Live + flatten paper
         </Button>
       </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Flatten fecha posições simuladas (limite: 6/hora no backend — aguarde o cooldown entre execuções).
+      </Typography>
+      <Dialog open={confirmFlatten} onClose={() => setConfirmFlatten(false)}>
+        <DialogTitle>Confirmar flatten do livro simulado?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Isto avalia o regime ao vivo e zera todas as posições paper no último mark.
+            A ação é irreversível no diário (limite de 6 execuções/hora). Nada é enviado ao broker.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmFlatten(false)}>Cancelar</Button>
+          <Button color="error" variant="contained" onClick={() => { setConfirmFlatten(false); live(true); }} autoFocus>
+            Confirmar flatten
+          </Button>
+        </DialogActions>
+      </Dialog>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {result && (
         <Stack spacing={2}>

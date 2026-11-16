@@ -62,7 +62,7 @@ const BinanceDashboard: React.FC = () => {
         api.binancePrice(symbol),
         api.binanceDepth(symbol, 15)
       ]);
-      setCurrentPrice(priceData.price);
+      setCurrentPrice(parseFloat(priceData.price));
       setOrderBook(depthData);
     } catch (e) {
       console.error('Failed to load symbol data', e);

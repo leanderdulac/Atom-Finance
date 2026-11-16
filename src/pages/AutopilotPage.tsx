@@ -245,7 +245,7 @@ export default function AutopilotPage() {
     setError(null);
     setResult(null);
     try {
-      const res = await api.autopilotGenerate({
+      const res = await api.autopilotGenerate<AutopilotResult>({
         capital,
         horizon_days: horizon,
       });

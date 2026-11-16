@@ -3,13 +3,13 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-ro
 import {
   Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText,
   AppBar, Toolbar, Typography, IconButton, Divider, Tooltip, Chip, useMediaQuery,
-  CircularProgress,
+  CircularProgress, Stack, Button,
 } from '@mui/material';
 import {
   ShowChart, Assessment, AccountBalance, Psychology, Warning,
   Timeline, DarkMode, LightMode, Menu as MenuIcon, Waves, Terminal, AutoGraph,
   FindInPage, Functions, TrendingUp, MonetizationOn, CallMerge, RocketLaunch, AutoFixHigh,
-  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune, Speed,
+  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune, Speed, Person,
 } from '@mui/icons-material';
 import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -54,11 +54,28 @@ const ForwardTestPage = lazy(() => import('./pages/ForwardTestPage'));
 const TargetChoicePage = lazy(() => import('./pages/TargetChoicePage'));
 const QuantDoctrinePage = lazy(() => import('./pages/QuantDoctrinePage'));
 const ErrorMaximizerPage = lazy(() => import('./pages/ErrorMaximizerPage'));
+const ClientExperiencePage = lazy(() => import('./pages/ClientExperiencePage'));
 
 function RouteFallback() {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
       <CircularProgress size={32} />
+    </Box>
+  );
+}
+
+function NotFound() {
+  const navigate = useNavigate();
+  return (
+    <Box sx={{ maxWidth: 560, mx: 'auto', mt: 8, textAlign: 'center' }}>
+      <Typography variant="h4" gutterBottom>Página não encontrada</Typography>
+      <Typography color="text.secondary" sx={{ mb: 3 }}>
+        O endereço não existe neste piloto. Volte ao diário ou ao laboratório.
+      </Typography>
+      <Stack direction="row" spacing={2} justifyContent="center">
+        <Button variant="contained" onClick={() => navigate('/dashboard')}>Diário</Button>
+        <Button variant="outlined" onClick={() => navigate('/ml')}>Laboratório Quant</Button>
+      </Stack>
     </Box>
   );
 }
@@ -98,6 +115,7 @@ const exploratoryItems = [
 ];
 
 const coreItems = [
+  { label: 'Meu plano', path: '/cliente', icon: <Person /> },
   { label: 'Mesa de operações', path: '/operations', icon: <Speed /> },
   { label: 'Doutrina da mesa', path: '/quant-doctrine', icon: <MenuBook /> },
   { label: 'Mesa de papers', path: '/desk', icon: <Functions /> },
@@ -268,6 +286,7 @@ function AppLayout() {
       >
         <Suspense fallback={<RouteFallback />}>
         <Routes>
+          <Route path="/cliente" element={<ProtectedRoute><ClientExperiencePage /></ProtectedRoute>} />
           <Route path="/operations" element={<ProtectedRoute><OperationsPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><ExperimentsPage /></ProtectedRoute>} />
           <Route path="/desk" element={<ProtectedRoute><DeskLabPage /></ProtectedRoute>} />
@@ -304,6 +323,7 @@ function AppLayout() {
           <Route path="/earnings-predictor" element={<ProtectedRoute><EarningsPredictionPage /></ProtectedRoute>} />
           <Route path="/alpha-engine" element={<ProtectedRoute><AlphaCombinationPage /></ProtectedRoute>} />
           <Route path="/binance" element={<ProtectedRoute><BinanceDashboard /></ProtectedRoute>} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
         </Suspense>
       </Box>
@@ -327,10 +347,14 @@ function AuthStatusButton() {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   React.useEffect(() => {
-    if (!loading && !isAuthenticated) navigate('/login', { replace: true });
-  }, [loading, isAuthenticated, navigate]);
-  if (loading || !isAuthenticated) return null;
+    if (!loading && !isAuthenticated) {
+      navigate('/login', { replace: true, state: { from: location.pathname + location.search } });
+    }
+  }, [loading, isAuthenticated, navigate, location]);
+  if (loading) return <RouteFallback />;
+  if (!isAuthenticated) return null;
   return <>{children}</>;
 }
 

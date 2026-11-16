@@ -105,6 +105,8 @@ class PortfolioOptimizer:
 
         w0 = np.ones(self.n_assets) / self.n_assets
         result = minimize(neg_sharpe, w0, method="SLSQP", bounds=bounds, constraints=constraints)
+        if not result.success:
+            raise ValueError(f"max-Sharpe optimisation failed: {result.message}")
 
         ret, vol = self._portfolio_performance(result.x)
         sharpe = (ret - risk_free_rate) / vol
@@ -125,6 +127,8 @@ class PortfolioOptimizer:
 
         w0 = np.ones(self.n_assets) / self.n_assets
         result = minimize(portfolio_vol, w0, method="SLSQP", bounds=bounds, constraints=constraints)
+        if not result.success:
+            raise ValueError(f"min-variance optimisation failed: {result.message}")
 
         ret, vol = self._portfolio_performance(result.x)
 
@@ -148,6 +152,8 @@ class PortfolioOptimizer:
         w0 = np.ones(self.n_assets) / self.n_assets
 
         result = minimize(risk_contribution, w0, method="SLSQP", bounds=bounds, constraints=constraints)
+        if not result.success:
+            raise ValueError(f"risk-parity optimisation failed: {result.message}")
         ret, vol = self._portfolio_performance(result.x)
 
         # Calculate risk contributions
@@ -190,17 +196,24 @@ class PortfolioOptimizer:
 
     def black_litterman(self, views: dict, tau: float = 0.05,
                         risk_free_rate: float = 0.02,
-                        market_weights: dict | list | np.ndarray | None = None) -> dict:
+                        market_weights: dict | list | np.ndarray | None = None,
+                        risk_aversion: float | None = 2.5) -> dict:
         """
         Black-Litterman model.
 
         views: {"Asset_1": 0.10, "Asset_2": 0.05} - absolute return views.
+        Unknown tickers raise ValueError (the API maps it to 400) instead of
+        silently zeroing a row of P, which made Omega singular.
 
         market_weights: optional market-capitalization weights (dict keyed by
         asset name, or a sequence aligned with asset_names). The implied
         equilibrium returns are anchored to these instead of an arbitrary
         equal-weighted benchmark. When omitted it defaults to equal weights
         (safe fallback), matching the prior behaviour.
+
+        risk_aversion: exogenous delta (default 2.5, clamped to >= 0.5).
+        Pass None to calibrate from sample means explicitly — note the sample
+        estimate flips sign when the mean market return is below rf.
         """
         if market_weights is not None:
             w_mkt = self._market_weights_array(market_weights)
@@ -208,30 +221,45 @@ class PortfolioOptimizer:
             w_mkt = np.ones(self.n_assets) / self.n_assets
 
         # Implied equilibrium returns
-        delta = (np.dot(w_mkt, self.mean_returns) - risk_free_rate) / np.dot(w_mkt, np.dot(self.cov_matrix, w_mkt))
+        if risk_aversion is None:
+            delta = (np.dot(w_mkt, self.mean_returns) - risk_free_rate) / np.dot(w_mkt, np.dot(self.cov_matrix, w_mkt))
+        else:
+            delta = float(risk_aversion)
+        delta = max(delta, 0.5)
         pi = delta * np.dot(self.cov_matrix, w_mkt)
 
         # Build view matrices
+        unknown = [a for a in views if a not in self.asset_names]
+        if unknown:
+            raise ValueError(f"Unknown tickers in views: {sorted(unknown)}")
         n_views = len(views)
         P = np.zeros((n_views, self.n_assets))
         Q = np.zeros(n_views)
 
         for i, (asset, view_return) in enumerate(views.items()):
-            if asset in self.asset_names:
-                idx = self.asset_names.index(asset)
-                P[i, idx] = 1
-                Q[i] = view_return
+            idx = self.asset_names.index(asset)
+            P[i, idx] = 1
+            Q[i] = view_return
 
-        # Omega (uncertainty in views)
-        Omega = np.diag(np.diag(tau * P @ self.cov_matrix @ P.T))
+        # Omega (uncertainty in views); ridge keeps it invertible when a view
+        # has (near-)zero variance under the prior.
+        Omega = np.diag(np.diag(tau * P @ self.cov_matrix @ P.T)) + 1e-8 * np.eye(n_views)
 
-        # BL combined returns
+        # BL combined returns (pinv fallback for rank-deficient inputs)
         Sigma_tau = tau * self.cov_matrix
-        M1 = np.linalg.inv(np.linalg.inv(Sigma_tau) + P.T @ np.linalg.inv(Omega) @ P)
-        bl_returns = M1 @ (np.linalg.inv(Sigma_tau) @ pi + P.T @ np.linalg.inv(Omega) @ Q)
+        try:
+            M1 = np.linalg.inv(np.linalg.inv(Sigma_tau) + P.T @ np.linalg.inv(Omega) @ P)
+            bl_returns = M1 @ (np.linalg.inv(Sigma_tau) @ pi + P.T @ np.linalg.inv(Omega) @ Q)
+        except np.linalg.LinAlgError:
+            inv_tau = np.linalg.pinv(Sigma_tau)
+            M1 = np.linalg.pinv(inv_tau + P.T @ np.linalg.pinv(Omega) @ P)
+            bl_returns = M1 @ (inv_tau @ pi + P.T @ np.linalg.pinv(Omega) @ Q)
 
         # Optimal weights
-        bl_weights = np.linalg.inv(delta * self.cov_matrix) @ bl_returns
+        try:
+            bl_weights = np.linalg.solve(delta * self.cov_matrix, bl_returns)
+        except np.linalg.LinAlgError:
+            bl_weights = np.linalg.pinv(delta * self.cov_matrix) @ bl_returns
         bl_weights = bl_weights / np.sum(bl_weights)  # Normalize
 
         return {

@@ -168,18 +168,37 @@ class BacktestEngine:
 
     @staticmethod
     def _rsi_strategy(prices: np.ndarray, params: dict) -> np.ndarray:
+        """RSI signals with Wilder's RMA smoothing (not a simple mean).
+
+        avg_gain[i] = (avg_gain[i-1] * (n-1) + gain[i]) / n, seeded with the
+        SMA of the first `period` deltas — Wilder (1978). A simple rolling
+        mean answers a different question and must not be labelled RSI.
+        """
         period = params.get("period", 14)
         oversold = params.get("oversold", 30)
         overbought = params.get("overbought", 70)
         n = len(prices)
         signals = np.zeros(n)
+        if n <= period + 1:
+            return signals
+
+        deltas = np.diff(prices)
+        gains = np.where(deltas > 0, deltas, 0.0)
+        losses = np.where(deltas < 0, -deltas, 0.0)
+        avg_gain = np.zeros(n)
+        avg_loss = np.zeros(n)
+        avg_gain[period] = float(np.mean(gains[:period]))
+        avg_loss[period] = float(np.mean(losses[:period]))
+        for i in range(period + 1, n):
+            avg_gain[i] = (avg_gain[i - 1] * (period - 1) + gains[i - 1]) / period
+            avg_loss[i] = (avg_loss[i - 1] * (period - 1) + losses[i - 1]) / period
 
         for i in range(period + 1, n):
-            changes = np.diff(prices[i - period:i + 1])
-            gains = np.mean(changes[changes > 0]) if np.any(changes > 0) else 0
-            losses = -np.mean(changes[changes < 0]) if np.any(changes < 0) else 0.001
-            rs = gains / max(losses, 0.001)
-            rsi = 100 - (100 / (1 + rs))
+            if avg_loss[i] == 0:
+                rsi = 100.0 if avg_gain[i] > 0 else 50.0
+            else:
+                rs = avg_gain[i] / avg_loss[i]
+                rsi = 100 - (100 / (1 + rs))
             if rsi < oversold:
                 signals[i] = 1
             elif rsi > overbought:

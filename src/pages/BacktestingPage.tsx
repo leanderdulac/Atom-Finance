@@ -49,7 +49,7 @@ export default function BacktestingPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
-  const [strategy, setStrategy] = useState('sma_crossover');
+  const [strategy, setStrategy] = useState<'sma_crossover' | 'mean_reversion' | 'momentum' | 'rsi'>('sma_crossover');
   const [capital, setCapital] = useState(100000);
   const [commission, setCommission] = useState(0.001);
   const [slippage, setSlippage] = useState(0.0005);
@@ -117,10 +117,13 @@ export default function BacktestingPage() {
                 />
                 <ProviderChips value={provider} onChange={value => { setProvider(value); setPriceData(null); setResult(null); }} />
                 <TextField label="Lookback Days" type="number" value={historyDays}
-                  onChange={(e) => setHistoryDays(+e.target.value)} fullWidth />
+                  onChange={(e) => setHistoryDays(+e.target.value)} fullWidth
+                  inputProps={{ min: 100, max: 1825, step: 1 }}
+                  error={!Number.isFinite(historyDays) || historyDays < 100 || historyDays > 1825}
+                  helperText="100–1825 dias" />
                 <ToggleButtonGroup
                   fullWidth exclusive value={strategy}
-                  onChange={(_, v) => v && setStrategy(v)}
+                  onChange={(_, v) => v && setStrategy(v as typeof strategy)}
                   orientation="vertical"
                 >
                   <ToggleButton value="sma_crossover">SMA Crossover</ToggleButton>

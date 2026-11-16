@@ -20,6 +20,7 @@ from app.core.security import (
     create_refresh_token,
     get_current_user,
     hash_password,
+    is_production,
     set_refresh_cookie,
     verify_password,
 )
@@ -66,7 +67,7 @@ class RegisterRequest(LoginRequest):
 @router.post("/register", status_code=201)
 @limiter.limit("3/hour")
 async def register(request: Request, req: RegisterRequest):
-    allowed = os.getenv("ATOM_ALLOW_REGISTRATION", "false" if os.getenv("ATOM_ENV") == "production" else "true")
+    allowed = os.getenv("ATOM_ALLOW_REGISTRATION", "false" if is_production() else "true")
     if allowed.lower() != "true":
         raise HTTPException(status_code=403, detail="Registration is disabled; contact the operator.")
     already_taken = await user_exists(req.username)
@@ -82,7 +83,7 @@ async def register(request: Request, req: RegisterRequest):
             detail="Unable to register with these credentials.",
         )
 
-    logger.info("New user registered: %s (id=%d)", req.username, uid)
+    logger.info("New user registered: id=%d", uid)
     return {"message": "User registered successfully.", "username": req.username.lower()}
 
 
@@ -117,6 +118,7 @@ async def login(request: Request, req: LoginRequest, response: Response):
 
 
 @router.post("/refresh")
+@limiter.limit("30/minute")
 async def refresh(request: Request, response: Response):
     """Rotates the HttpOnly refresh cookie and returns a fresh short access token."""
     token = request.cookies.get(REFRESH_COOKIE)
