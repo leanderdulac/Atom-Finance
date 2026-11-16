@@ -161,7 +161,7 @@ jobs:
       - name: Provision test identity and verify API persistence
         run: |
           SMOKE_PASSWORD="ci-smoke-$(openssl rand -hex 16)-Aa1!"
-          echo "ATOM_SMOKE_PASSWORD=$SMOKE_PASSWORD" >> "$GITHUB_ENV"
+          export ATOM_SMOKE_PASSWORD="$SMOKE_PASSWORD"
           docker compose -p atom-ci -f docker-compose.prod.yml exec -T -e ATOM_SMOKE_PASSWORD backend python -c 'import asyncio, os; from app.db.database import create_user; from app.core.security import hash_password; asyncio.run(create_user("production_test", "production@example.test", hash_password(os.environ["ATOM_SMOKE_PASSWORD"])))'
           python3 scripts/smoke-production.py
       - name: Container logs on failure
