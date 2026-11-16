@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import {
   Box, Typography, Slider, Button, Card, CardContent, Chip,
   CircularProgress, LinearProgress, Divider, Fade, Zoom, Grid,
-  ToggleButton, ToggleButtonGroup, Tooltip, Collapse, Alert
+  ToggleButton, ToggleButtonGroup, Collapse, Alert
 } from '@mui/material';
 import {
   AutoFixHigh, RocketLaunch, Shield, LocalFireDepartment,
-  Balance, Visibility, VisibilityOff, CheckCircle, Warning,
-  TrendingUp, TrendingDown, Psychology, Search as SearchIcon
+  Balance, Visibility, VisibilityOff, CheckCircle,
+  TrendingUp, Psychology, Search as SearchIcon
 } from '@mui/icons-material';
 import { api } from '../services/api';
 
@@ -250,7 +250,7 @@ export default function AutopilotPage() {
         horizon_days: horizon,
       });
       setResult(res);
-    } catch (err: any) {
+    } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao processar. Verifique as chaves de API.');
     } finally {
       setLoading(false);

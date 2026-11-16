@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, ShowChart, Diamond, Shield, VisibilityOff } from '@mui/icons-material';
+import { TrendingUp, Diamond, Shield, VisibilityOff } from '@mui/icons-material';
 
 // --- B3 ASSETS (GHOST DIMENSION INTEGRATED) ---
 const B3_ASSETS = [

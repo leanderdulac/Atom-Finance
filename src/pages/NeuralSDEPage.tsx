@@ -2,9 +2,17 @@ import React, { useState } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, TextField, Button,
   CircularProgress, Alert, Chip, Slider, ToggleButtonGroup,
-  ToggleButton, Table, TableBody, TableCell, TableRow, Divider,
+  ToggleButton, Table, TableBody, TableCell, TableRow,
 } from '@mui/material';
 import { api } from '../services/api';
+
+interface NeuralSDEResult {
+  sde_type: string; solver: string;
+  parameters: Record<string, number>;
+  time: number[]; trajectories?: number[][];
+  terminal: { mean: number; std: number; p5?: number; p50?: number; p95?: number };
+  statistics: { mean: number[] } & Record<string, number[] | number>;
+}
 import QuantContextSection from '../components/QuantContextSection';
 
 const sdeFoundations = [
@@ -50,7 +58,7 @@ function Sparkline({ values, color = '#6366f1', height = 60 }: { values: number[
 
 export default function NeuralSDEPage() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<NeuralSDEResult | null>(null);
   const [error, setError] = useState('');
 
   // Parameters
@@ -65,7 +73,7 @@ export default function NeuralSDEPage() {
   const runSimulation = async () => {
     setLoading(true); setError('');
     try {
-      const res = await api.neuralSdeSimulate({
+      const res = await api.neuralSdeSimulate<NeuralSDEResult>({
         y0,
         t_start: 0,
         t_end: tEnd,
@@ -76,8 +84,8 @@ export default function NeuralSDEPage() {
         seed: seed === '' ? null : seed,
       });
       setResult(res);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unexpected error');
     } finally {
       setLoading(false);
     }
@@ -86,10 +94,10 @@ export default function NeuralSDEPage() {
   const runDemo = async () => {
     setLoading(true); setError('');
     try {
-      const res = await api.neuralSdeDemo();
+      const res = await api.neuralSdeDemo<NeuralSDEResult>();
       setResult(res);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unexpected error');
     } finally {
       setLoading(false);
     }

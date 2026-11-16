@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import {
   Box, Typography, Paper, TextField, Button, Grid, Switch, FormControlLabel,
-  CircularProgress, Alert, Divider, useTheme, Tooltip, IconButton, InputAdornment
+  CircularProgress, Alert, Divider, useTheme, Tooltip, InputAdornment
 } from '@mui/material';
-import { api } from '../services/api';
+import { api, type EarningsPredictionRequest, type FinancialPeriod, type OptionsData } from '../services/api';
 import { AutoFixHigh, Assessment, Search, HelpOutline } from '@mui/icons-material';
 
 const glassStyle = {
@@ -54,9 +54,9 @@ export default function EarningsPredictionPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
-  const [current, setCurrent] = useState<Record<string, string>>({ ...initialPeriod });
-  const [previous, setPrevious] = useState<Record<string, string>>({ ...initialPeriod });
-  const [options, setOptions] = useState<Record<string, string>>({ ...initialOptions });
+  const [current, setCurrent] = useState<Record<keyof FinancialPeriod, string>>({ ...initialPeriod });
+  const [previous, setPrevious] = useState<Record<keyof FinancialPeriod, string>>({ ...initialPeriod });
+  const [options, setOptions] = useState<Record<keyof OptionsData, string>>({ ...initialOptions });
   
   const [ticker, setTicker] = useState('');
   const [fetchingTicker, setFetchingTicker] = useState(false);
@@ -73,11 +73,12 @@ export default function EarningsPredictionPage() {
     try {
       const res = await api.getTickerFinancials(ticker);
       if (res.current) {
-        const fmt = (o: any) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, (v as number).toFixed(0)]));
+        const fmt = (o: FinancialPeriod) =>
+          Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Number(v).toFixed(0)])) as Record<keyof FinancialPeriod, string>;
         setCurrent(fmt(res.current));
-        setPrevious(fmt(res.previous));
+        if (res.previous) setPrevious(fmt(res.previous));
       }
-    } catch (err: any) {
+    } catch {
       setError('Não foi possível buscar dados para este ticker. Tente formatar como PETR4.SA ou AAPL.');
     } finally {
       setFetchingTicker(false);
@@ -101,10 +102,10 @@ export default function EarningsPredictionPage() {
     setUseOptions(true);
   };
 
-  const parseObj = (obj: Record<string, string>, section: string) => {
-    const out: Record<string, number> = {};
+  const parseObj = <K extends string>(obj: Record<K, string>, section: string) => {
+    const out = {} as Record<K, number>;
     const bad: string[] = [];
-    for (const [k, v] of Object.entries(obj)) {
+    for (const [k, v] of Object.entries(obj) as [K, string][]) {
       // Never coerce invalid input to 0: a verdict computed over silent
       // zeros looks valid. Reject empty/non-numeric upfront instead.
       if (v.trim() === '' || !Number.isFinite(Number(v))) bad.push(`${section}:${k}`);
@@ -120,25 +121,25 @@ export default function EarningsPredictionPage() {
     try {
       const cur = parseObj(current, 'current');
       const prev = parseObj(previous, 'previous');
-      const opt = useOptions ? parseObj(options, 'options') : { out: {}, bad: [] as string[] };
-      const bad = [...cur.bad, ...prev.bad, ...opt.bad];
+      const opt = useOptions ? parseObj(options, 'options') : null;
+      const bad = [...cur.bad, ...prev.bad, ...(opt?.bad ?? [])];
       setInvalid(bad);
       if (bad.length) {
         setError(`Preencha ${bad.length} campo(s) com números válidos (destacados em vermelho).`);
         return;
       }
-      const payload: any = { current_period: cur.out, previous_period: prev.out };
-      if (useOptions) payload.options = opt.out;
+      const payload: EarningsPredictionRequest = { current_period: cur.out, previous_period: prev.out };
+      if (useOptions && opt) payload.options = opt.out;
       const res = await api.earningsPrediction(payload);
       setResult(res.analysis);
-    } catch (err: any) {
-      setError(err.message || 'Erro ao comunicar com o motor de análise.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao comunicar com o motor de análise.');
     } finally {
       setLoading(false);
     }
   };
 
-  const renderGroupedInputs = (data: any, setter: any, title: string, section: string) => (
+  const renderGroupedInputs = <K extends string>(data: Record<K, string>, setter: (v: Record<K, string>) => void, title: string, section: string) => (
     <Box>
       <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: 'primary.main', mb: 2, textAlign: 'center', fontSize: '1rem' }}>
         {title}
@@ -153,7 +154,7 @@ export default function EarningsPredictionPage() {
               <Grid size={{ xs: 6 }} key={k}>
                 <TextField
                   label={labels[k].label}
-                  value={data[k]}
+                  value={data[k as K]}
                   onChange={(e) => { setter({ ...data, [k]: e.target.value }); setInvalid(ids => ids.filter(id => id !== `${section}:${k}`)); }}
                   fullWidth size="small" type="number" variant="outlined"
                   error={invalid.includes(`${section}:${k}`)}
@@ -247,7 +248,7 @@ export default function EarningsPredictionPage() {
 
         {useOptions && (
           <Grid container spacing={2} sx={{ mb: 4 }}>
-            {Object.keys(initialOptions).map((k) => (
+            {(Object.keys(initialOptions) as (keyof OptionsData)[]).map((k) => (
               <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={k}>
                 <TextField
                   label={optionsLabels[k]}

@@ -20,23 +20,26 @@ interface MarketTickerAutocompleteProps {
   helperText?: string;
 }
 
-const asOption = (item: any): SearchOption => ({
-  symbol: String(item?.symbol || '').toUpperCase(),
-  name: item?.name ? String(item.name) : undefined,
-  source: item?.source ? String(item.source) : undefined,
-  exchange: item?.exchange ? String(item.exchange) : undefined,
-});
+const asOption = (item: unknown): SearchOption => {
+  const o = (item ?? {}) as Partial<SearchOption>;
+  return {
+  symbol: String(o.symbol || '').toUpperCase(),
+  name: o.name ? String(o.name) : undefined,
+  source: o.source ? String(o.source) : undefined,
+  exchange: o.exchange ? String(o.exchange) : undefined,
+  };
+};
 
 // Return ONLY the symbol — prevents MUI from resetting inputValue to "SYMBOL — Name"
-const getOptionLabel = (option: any): string => {
+const getOptionLabel = (option: unknown): string => {
   if (typeof option === 'string') return option.toUpperCase();
-  return (option?.symbol || '').toUpperCase();
+  const o = (option ?? {}) as Partial<SearchOption>;
+  return (o.symbol || '').toUpperCase();
 };
 
 export default function MarketTickerAutocomplete({
   label,
   value,
-  values,
   onChange,
   onValuesChange,
   multiple = false,
@@ -71,10 +74,11 @@ export default function MarketTickerAutocomplete({
     setLoading(true);
     const timer = window.setTimeout(async () => {
       try {
-        const response: any = await api.search(query);
+        const response: unknown = await api.search(query);
         if (!active) return;
-        const nextOptions = Array.isArray(response?.results)
-          ? response.results.map(asOption).filter((item: SearchOption) => item.symbol)
+        const results = (response as { results?: unknown } | null)?.results;
+        const nextOptions = Array.isArray(results)
+          ? results.map(asOption).filter((item: SearchOption) => item.symbol)
           : [];
         setOptions(nextOptions);
       } catch {
@@ -114,7 +118,7 @@ export default function MarketTickerAutocomplete({
         // Sync to parent on every real keystroke (fixes freeSolo "Load" button not seeing typed value)
         if (!multiple) onChange?.(upper || externalValueRef.current);
       }}
-      isOptionEqualToValue={(option: any, selected: any) => {
+      isOptionEqualToValue={(option: SearchOption, selected: SearchOption) => {
         const a = typeof option === 'string' ? option : option?.symbol;
         const b = typeof selected === 'string' ? selected : selected?.symbol;
         return (a || '').toUpperCase() === (b || '').toUpperCase();
@@ -132,10 +136,10 @@ export default function MarketTickerAutocomplete({
           </Box>
         </li>
       )}
-      onChange={(_, newValue: any) => {
+      onChange={(_, newValue: unknown) => {
         if (multiple) {
-          const next = (newValue || [])
-            .map((item: any) => (typeof item === 'string' ? item : item.symbol))
+          const next = (Array.isArray(newValue) ? newValue : [])
+            .map((item: unknown) => (typeof item === 'string' ? item : (item as SearchOption).symbol))
             .map((s: string) => s.toUpperCase())
             .filter(Boolean);
           onValuesChange?.(Array.from(new Set(next)));
@@ -143,7 +147,7 @@ export default function MarketTickerAutocomplete({
         }
         const sym = typeof newValue === 'string'
           ? newValue.toUpperCase()
-          : (newValue?.symbol || '').toUpperCase();
+          : (((newValue ?? {}) as Partial<SearchOption>).symbol || '').toUpperCase();
         if (sym) onChange?.(sym);
       }}
       renderInput={(params) => (

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, TextField, Button,
-  Select, MenuItem, FormControl, InputLabel, Table, TableBody,
+  Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Paper,
   CircularProgress, Alert, Chip, Tabs, Tab,
 } from '@mui/material';
-import { api } from '../services/api';
+import { api, type GARCHFitResult, type MarketHistory, type StressScenarioResult, type VaRMethodResult } from '../services/api';
 import QuantContextSection from '../components/QuantContextSection';
 import MarketTickerAutocomplete from '../components/MarketTickerAutocomplete';
 import ProviderChips from '../components/ProviderChips';
@@ -52,7 +52,11 @@ function generateReturns(n: number = 500): number[] {
 export default function RiskPage() {
   const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  type RiskResult =
+    | { type: 'var'; data: Record<'historical' | 'parametric' | 'monte_carlo', VaRMethodResult> }
+    | { type: 'stress'; data: { scenarios: Record<string, StressScenarioResult> } }
+    | { type: 'garch'; data: { fit: GARCHFitResult; forecast: { forecast_volatility: number[] } } };
+  const [result, setResult] = useState<RiskResult | null>(null);
   const [error, setError] = useState('');
 
   const [ticker, setTicker] = useState('SPY');
@@ -81,13 +85,13 @@ export default function RiskPage() {
   const loadMarketReturns = async () => {
     setLoading(true); setError('');
     try {
-      const history: any = await api.history(ticker, 252, provider);
+      const history: MarketHistory = await api.history(ticker, 252, provider);
       const closes = (history?.close || []).map(Number);
       if (closes.length < 31) throw new Error('Not enough data returned');
       const rets = closes.slice(1).map((p: number, i: number) => Math.log(p / closes[i]));
       setLiveReturns(rets);
       setDataSource(history.provider || history.source || provider);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
@@ -95,9 +99,9 @@ export default function RiskPage() {
     setLoading(true); setError('');
     try {
       const returns = liveReturns || generateReturns();
-      const res = await api.varAll({ returns, ...varParams });
+      const res = await api.varAll<Record<'historical' | 'parametric' | 'monte_carlo', VaRMethodResult>>({ returns, ...varParams });
       setResult({ type: 'var', data: res });
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
@@ -106,7 +110,7 @@ export default function RiskPage() {
     try {
       const res = await api.stressTest({ portfolio: stressParams, portfolio_value: varParams.portfolio_value });
       setResult({ type: 'stress', data: res });
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
@@ -116,7 +120,7 @@ export default function RiskPage() {
       const returns = liveReturns || generateReturns();
       const res = await api.garch({ returns, forecast_horizon: garchHorizon });
       setResult({ type: 'garch', data: res });
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unexpected error'); }
     finally { setLoading(false); }
   };
 
@@ -179,7 +183,7 @@ export default function RiskPage() {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {['historical', 'parametric', 'monte_carlo'].map((method) => {
+                        {(['historical', 'parametric', 'monte_carlo'] as const).map((method) => {
                           const d = result.data[method];
                           return (
                             <TableRow key={method}>
@@ -248,7 +252,7 @@ export default function RiskPage() {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {Object.entries(result.data.scenarios).map(([name, scenario]: [string, any]) => (
+                        {Object.entries(result.data.scenarios).map(([name, scenario]: [string, StressScenarioResult]) => (
                           <TableRow key={name}>
                             <TableCell sx={{ textTransform: 'capitalize' }}>{name.replace(/_/g, ' ')}</TableCell>
                             <TableCell align="right" sx={{
@@ -297,7 +301,7 @@ export default function RiskPage() {
                 <CardContent>
                   <Typography variant="h6" gutterBottom>GARCH(1,1) Results</Typography>
                   <Grid container spacing={2}>
-                    {['omega', 'alpha', 'beta', 'persistence'].map((param) => (
+                    {(['omega', 'alpha', 'beta', 'persistence'] as const).map((param) => (
                       <Grid size={{ xs: 6, sm: 3 }} key={param}>
                         <Box sx={{ textAlign: 'center', p: 1, border: 1, borderColor: 'divider', borderRadius: 2 }}>
                           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>

@@ -31,5 +31,5 @@ issues for exploitable vulnerabilities.
 
 | Item | Severity | Why deferred | Review when |
 |------|----------|--------------|-------------|
-| katex >=0.11 <0.18.2 (via react-katex 3.1.0, hard-pins katex ^0.16) | low | Fix requires katex 0.19.x (semver major) + react-katex downgrade — risk of breaking the formula renderer for a low-rated advisory | react-katex supports katex >=0.18, or replace react-katex with direct `katex.renderToString` |
-| ~190 ESLint warnings (mostly `no-explicit-any`; 188 on 2026-11-15) | hygiene | Warning level only; does not gate CI | Gradual campaign per touched page |
+| (katex advisory retired 2026-11-16: `katex`/`react-katex` had zero imports — removed instead of upgraded) | — | — | — |
+| ESLint warnings: 0 (was ~190 on 2026-11-15; cleaned file-by-file 2026-11-16) | hygiene | Warning level only; does not gate CI | Keep at zero; `npm run lint` in CI |

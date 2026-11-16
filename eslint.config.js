@@ -7,7 +7,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
   {
-    ignores: ['dist', 'backend', 'research', '**/.venv/**'],
+    ignores: ['dist', 'coverage', 'backend', 'research', '**/.venv/**'],
   },
   {
     files: ['**/*.{ts,tsx}'],

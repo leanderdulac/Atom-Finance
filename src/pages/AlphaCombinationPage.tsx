@@ -1,14 +1,13 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, Button,
-  Slider, Chip, Divider, Alert, LinearProgress, Tooltip,
+  Slider, Chip, Alert, LinearProgress, Tooltip,
   Table, TableBody, TableCell, TableHead, TableRow,
-  ToggleButtonGroup, ToggleButton, TextField,
+  ToggleButtonGroup, ToggleButton,
 } from '@mui/material';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
-  ResponsiveContainer, ReferenceLine, Cell, LineChart, Line,
-  ScatterChart, Scatter, Legend, RadarChart, PolarGrid,
+  ResponsiveContainer, ReferenceLine, Cell, Legend, RadarChart, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis, Radar,
 } from 'recharts';
 import { PlayArrow, Refresh, InfoOutlined, TrendingUp, BarChart as BarChartIcon } from '@mui/icons-material';
@@ -488,7 +487,7 @@ export default function AlphaCombinationPage() {
                       <RTooltip
                         contentStyle={{ background: '#111827', border: '1px solid #1e293b', borderRadius: 8 }}
                         labelStyle={{ fontWeight: 600 }}
-                        formatter={(v: any) => [(v as number).toFixed(5), 'Weight']}
+                        formatter={(v: unknown) => [(v as number).toFixed(5), 'Weight']}
                       />
                       <ReferenceLine y={0} stroke="#475569" />
                       <Bar dataKey="weight" radius={[4, 4, 0, 0]}>
@@ -513,7 +512,7 @@ export default function AlphaCombinationPage() {
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v.toFixed(2)} unit="%" />
                       <RTooltip
                         contentStyle={{ background: '#111827', border: '1px solid #1e293b', borderRadius: 8 }}
-                        formatter={(v: any) => [(v as number).toFixed(3) + '%', 'IC']}
+                        formatter={(v: unknown) => [(v as number).toFixed(3) + '%', 'IC']}
                       />
                       <ReferenceLine y={0} stroke="#475569" />
                       <Bar dataKey="ic" radius={[4, 4, 0, 0]}>

@@ -3,11 +3,10 @@ import {
   Box, Grid, Card, CardContent, Typography, Button, CircularProgress,
   Alert, Chip, Slider, TextField, Table, TableBody, TableCell,
   TableHead, TableRow, ToggleButton, ToggleButtonGroup, Divider,
-  IconButton, Tooltip,
 } from '@mui/material';
-import { Add, Remove, PlayArrow, AutoGraph } from '@mui/icons-material';
+import { PlayArrow, AutoGraph } from '@mui/icons-material';
 import {
-  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
+  ComposedChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { api } from '../services/api';
@@ -75,16 +74,19 @@ function buildDetailData(asset: AssetResult, time_days: number[]) {
 }
 
 // Custom tooltip
-function PctTooltip({ active, payload, label }: any) {
+interface TooltipEntry { value?: number | string; dataKey?: string | number; color?: string }
+interface TooltipProps { active?: boolean; payload?: TooltipEntry[]; label?: string | number }
+
+function PctTooltip({ active, payload, label }: TooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <Box sx={{ background: '#1e1e2e', border: '1px solid #333', borderRadius: 1, p: 1.5 }}>
       <Typography variant="caption" color="text.secondary">Dia {label}</Typography>
-      {payload.map((p: any) => (
+      {payload.map((p: TooltipEntry) => (
         <Box key={p.dataKey} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
           <Typography variant="caption" sx={{ color: p.color }}>
-            {p.dataKey}: {p.value > 0 ? '+' : ''}{Number(p.value).toFixed(2)}%
+            {p.dataKey}: {Number(p.value ?? 0) > 0 ? '+' : ''}{Number(p.value ?? 0).toFixed(2)}%
           </Typography>
         </Box>
       ))}
@@ -92,9 +94,9 @@ function PctTooltip({ active, payload, label }: any) {
   );
 }
 
-function PriceTooltip({ active, payload, label }: any) {
+function PriceTooltip({ active, payload, label }: TooltipProps) {
   if (!active || !payload?.length) return null;
-  const mean = payload.find((p: any) => p.dataKey === 'mean');
+  const mean = payload.find((p: TooltipEntry) => p.dataKey === 'mean');
   return (
     <Box sx={{ background: '#1e1e2e', border: '1px solid #333', borderRadius: 1, p: 1.5 }}>
       <Typography variant="caption" color="text.secondary">Dia {label}</Typography>
@@ -145,8 +147,8 @@ export default function SimulacaoB3Page() {
       const data = await api.capmGbmMulti(payload) as SimResult;
       setResult(data);
       setSelectedAsset(data.assets[0]?.ticker ?? '');
-    } catch (e: any) {
-      setError(e?.message ?? 'Erro na simulação.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro na simulação.');
     } finally {
       setLoading(false);
     }
@@ -160,8 +162,8 @@ export default function SimulacaoB3Page() {
       setResult(data);
       setAssets(prev => prev.map(a => ({ ...a, enabled: data.assets.some((r: AssetResult) => r.ticker === a.ticker) })));
       setSelectedAsset(data.assets[0]?.ticker ?? '');
-    } catch (e: any) {
-      setError(e?.message ?? 'Erro no demo.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro no demo.');
     } finally {
       setLoading(false);
     }

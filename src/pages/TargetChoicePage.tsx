@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Stack, Table, TableBody,
+  Alert, Box, Button, Chip, Stack, Table, TableBody,
   TableCell, TableHead, TableRow, Typography,
 } from '@mui/material';
 import {
