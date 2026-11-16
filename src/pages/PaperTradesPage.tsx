@@ -1,7 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
-import {Link,useSearchParams} from 'react-router-dom';
+import {Link,useNavigate,useSearchParams} from 'react-router-dom';
 import {Alert,Box,Button,Card,CardContent,Chip,Stack,Table,TableBody,TableCell,TableHead,TableRow,TextField,Typography} from '@mui/material';
 import PaperSourceCheck from '../components/PaperSourceCheck';
+import PageHeader from '../components/PageHeader';
+import EmptyState from '../components/EmptyState';
+import LoadingState from '../components/LoadingState';
 import {api} from '../services/api';
 import type {PaperRecord,PaperSummary} from '../types/paperTrading';
 
@@ -11,7 +14,7 @@ const money=(n:number)=>n.toLocaleString('pt-BR',{style:'currency',currency:'BRL
 type QuoteForm={symbol:string;bid:string;ask:string;bid_size:string;ask_size:string};
 
 export default function PaperTradesPage(){
-  const [search,setSearch]=useSearchParams();const selected=search.get('id');
+  const navigate=useNavigate();const [search,setSearch]=useSearchParams();const selected=search.get('id');
   const [rows,setRows]=useState<PaperSummary[]>([]);const [record,setRecord]=useState<PaperRecord|null>(null);
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [loading,setLoading]=useState(false);
   const [source,setSource]=useState('');const [note,setNote]=useState('');const [asOf,setAsOf]=useState('');const [spot,setSpot]=useState('');
@@ -39,13 +42,17 @@ export default function PaperTradesPage(){
   }
   function download(){if(!record)return;const url=URL.createObjectURL(new Blob([JSON.stringify(record,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`atom-simulacao-${record.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   return <Stack spacing={3} sx={{maxWidth:1150,mx:'auto'}}>
-    <Box><Chip label="Acompanhamento manual · sem ordens reais"/><Typography variant="h4" component="h1" sx={{mt:2}}>Operações simuladas</Typography><Typography color="text.secondary">Registre o que aconteceu depois do plano: entrada, evolução e saída com custos.</Typography></Box>
+    <PageHeader
+      kicker="Acompanhamento manual · sem ordens reais"
+      title="Operações simuladas"
+      description="Registre o que aconteceu depois do plano: entrada, evolução e saída com custos. Paper-trading primeiro — sem execução na corretora."
+      actions={<Button component={Link} to="/derivatives" variant="contained">Criar plano na mesa de derivativos</Button>}
+    />
     <Alert severity="info">Compra pelo ask e venda pelo bid, com as taxas previstas no plano. Os resultados são simulações baseadas nos dados informados; não comprovam execução nem desempenho fora da amostra. A atualização e o encerramento são manuais.</Alert>
     {error&&<Alert severity="error">{error}</Alert>}
-    <Button component={Link} to="/derivatives">Criar plano na mesa de derivativos</Button>
-    {!rows.length&&<Typography color="text.secondary">Na mesa, monte um plano e escolha “Acompanhar como operação simulada”. Planos sem operação elegível não geram posição.</Typography>}
+    {!rows.length&&<EmptyState title="Nenhuma operação simulada" description="Na mesa, monte um plano e escolha “Acompanhar como operação simulada”. Planos sem operação elegível não geram posição." actionLabel="Abrir mesa de derivativos" onAction={()=>navigate('/derivatives')} />}
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">{rows.map(row=><Button key={row.id} disabled={busy} variant={selected===row.id?'contained':'outlined'} onClick={()=>setSearch({id:row.id})}>{row.plan.ticker} · {labels[row.status]} · {row.id.slice(0,6)}</Button>)}</Stack>
-    {loading&&<Typography role="status">Carregando operação…</Typography>}
+    {loading&&<LoadingState label="Carregando operação…" />}
     {record&&<>
       <Card><CardContent><Stack spacing={1}>
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap"><Chip label={labels[record.status]}/><Chip color={record.context.provenance==='synthetic'?'warning':'default'} label={record.context.provenance==='synthetic'?'Origem fictícia':'Dados declarados pelo usuário'}/></Stack>

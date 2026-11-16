@@ -36,7 +36,7 @@ describe('LoginPage redirect-back', () => {
     const user = userEvent.setup();
     renderLoginAt('/login', { from: '/ml' });
     await user.type(screen.getByLabelText(/usuário/i), 'ana');
-    await user.type(screen.getByLabelText(/senha/i), 'twelve-chars-pw');
+    await user.type(screen.getByLabelText(/^senha$/i), 'twelve-chars-pw');
     await user.click(screen.getByRole('button', { name: /entrar/i }));
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/ml'));
   });
@@ -45,7 +45,7 @@ describe('LoginPage redirect-back', () => {
     const user = userEvent.setup();
     renderLoginAt('/login');
     await user.type(screen.getByLabelText(/usuário/i), 'ana');
-    await user.type(screen.getByLabelText(/senha/i), 'twelve-chars-pw');
+    await user.type(screen.getByLabelText(/^senha$/i), 'twelve-chars-pw');
     await user.click(screen.getByRole('button', { name: /entrar/i }));
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/dashboard'));
   });
@@ -54,7 +54,7 @@ describe('LoginPage redirect-back', () => {
     const user = userEvent.setup();
     renderLoginAt('/login', { from: '//evil.example/phish' });
     await user.type(screen.getByLabelText(/usuário/i), 'ana');
-    await user.type(screen.getByLabelText(/senha/i), 'twelve-chars-pw');
+    await user.type(screen.getByLabelText(/^senha$/i), 'twelve-chars-pw');
     await user.click(screen.getByRole('button', { name: /entrar/i }));
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/dashboard'));
   });

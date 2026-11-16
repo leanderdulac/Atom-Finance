@@ -19,6 +19,8 @@ interface BacktestResult {
 import MarketTickerAutocomplete from '../components/MarketTickerAutocomplete';
 import ProviderChips from '../components/ProviderChips';
 import QuantContextSection from '../components/QuantContextSection';
+import PageHeader from '../components/PageHeader';
+import EmptyState from '../components/EmptyState';
 
 const backtestingFoundations = [
   {
@@ -102,10 +104,11 @@ export default function BacktestingPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 0.5 }}>Backtesting</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Test trading strategies with historical simulation
-      </Typography>
+      <PageHeader
+        kicker="Simulação histórica · pesquisa"
+        title="Backtesting"
+        description="Simulação histórica com comissão e slippage. Backtest é pesquisa, não prova — e não autoriza execução."
+      />
 
       <Alert severity="info" sx={{ mb: 2 }}>
         Simulação exploratória, sem validação fora da amostra. Sinais são executados no fechamento seguinte, com comissão e slippage.
@@ -165,6 +168,13 @@ export default function BacktestingPage() {
 
         <Grid size={{ xs: 12, md: 8 }}>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+          {!result?.performance && !error && (
+            <EmptyState
+              title="Nenhuma simulação neste painel"
+              description="Carregue uma série de mercado ou use a demonstração sintética, escolha a regra e rode o backtest. O resultado fica neste lado — com custos explícitos e sem autorização de execução."
+            />
+          )}
 
           {result?.performance && (
             <>
