@@ -91,21 +91,28 @@ async def extract(req: ExtractRequest):
         trace_include_sensitive_data=False,
     )
     try:
-        paper = await asyncio.wait_for(paper_flow(inp, cfg=cfg, extra_instructions=(
-                "In the methodology and limitations sections, explicitly report the economic hypothesis, "
-                "feature availability at decision time, point-in-time data and look-ahead risks, "
-                "chronological out-of-sample validation, label purging/embargo, simple baselines, "
-                "net transaction costs and turnover, volatility control, maximum drawdown and regime stability. "
-                "Price is not a modelling target: prefer returns and regimes; the print is typically I(1). "
-                "Evidence is sequential (signal at t uses only information ≤ t). "
-                "Ask how many candidates a reported Sharpe beat (winner's curse / Deflated Sharpe). "
-                "Shuffled K-Fold is invalid for financial series; require purged/embargoed temporal CV. "
-                "Sample Markowitz GMV inverts a noisy covariance (error maximizer); require Ledoit–Wolf "
-                "shrinkage before inversion and report turnover. "
-                "For each absent item say not reported; never infer that an unreported check passed. "
-                "Model complexity or training fit is not evidence of tradable alpha. "
-                "Preserve supporting citations and distinguish author claims from demonstrated results."
-            )), timeout=180)
+        paper = await asyncio.wait_for(
+            paper_flow(
+                inp,
+                cfg=cfg,
+                extra_instructions=(
+                    "In the methodology and limitations sections, explicitly report the economic hypothesis, "
+                    "feature availability at decision time, point-in-time data and look-ahead risks, "
+                    "chronological out-of-sample validation, label purging/embargo, simple baselines, "
+                    "net transaction costs and turnover, volatility control, maximum drawdown and regime stability. "
+                    "Price is not a modelling target: prefer returns and regimes; the print is typically I(1). "
+                    "Evidence is sequential (signal at t uses only information ≤ t). "
+                    "Ask how many candidates a reported Sharpe beat (winner's curse / Deflated Sharpe). "
+                    "Shuffled K-Fold is invalid for financial series; require purged/embargoed temporal CV. "
+                    "Sample Markowitz GMV inverts a noisy covariance (error maximizer); require Ledoit–Wolf "
+                    "shrinkage before inversion and report turnover. "
+                    "For each absent item say not reported; never infer that an unreported check passed. "
+                    "Model complexity or training fit is not evidence of tradable alpha. "
+                    "Preserve supporting citations and distinguish author claims from demonstrated results."
+                ),
+            ),
+            timeout=180,
+        )
         title = paper.root().title
     except asyncio.TimeoutError:
         raise HTTPException(

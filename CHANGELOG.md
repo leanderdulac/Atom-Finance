@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 28: polish visual — tema quant-terminal
+
+### Changed
+- Sistema de design: `src/theme/tokens.ts` + `tokens.css` (accent teal único, fonte mono JetBrains), `ThemeProvider` reconstruído nos tokens, `chartTheme` compartilhado nos gráficos GBM/VaR.
+- Landing reescrita (desk de pesquisa, famílias de modelos, harness em camadas) com o branch de modo cliente preservado; login, diário (PageHeader/LoadingState/EmptyState) e tabelas refinados sem mudar contratos de API.
+- Shell do App mantido na main (modos cliente/operador, todas as rotas); `AppShell.tsx` do PR removido como duplicata morta.
+
 ## [Unreleased] — round 27: contexto em tempo real com agentes locais
 
 Camada de busca + agentes Ollama ao lado do arsenal. O LLM **não** escolhe preço, stop, alvo nem tamanho.
