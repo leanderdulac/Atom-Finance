@@ -39,7 +39,7 @@ def _safe_cell(value: object) -> object:
     return value
 
 
-def _flatten(writer: csv.writer, data: dict) -> None:
+def _flatten(writer, data: dict) -> None:
     """Depth- and row-capped flattening of an arbitrary nested dict."""
     rows = 0
 

@@ -12,7 +12,8 @@ from scipy.optimize import minimize
 
 # np.trapz was removed in NumPy 2.0 (renamed np.trapezoid); the lock pins
 # 1.26.x, but this keeps the Heston CF integrator working on either.
-_trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+# One name is always missing from stubs (by version); the ignore covers both.
+_trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz  # pyright: ignore[reportAttributeAccessIssue]
 
 
 class GARCHModel:

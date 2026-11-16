@@ -12,6 +12,9 @@ import os
 import re
 from typing import Any
 
+# _Element annotates from stdlib: defusedxml ships no type stubs (same runtime type).
+from xml.etree.ElementTree import Element as _Element
+
 import defusedxml.ElementTree as ET
 import httpx
 
@@ -26,7 +29,7 @@ def _local(tag: str) -> str:
     return tag.split("}", 1)[-1]
 
 
-def _text(node: ET.Element | None) -> str:
+def _text(node: _Element | None) -> str:
     if node is None:
         return ""
     if node.text and node.text.strip():
@@ -37,7 +40,7 @@ def _text(node: ET.Element | None) -> str:
     return ""
 
 
-def _find(node: ET.Element, name: str) -> ET.Element | None:
+def _find(node: _Element, name: str) -> _Element | None:
     for child in node.iter():
         if _local(child.tag) == name:
             return child
