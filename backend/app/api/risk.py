@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from app.core.limiter import limiter
+from app.core.numeric import FiniteFloat, PositiveFloat
 from app.models.risk import StressTest, ValueAtRisk
 from app.models.volatility import EWMAVolatility, GARCHModel, HestonModel
 
@@ -15,9 +16,9 @@ router = APIRouter()
 
 
 class VaRRequest(BaseModel):
-    returns: list[float] = Field(..., min_length=30)
-    confidence: float = Field(0.95, ge=0.9, le=0.999)
-    portfolio_value: float = Field(1_000_000, gt=0)
+    returns: list[FiniteFloat] = Field(..., min_length=30)
+    confidence: FiniteFloat = Field(0.95, ge=0.9, le=0.999)
+    portfolio_value: PositiveFloat = Field(1_000_000)
     holding_period: int = Field(1, ge=1, le=30)
     method: str = Field("historical", pattern="^(historical|parametric|monte_carlo)$")
     distribution: str = Field("normal", pattern="^(normal|t)$")

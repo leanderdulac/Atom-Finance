@@ -2,7 +2,7 @@
 
 ## Infraestrutura identificada (10/09/2026)
 
-DigitalOcean: droplet `atom-finance-production`, ID 566342099, IP 198.199.74.179, região nyc1, 1 vCPU, 2 GB RAM e 50 GB de disco. Estava desligado na consulta. Não foram encontradas regras de firewall de nuvem nem secrets/environments de implantação no GitHub do ATOM. Há outros recursos na conta; eles não foram alterados.
+DigitalOcean: droplet de 1 vCPU, 2 GB RAM e 50 GB de disco (detalhes de identificação — nome, ID e IP — mantidos fora do repositório, em nota operacional do proprietário). Estava desligado na consulta. Não foram encontradas regras de firewall de nuvem nem secrets/environments de implantação no GitHub do ATOM. Há outros recursos na conta; eles não foram alterados.
 
 O domínio e o destino externo dos backups precisam ser escolhidos pelo proprietário. A preparação local não cria bucket, não contrata serviços e não inicia o servidor.
 

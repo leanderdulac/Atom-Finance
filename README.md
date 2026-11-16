@@ -68,17 +68,12 @@ Every desk endpoint returns a `what_broke` list. See [docs/WHAT-BROKE.md](docs/W
 - **Risco líquido** — Drawdown, alvo de volatilidade, custos, turnover e estabilidade por janela
 - **Uso de pesquisa** — Sem autorização automática de execução; veja [regras de negócio](docs/RESEARCH-POLICY.md)
 
-### Ghost Liquidity Analysis
-- Cross-venue duplicate detection
-- HFT phantom order identification
-- Flickering quote analysis
-- Market quality metrics (effective spread, depth ratio, order flow toxicity)
-
 ### Black Swan Detection
 - Tail risk analysis (kurtosis, Hill estimator, GPD)
-- Regime change detection (Hidden Markov Model-inspired)
-- NLP sentiment analysis for financial news
+- Regime change detection (rolling-vol percentile; use `/api/desk/regime` for the live classifier)
 - Composite risk scoring (0–100)
+
+> Removidas por falta de dados reais (ver [docs/WHAT-BROKE.md](docs/WHAT-BROKE.md)): análise de "ghost liquidity" (o output era função dos próprios campos do formulário, sem feed L2) e sentimento de notícias por contagem de palavras (`POST /api/black-swan/news-sentiment` responde 410).
 
 ### Backtesting Engine
 - SMA Crossover, Mean Reversion, Momentum, RSI strategies
@@ -104,7 +99,7 @@ Every desk endpoint returns a `what_broke` list. See [docs/WHAT-BROKE.md](docs/W
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, TypeScript, Vite 5, MUI 7 |
+| Frontend | React 18, TypeScript, Vite 7, MUI 7 |
 | Backend | Python 3.12, FastAPI, NumPy, SciPy, Pandas |
 | ML | PyTorch, torchsde, scikit-learn |
 | Storage | PostgreSQL (asyncpg, no ORM), Redis (optional cache, falls back to in-memory) |
@@ -116,7 +111,7 @@ Every desk endpoint returns a `what_broke` list. See [docs/WHAT-BROKE.md](docs/W
 ## Quick Start
 
 ### Prerequisites
-- Node.js 20+
+- Node.js 22+
 - Python 3.12+
 - Docker & Docker Compose (optional)
 
@@ -166,7 +161,7 @@ Atom-Finance/
 │   │   ├── core/           # Security (JWT/bcrypt), cache, rate limiter, AI provider factory
 │   │   ├── db/             # Postgres access layer (asyncpg, no ORM) — schema in alembic/versions/
 │   │   ├── models/         # Quantitative models: pricing, volatility, risk, portfolio,
-│   │   │                   # backtesting, ghost liquidity, black swan, CAPM, EVT, copulas, Kronos (ML)
+│   │   │                   # backtesting, black swan, CAPM, EVT, copulas, Kronos (ML)
 │   │   └── services/       # External data providers (Brapi/B3, Binance, OpenBB, live quotes)
 │   └── tests/               # pytest suite (unit tests, no external network calls)
 ├── src/
@@ -176,7 +171,7 @@ Atom-Finance/
 │   ├── services/api.ts      # API client
 │   ├── components/
 │   └── pages/                # One page per feature area (pricing, risk, portfolio, ML,
-│                              # backtesting, ghost liquidity, black swan, derivatives, paper trading, ...)
+│                              # backtesting, black swan, derivatives, paper trading, ...)
 ├── research/quantmind/       # Embedded QuantMind research library (own README/tests/tooling)
 ├── docs/                     # Product scope, pilot rules, production runbook, research policy
 ├── docker-compose*.yml       # dev / prod / edge stacks
@@ -203,7 +198,6 @@ Every router is mounted under `/api` in [backend/main.py](backend/main.py); most
 | `/api/portfolio` | Markowitz, max Sharpe, min variance, risk parity, Black-Litterman |
 | `/api/ml` | Research protocol (purged walk-forward, real estimators) |
 | `/api/neural-sde` | Neural SDE simulation |
-| `/api/ghost-liquidity` | Cross-venue duplicate & phantom order detection |
 | `/api/black-swan` | Tail risk, regime change, composite risk score |
 | `/api/market-data` | Quotes & history |
 | `/api/ibovespa` | Ibovespa dashboard data |
@@ -219,6 +213,8 @@ Every router is mounted under `/api` in [backend/main.py](backend/main.py); most
 | `/api/sources` | Market data source quality/monitoring |
 | `/api/research` | QuantMind paper history & extraction |
 | `/api/desk` | Heston CF/calibrate, Engle–Granger, Johansen, Avellaneda–Stoikov, FF5, live perp books, EDGAR Form 4, regime classifier |
+| `/api/metrics` | Prometheus metrics (JWT or `ATOM_METRICS_PUBLIC` on a trusted network) |
+| `/api/paper-trades` | Simulated paper-trading ledger (no broker execution) |
 
 ---
 
@@ -248,4 +244,6 @@ O acompanhamento manual de [operações simuladas](docs/PAPER-TRADING.md) regist
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — © 2026 Leander Dulac. `research/quantmind` incorpora código de
+terceiros sob sua própria licença MIT ([research/quantmind/LICENSE](research/quantmind/LICENSE),
+© 2025 LLMQuant), preservada no local original.

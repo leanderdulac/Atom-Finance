@@ -13,14 +13,14 @@ docker run -d --name atom-postgres -e POSTGRES_USER=atom -e POSTGRES_PASSWORD=at
   -e POSTGRES_DB=atom_dev -p 5432:5432 postgres:16-alpine
 docker exec atom-postgres psql -U atom -d postgres -c "CREATE DATABASE atom_test;"
 
-# Backend
-cd backend
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.lock
-cp ../.env.example ../.env   # fill in SECRET_KEY and ATOM_DATABASE_URL at minimum
+# Backend (the project venv lives at the repo root — `./start.sh` uses it)
+python -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.lock
+cp .env.example .env   # fill in SECRET_KEY and ATOM_DATABASE_URL at minimum
 export ATOM_DATABASE_URL=postgresql+asyncpg://atom:atom_dev@localhost:5432/atom_dev
-alembic upgrade head          # apply migrations to atom_dev
-ATOM_DATABASE_URL=postgresql+asyncpg://atom:atom_dev@localhost:5432/atom_test alembic upgrade head  # and to atom_test
+(cd backend && alembic upgrade head)          # apply migrations to atom_dev
+ATOM_DATABASE_URL=postgresql+asyncpg://atom:atom_dev@localhost:5432/atom_test \
+  bash -c 'cd backend && alembic upgrade head'  # and to atom_test
 
 # Frontend
 cd ..

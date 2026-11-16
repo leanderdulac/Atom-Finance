@@ -1,5 +1,10 @@
 # Fusão local: Atom-Finance + ATOM-QuantMind
 
+> HISTÓRICO DA FUSÃO (validado em 08/09/2026) — descreve como o QuantMind foi
+> incorporado, não o estado atual. Números (contagem de testes, branches, SQLite)
+> estão congelados nessa data. Para execução local atual, use
+> [README](../README.md), [CONTRIBUTING](../CONTRIBUTING.md) e `./start.sh`.
+
 ## Decisão
 
 Base: **Atom-Finance**, branch local `integration/quantmind`.
@@ -45,12 +50,16 @@ export QUANTMIND_MODEL='gpt-4o-mini'
 .venv/bin/uvicorn service:app --host 127.0.0.1 --port 8010
 ```
 
-Backend, a partir da raiz:
+Backend, a partir da raiz (requer Postgres local com `atom_test`
+criado — sem banco, `/api/health` responde 503; sem `SECRET_KEY` fixa,
+os JWTs invalidam a cada restart):
 
 ```bash
 export QUANTMIND_SERVICE_TOKEN='seu-token-local'
 export QUANTMIND_URL='http://127.0.0.1:8010'
 export SECRET_KEY='sua-chave-jwt-persistente'
+export ATOM_DATABASE_URL='postgresql+asyncpg://atom:atom_dev@localhost:5432/atom_test'
+.venv/bin/alembic upgrade head   # a partir de backend/
 .venv/bin/uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 

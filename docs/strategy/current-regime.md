@@ -1,6 +1,7 @@
 # Current regime
 
-> Research snapshot. Not a live market feed.
+> FROZEN EXAMPLE — generated 2026-09-13, committed as a format sample.
+> Research snapshot. Not a live market feed; never read as the current market state.
 
 - As of: `2026-09-13T18:00:00+00:00`
 - Regime: **crisis**
