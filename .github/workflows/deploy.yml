@@ -16,7 +16,9 @@ jobs:
     environment: production
     steps:
       - name: Deploy the exact tested commit
-        uses: appleboy/ssh-action@v1.0.3
+        # Pinned to the v1.0.3 commit SHA: a mutable tag re-point on this
+        # third-party action would hand it the production SSH key + remote exec.
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}

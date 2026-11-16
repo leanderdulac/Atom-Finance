@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 23: cliente de API tipado de ponta a ponta
+
+`src/services/api.ts` tinha 67 warnings de `any` e nenhum contrato: payload errado só explodia em runtime (422). Agora os contratos espelham os modelos Pydantic de `backend/app/api/*`.
+
+### Added
+- Interfaces de request em `api.ts` para precificação (BS/MC/binomial/FD/IV/superfície/estratégias), risco (VaR/stress/GARCH/Heston), portfólio (fronteira/Sharpe/paridade/Black-Litterman), backtesting, Neural SDE, CAPM/Kelly/GBM (single e multi), Ibovespa, Binance Kelly, autopilot e earnings (`FinancialPeriod` com os 14 campos exatos do backend).
+- Endpoints de resultado rico (desk labs, screener, autopilot) ficaram genéricos (`<T = unknown>`): cada página declara sua interface local no call site — o compilador, não o usuário, descobre divergência de schema.
+
+### Fixed
+- `BinanceDashboard`: `currentPrice` (state `number`) recebia `priceData.price` **string** da API da Binance — exibição/aritmética operavam sobre string; agora `parseFloat` explícito.
+
+### Changed
+- ESLint: 250 → 183 warnings (api.ts zerado). Estados de método/estratégia em `BacktestingPage`, `NeuralSDEPage` e `RiskPage` ganharam unions literais casadas com o `pattern=` do backend.
+
+## [Unreleased] — round 22: segurança — rate limit atrás de proxy + pin do deploy
+
+Revisão de segurança da pilha encontrou dois furos médios, ambos corrigidos nesta rodada.
+
+### Fixed
+- **Bypass de rate limit via `X-Forwarded-For`** (login 10/min, registro 3/h): o limiter lia a entrada **mais à esquerda** do XFF, mas o nginx usa `$proxy_add_x_forwarded_for`, que *preserva* o XFF enviado pelo cliente e anexa o IP real à direita — um atacante semeava um valor aleatório por requisição e ganhava um bucket novo a cada tentativa. `app/core/limiter.py` agora conta hops confiáveis **a partir da direita** (`ATOM_TRUST_PROXY_HOPS`, default 1 = só nginx; `docker-compose.edge.yml` já sobe o backend com 2 = Caddy + nginx), ignorando o lixo semeado à esquerda. Testes novos em `test_limiter.py`: spoof ignorado, dois hops, fallback quando o header tem menos entradas que hops.
+- **Supply chain no deploy**: `appleboy/ssh-action` (única action de terceiro, roda com `DO_SSH_KEY` em produção sem gate humano) estava pinada na tag mutável `v1.0.3`; agora pinada no commit SHA `029f5b4` (# v1.0.3). Dependabot `github-actions` semanal continua atualizando o pin.
+- **Compat NumPy 2 no Heston CF**: `np.trapz` foi removido no NumPy 2.0; `volatility.py` usa um shim `_trapezoid` que funciona nos dois majors (o lock continua em 1.26.x, mas o código não bloqueia mais o bump).
+
+### Not
+- A semântica antiga (leftmost) só era segura se o proxy de borda *sobrescrevesse* o XFF — nenhuma das camadas fazia isso. A contagem pela direita é o padrão `trust proxy` do Express/Rails e não exige mudança no nginx/Caddy.
+
 ## [Unreleased] — round 21: experiência do cliente (jornada do investidor)
 
 O app tinha 30 telas de operador e nenhuma porta de entrada para quem investe. `/cliente` ("Meu plano") é essa porta: questionário de perfil → valor e prazo → cenário simulado em reais, reutilizando `capmGbmMulti` — sem endpoint novo.

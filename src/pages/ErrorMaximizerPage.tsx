@@ -48,7 +48,7 @@ export default function ErrorMaximizerPage() {
   const run = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      setResult(await api.deskErrorMaximizer({
+      setResult(await api.deskErrorMaximizer<LabResult>({
         n_assets: n, t_is: tIs, t_oos: tOos, seed,
       }));
     } catch (e) {

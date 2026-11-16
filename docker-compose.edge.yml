@@ -15,6 +15,11 @@ services:
     networks: [internal]
     depends_on: [frontend]
     security_opt: [no-new-privileges:true]
+  backend:
+    environment:
+      # Edge chain is client → Caddy → frontend nginx → backend, so the real
+      # client is the X-Forwarded-For entry 2 hops from the right.
+      ATOM_TRUST_PROXY_HOPS: "2"
 volumes:
   caddy_data:
   caddy_config:

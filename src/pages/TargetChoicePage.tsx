@@ -52,7 +52,7 @@ export default function TargetChoicePage() {
 
   const run = useCallback(async () => {
     setLoading(true); setError('');
-    try { setResult(await api.deskTargetChoice({})); }
+    try { setResult(await api.deskTargetChoice<Result>({})); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, []);

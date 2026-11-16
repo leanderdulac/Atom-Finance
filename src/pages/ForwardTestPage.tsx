@@ -50,7 +50,7 @@ export default function ForwardTestPage() {
 
   const run = useCallback(async () => {
     setLoading(true); setError('');
-    try { setResult(await api.deskForwardTest({})); }
+    try { setResult(await api.deskForwardTest<Result>({})); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, []);

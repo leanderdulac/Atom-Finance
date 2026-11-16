@@ -22,7 +22,7 @@ export default function QuantDoctrinePage() {
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
-    try { setDoctrine(await api.deskDoctrine()); }
+    try { setDoctrine(await api.deskDoctrine<Doctrine>()); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, []);
