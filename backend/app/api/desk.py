@@ -36,6 +36,68 @@ async def desk_doctrine():
     return doctrine_payload()
 
 
+@router.get("/context-audits")
+async def context_audits(limit: int = Query(50, ge=1, le=200), _owner: str = Depends(get_current_user)):
+    """Operator diary of context overlays. Client never hits this route."""
+    from app.services.agents.audit import list_audits
+    from app.services.agents.cost_log import recent_costs
+    costs = recent_costs(limit=20)
+    return {
+        "items": list_audits(limit),
+        "llm_costs": costs,
+        "openai_costs": costs,
+        "eligible_for_live_trading": False,
+    }
+
+
+def _cost_payload(limit: int) -> dict:
+    from app.services.agents.cost_log import recent_costs
+    rows = recent_costs(limit)
+    total = round(sum(float(r.get("estimated_usd") or 0) for r in rows), 6)
+    return {
+        "items": rows,
+        "estimated_usd_sum": total,
+        "note": "Estimativa a partir de tokens + busca; não é a fatura do provedor.",
+        "eligible_for_live_trading": False,
+    }
+
+
+@router.get("/openai-costs")
+async def openai_costs(limit: int = Query(50, ge=1, le=200), _owner: str = Depends(get_current_user)):
+    """Estimated USD per paid context call. Paper diary; not a bill."""
+    return _cost_payload(limit)
+
+
+@router.get("/llm-costs")
+async def llm_costs(limit: int = Query(50, ge=1, le=200), _owner: str = Depends(get_current_user)):
+    return _cost_payload(limit)
+
+
+@router.get("/sentiment-skill")
+async def sentiment_skill(
+    ticker: str = Query("BTC", min_length=3, max_length=20),
+    horizon: str = Query("weeks"),
+    _owner: str = Depends(get_current_user),
+):
+    """Predictive power of the thermometer vs later returns. Paper only."""
+    from app.services.sentiment_eval import evaluate_ticker
+    report = await evaluate_ticker(ticker.upper(), horizon)
+    return {**report, "eligible_for_live_trading": False}
+
+
+@router.post("/sentiment-skill")
+async def sentiment_skill_diary(
+    ticker: str = Query("BTC", min_length=3, max_length=20),
+    horizon: str = Query("weeks"),
+    owner: str = Depends(get_current_user),
+):
+    """Same report, written into the research diary for audit."""
+    from app.services.sentiment_eval import evaluate_ticker, record_diary
+    report = await evaluate_ticker(ticker.upper(), horizon)
+    run_id = await record_diary(owner, report)
+    return {**report, "experiment_id": run_id, "eligible_for_live_trading": False}
+
+
 async def _run(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, partial(func, *args, **kwargs))

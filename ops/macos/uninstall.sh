@@ -2,7 +2,7 @@
 # Remove os LaunchAgents do ATOM (idempotente). Não apaga Postgres, Redis nem o código.
 set -euo pipefail
 
-LABELS=(com.atom.backend com.atom.worker com.atom.frontend com.atom.tunnel)
+LABELS=(com.atom.backend com.atom.worker com.atom.frontend com.atom.tunnel com.atom.searxng)
 AGENTS="${HOME}/Library/LaunchAgents"
 uid="$(id -u)"
 
