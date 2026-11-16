@@ -164,7 +164,7 @@ jobs:
           export ATOM_SMOKE_PASSWORD="$SMOKE_PASSWORD"
           docker compose -p atom-ci -f docker-compose.prod.yml exec -T -e ATOM_SMOKE_PASSWORD backend python -c 'import asyncio, os; from app.db.database import create_user; from app.core.security import hash_password; asyncio.run(create_user("production_test", "production@example.test", hash_password(os.environ["ATOM_SMOKE_PASSWORD"])))'
           python3 scripts/smoke-production.py
-          python3 scripts/dast-smoke.py
+          ATOM_DAST_EXPECT_PROD=1 python3 scripts/dast-smoke.py
       - name: Container logs on failure
         if: failure()
         run: docker compose -p atom-ci -f docker-compose.prod.yml logs --tail 100
