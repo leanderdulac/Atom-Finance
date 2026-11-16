@@ -169,14 +169,13 @@ def simulate_ibovespa(
     Simulate correlated GBM for all 18 Ibovespa assets.
     Returns per-asset statistics (mean, p5, p95, mean_pct) + raw daily returns matrix.
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
     n = len(IBOVESPA_ASSETS)
     dt = T / n_steps
     L = np.linalg.cholesky(CORR_MATRIX)
 
-    Z = np.random.standard_normal((n_paths, n_steps, n))
+    Z = rng.standard_normal((n_paths, n_steps, n))
     W = Z @ L.T
 
     time_days = [int(round(t * 252)) for t in np.linspace(0, T, n_steps + 1)]
@@ -290,8 +289,7 @@ def cem_optimize(
       3. Keep the top elite_fraction
       4. Fit a new Dirichlet to the elite weights
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
     n = daily_returns.shape[2]
     n_elite = max(5, int(n_samples * elite_fraction))
@@ -303,7 +301,7 @@ def cem_optimize(
 
     for it in range(n_iterations):
         # 1. Sample
-        W = np.random.dirichlet(alpha, size=n_samples)  # (n_samples, n)
+        W = rng.dirichlet(alpha, size=n_samples)  # (n_samples, n)
 
         # 2. Enforce max_weight cap by renormalising
         W = np.clip(W, 0, max_weight)

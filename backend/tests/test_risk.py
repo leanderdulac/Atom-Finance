@@ -97,6 +97,40 @@ class TestGARCH:
         forecast = model.forecast(normal_returns, horizon=10)
         assert len(forecast["forecast_volatility"]) == 10
 
+    def test_recovers_simulated_parameters(self):
+        rng = np.random.default_rng(5)
+        mu, omega, alpha, beta, T = 0.002, 1e-6, 0.08, 0.88, 5000
+        var = np.full(T, omega / (1 - alpha - beta))
+        eps = np.zeros(T)
+        for t in range(1, T):
+            var[t] = omega + alpha * eps[t - 1] ** 2 + beta * var[t - 1]
+            eps[t] = np.sqrt(var[t]) * rng.normal()
+        returns = mu + eps
+        out = GARCHModel().fit(returns)
+        # Tolerances reflect documented QMLE finite-sample bias at high
+        # persistence (beta biased down ~1 SE at this T), not estimator error.
+        assert out["mu"] == pytest.approx(mu, abs=0.001)
+        assert out["alpha"] == pytest.approx(alpha, abs=0.05)
+        assert out["beta"] == pytest.approx(beta, abs=0.05)
+        assert out["persistence"] == pytest.approx(alpha + beta, abs=0.03)
+        assert out["persistence"] < 1
+
+    def test_forecast_bands_ordered_and_labeled(self, normal_returns):
+        model = GARCHModel()
+        model.fit(normal_returns)
+        out = model.forecast(normal_returns, horizon=10)
+        band = out["forecast_interval_95"]
+        assert band["units"] == "daily returns"
+        assert len(band["lower"]) == 10 == len(band["upper"])
+        assert all(lo < hi for lo, hi in zip(band["lower"], band["upper"], strict=True))
+
+    def test_nonstationary_forecast_raises(self, normal_returns):
+        model = GARCHModel()
+        model.fit(normal_returns)
+        model.alpha, model.beta = 0.6, 0.6  # force IGARCH
+        with pytest.raises(ValueError, match="non-stationary"):
+            model.forecast(normal_returns, horizon=5)
+
 
 # ── EWMA ──────────────────────────────────────────────────────────────────────
 

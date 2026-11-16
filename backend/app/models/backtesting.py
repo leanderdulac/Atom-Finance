@@ -16,8 +16,9 @@ class BacktestEngine:
                      params: dict | None = None, initial_capital: float = 100_000,
                      commission: float = 0.001, seed: int | None = 42,
                      slippage: float = 0.0005) -> dict:
-        if seed is not None:
-            np.random.seed(seed)
+        # NOTE: seed is accepted for API compatibility but this engine is
+        # deterministic (no RNG calls); it intentionally seeds nothing.
+        _ = seed
 
         prices = np.asarray(prices, dtype=np.float64)
         if len(prices) < 2 or not np.all(np.isfinite(prices)) or np.any(prices <= 0):

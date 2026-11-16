@@ -23,13 +23,21 @@ class GARCHModel:
         self.omega: float = 0.0
         self.alpha: float = 0.0
         self.beta: float = 0.0
+        self.mu: float = 0.0
         self.fitted: bool = False
 
     def fit(self, returns: np.ndarray) -> dict:
-        """Fit GARCH(1,1) via maximum likelihood estimation."""
+        """Fit GARCH(1,1) via maximum likelihood estimation on demeaned returns.
+
+        The mean is estimated and removed first: fitting raw returns with
+        nonzero drift biases variance targeting and the persistence estimate.
+        Raises ValueError when the optimizer fails to converge.
+        """
         returns = np.asarray(returns, dtype=np.float64)
         T = len(returns)
-        var_target = np.var(returns)
+        self.mu = float(np.mean(returns))
+        resid = returns - self.mu
+        var_target = float(np.var(resid)) or 1e-12
 
         def neg_log_likelihood(params):
             omega, alpha, beta = params
@@ -38,25 +46,27 @@ class GARCHModel:
             sigma2 = np.zeros(T)
             sigma2[0] = var_target
             for t in range(1, T):
-                sigma2[t] = omega + alpha * returns[t - 1]**2 + beta * sigma2[t - 1]
+                sigma2[t] = omega + alpha * resid[t - 1]**2 + beta * sigma2[t - 1]
                 if sigma2[t] <= 0:
                     return 1e10
-            ll = -0.5 * np.sum(np.log(2 * np.pi) + np.log(sigma2) + returns**2 / sigma2)
+            ll = -0.5 * np.sum(np.log(2 * np.pi) + np.log(sigma2) + resid**2 / sigma2)
             return -ll
 
         x0 = [var_target * 0.05, 0.08, 0.85]
         # α, β ∈ [0, 1) with α+β < 1 enforced in the likelihood — do not floor β at 0.5.
         bounds = [(1e-8, None), (0.0, 0.9999), (0.0, 0.9999)]
         result = minimize(neg_log_likelihood, x0, bounds=bounds, method="L-BFGS-B")
+        if not result.success:
+            raise ValueError(f"GARCH(1,1) MLE failed to converge: {result.message}")
 
-        self.omega, self.alpha, self.beta = result.x
+        self.omega, self.alpha, self.beta = (float(v) for v in result.x)
         self.fitted = True
 
         # Compute conditional volatilities
         sigma2 = np.zeros(T)
         sigma2[0] = var_target
         for t in range(1, T):
-            sigma2[t] = self.omega + self.alpha * returns[t - 1]**2 + self.beta * sigma2[t - 1]
+            sigma2[t] = self.omega + self.alpha * resid[t - 1]**2 + self.beta * sigma2[t - 1]
 
         persistence = self.alpha + self.beta
         long_run_var = self.omega / (1 - persistence) if persistence < 1 else float("nan")
@@ -65,34 +75,53 @@ class GARCHModel:
             "omega": round(self.omega, 8),
             "alpha": round(self.alpha, 6),
             "beta": round(self.beta, 6),
+            "mu": round(self.mu, 8),
             "persistence": round(persistence, 6),
             "long_run_variance": round(long_run_var, 8),
             "long_run_volatility": round(np.sqrt(long_run_var) * np.sqrt(252), 4) if not np.isnan(long_run_var) else None,
             "conditional_volatility": (np.sqrt(sigma2) * np.sqrt(252)).tolist(),
             "log_likelihood": round(-result.fun, 4),
+            "converged": True,
         }
 
     def forecast(self, returns: np.ndarray, horizon: int = 30) -> dict:
-        """Forecast volatility h steps ahead."""
+        """Forecast volatility h steps ahead, with 95% predictive return bands.
+
+        Bands are mu ± 1.96·sqrt(var_h) in daily-return units (not
+        annualized). Raises ValueError on non-stationary fits instead of
+        dividing by zero persistence.
+        """
         if not self.fitted:
             self.fit(returns)
+        returns = np.asarray(returns, dtype=np.float64)
+        resid = returns - self.mu
 
         T = len(returns)
         sigma2 = np.zeros(T)
-        sigma2[0] = np.var(returns)
+        sigma2[0] = float(np.var(resid)) or 1e-12
         for t in range(1, T):
-            sigma2[t] = self.omega + self.alpha * returns[t - 1]**2 + self.beta * sigma2[t - 1]
+            sigma2[t] = self.omega + self.alpha * resid[t - 1]**2 + self.beta * sigma2[t - 1]
+
+        persistence = self.alpha + self.beta
+        if persistence >= 1:
+            raise ValueError("cannot forecast a non-stationary GARCH fit (alpha+beta >= 1)")
 
         # h-step forecast
         forecast_var = np.zeros(horizon)
-        forecast_var[0] = self.omega + self.alpha * returns[-1]**2 + self.beta * sigma2[-1]
-        long_run = self.omega / (1 - self.alpha - self.beta)
+        forecast_var[0] = self.omega + self.alpha * resid[-1]**2 + self.beta * sigma2[-1]
+        long_run = self.omega / (1 - persistence)
 
         for h in range(1, horizon):
-            forecast_var[h] = long_run + (self.alpha + self.beta)**h * (forecast_var[0] - long_run)
+            forecast_var[h] = long_run + persistence**h * (forecast_var[0] - long_run)
 
+        band = 1.96 * np.sqrt(forecast_var)
         return {
             "forecast_volatility": (np.sqrt(forecast_var) * np.sqrt(252)).tolist(),
+            "forecast_interval_95": {
+                "lower": (self.mu - band).tolist(),
+                "upper": (self.mu + band).tolist(),
+                "units": "daily returns",
+            },
             "horizon_days": horizon,
         }
 
@@ -109,8 +138,7 @@ class HestonModel:
     def simulate(S0: float, v0: float, mu: float, kappa: float, theta: float,
                  xi: float, rho: float, T: float, n_paths: int = 10000,
                  n_steps: int = 252, seed: int | None = 42) -> dict:
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.default_rng(seed)
 
         dt = T / n_steps
         sqrt_dt = np.sqrt(dt)
@@ -122,8 +150,8 @@ class HestonModel:
         v[:, 0] = v0
 
         for t in range(1, n_steps + 1):
-            z1 = np.random.standard_normal(n_paths)
-            z2 = rho * z1 + np.sqrt(1 - rho**2) * np.random.standard_normal(n_paths)
+            z1 = rng.standard_normal(n_paths)
+            z2 = rho * z1 + np.sqrt(1 - rho**2) * rng.standard_normal(n_paths)
 
             v_pos = np.maximum(v[:, t - 1], 0)
             sqrt_v = np.sqrt(v_pos)
@@ -166,8 +194,7 @@ class HestonModel:
                      theta: float, xi: float, rho: float, T: float,
                      option_type: str = "call", n_paths: int = 50000,
                      seed: int | None = 42) -> dict:
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.default_rng(seed)
 
         n_steps = max(1, int(round(252 * T)))
         dt = T / n_steps
@@ -177,10 +204,10 @@ class HestonModel:
         v = np.full(n_paths, v0)
 
         for _ in range(n_steps):
-            z1_half = np.random.standard_normal(half)
-            z2_ind = np.random.standard_normal(half)
-            z1 = np.concatenate([z1_half, -z1_half] + ([np.random.standard_normal(remainder)] if remainder else []))
-            z2_raw = np.concatenate([z2_ind, -z2_ind] + ([np.random.standard_normal(remainder)] if remainder else []))
+            z1_half = rng.standard_normal(half)
+            z2_ind = rng.standard_normal(half)
+            z1 = np.concatenate([z1_half, -z1_half] + ([rng.standard_normal(remainder)] if remainder else []))
+            z2_raw = np.concatenate([z2_ind, -z2_ind] + ([rng.standard_normal(remainder)] if remainder else []))
             z2 = rho * z1 + np.sqrt(max(1 - rho**2, 0.0)) * z2_raw
             v_pos = np.maximum(v, 0)
             sqrt_v = np.sqrt(v_pos)

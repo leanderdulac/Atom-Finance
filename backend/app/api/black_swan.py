@@ -40,8 +40,8 @@ async def full_analysis(req: CombinedAnalysisRequest):
 @router.get("/demo")
 async def demo_analysis():
     """Run demo with synthetic data."""
-    np.random.seed(42)
-    returns = np.random.normal(0.0003, 0.015, 500)
+    rng = np.random.default_rng(42)
+    returns = rng.normal(0.0003, 0.015, 500)
     # Add some fat tails
     returns[100] = -0.08
     returns[250] = -0.06

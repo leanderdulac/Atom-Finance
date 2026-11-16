@@ -15,8 +15,7 @@ class ExponentialSmoothingForecast:
 
     def predict(self, prices: np.ndarray, forecast_days: int = 30, seed: int | None = 42) -> dict:
         """Holt-style smoother + Gaussian residual — a baseline, not a learned LSTM."""
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.default_rng(seed)
 
         prices = np.asarray(prices, dtype=np.float64)
         returns = np.diff(np.log(prices))
@@ -35,7 +34,7 @@ class ExponentialSmoothingForecast:
             # Mean-reverting random walk with momentum
             momentum = np.mean(returns[-min(10, len(returns)):])
             drift = 0.7 * mu + 0.3 * momentum
-            pred_return = drift + 0.1 * sigma * np.random.randn()
+            pred_return = drift + 0.1 * sigma * rng.standard_normal()
             pred_price = predictions[-1] * np.exp(pred_return)
             predictions.append(round(float(pred_price), 2))
 

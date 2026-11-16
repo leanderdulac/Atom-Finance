@@ -5,6 +5,39 @@ import numpy as np
 from scipy import stats
 
 
+def _as_correlation(C: np.ndarray, d: int) -> tuple[np.ndarray, bool]:
+    """Validate a correlation matrix, repairing near-PD input (Higham 2002).
+
+    Returns (matrix, repaired). Raises ValueError on wrong shape, out-of-range
+    entries or NaN — those are caller bugs, not numerical noise. A symmetric
+    matrix with tiny negative eigenvalues is clipped to PD and flagged.
+    """
+    C = np.asarray(C, dtype=float)
+    if C.shape != (d, d):
+        raise ValueError(f"corr_matrix must be {d}x{d}, got {C.shape}")
+    if not np.all(np.isfinite(C)):
+        raise ValueError("corr_matrix must be finite")
+    if np.any(np.abs(C) > 1 + 1e-9):
+        raise ValueError("corr_matrix entries must lie in [-1, 1]")
+    C = (C + C.T) / 2.0
+    np.fill_diagonal(C, 1.0)
+    try:
+        np.linalg.cholesky(C)
+        return C, False
+    except np.linalg.LinAlgError:
+        pass
+    # Higham: clip negative eigenvalues, rescale to unit diagonal, recheck.
+    vals, vecs = np.linalg.eigh(C)
+    vals = np.clip(vals, 1e-8, None)
+    fixed = (vecs * vals) @ vecs.T
+    fixed = (fixed + fixed.T) / 2.0
+    scale = np.sqrt(np.diag(fixed))
+    fixed = fixed / np.outer(scale, scale)
+    np.fill_diagonal(fixed, 1.0)
+    np.linalg.cholesky(fixed)  # raises if still indefinite: genuine caller bug
+    return fixed, True
+
+
 class CAPMAnalyzer:
     @staticmethod
     def compute_beta(asset_returns: np.ndarray, market_returns: np.ndarray) -> dict:
@@ -81,11 +114,10 @@ class CAPMAnalyzer:
         Simulate GBM: dS = μ S dt + σ S dW
         Returns time array + matrix of paths.
         """
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.default_rng(seed)
         dt = T / n_steps
         times = np.linspace(0, T, n_steps + 1).tolist()
-        Z = np.random.standard_normal((n_paths, n_steps))
+        Z = rng.standard_normal((n_paths, n_steps))
         increments = (mu - 0.5 * sigma ** 2) * dt + sigma * np.sqrt(dt) * Z
         log_paths = np.concatenate(
             [np.zeros((n_paths, 1)), np.cumsum(increments, axis=1)], axis=1
@@ -134,23 +166,24 @@ class CAPMAnalyzer:
         assets: list of dicts with keys  ticker, S0, mu, sigma
         corr_matrix: d×d correlation matrix (defaults to identity = independent)
         """
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.default_rng(seed)
 
         d = len(assets)
         dt = T / n_steps
 
-        # Correlation / Cholesky
+        # Correlation / Cholesky with validation and Higham near-PD repair:
+        # an invalid matrix must never crash the simulator with LinAlgError.
         if corr_matrix is not None:
             C = np.array(corr_matrix, dtype=float)
         else:
             C = np.eye(d)
+        C, repaired = _as_correlation(C, d)
         L = np.linalg.cholesky(C)          # lower triangular Cholesky factor
 
         times = np.linspace(0, T, n_steps + 1)
 
         # Simulate correlated increments: Z ~ N(0,I), W = L @ Z correlated
-        Z = np.random.standard_normal((n_paths, n_steps, d))  # (paths, steps, assets)
+        Z = rng.standard_normal((n_paths, n_steps, d))  # (paths, steps, assets)
         W = Z @ L.T                                            # correlated noise
 
         results = []
@@ -200,4 +233,5 @@ class CAPMAnalyzer:
             "time_days": [int(round(t * 252)) for t in times],
             "assets": results,
             "correlation_matrix": C.tolist(),
+            "correlation_repaired": repaired,
         }

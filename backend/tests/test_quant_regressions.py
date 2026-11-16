@@ -10,8 +10,10 @@ import pytest
 from scipy.stats import t as t_dist
 
 from app.models.backtesting import BacktestEngine
+from app.models.capm import CAPMAnalyzer
 from app.models.cointegration import engle_granger
 from app.models.portfolio import PortfolioOptimizer
+from app.models.pricing import BinomialTree, FiniteDifference, MonteCarlo
 from app.models.risk import ValueAtRisk
 from app.models.volatility import HestonModel
 
@@ -169,3 +171,95 @@ class TestWilderRSI:
             rsi = 100.0 if al == 0 and ag > 0 else (50.0 if al == 0 else 100 - 100 / (1 + ag / al))
             expected = 1 if rsi < 30 else (-1 if rsi > 70 else 0)
             assert sig[i] == expected
+
+
+class TestLocalRngHygiene:
+    """Engines use local generators: same seed reproduces, global stream untouched."""
+
+    ENGINES = {
+        "gbm": lambda seed: CAPMAnalyzer.gbm_paths(100, 0.05, 0.2, 1.0, 50, 200, seed=seed)["paths"],
+        "mc_var": lambda seed: ValueAtRisk.monte_carlo(
+            np.random.default_rng(0).normal(0, 0.01, 500), n_simulations=2000, seed=seed
+        )["var_percentage"],
+        "heston": lambda seed: HestonModel.simulate(
+            100, 0.04, 0.05, 2.0, 0.04, 0.3, -0.7, 0.5, n_paths=500, n_steps=50, seed=seed
+        )["terminal_prices"]["mean"],
+    }
+
+    @pytest.mark.parametrize("name", ["gbm", "mc_var", "heston"])
+    def test_reproduces_and_spares_global(self, name):
+        run = self.ENGINES[name]
+        first = run(11)
+        np.random.seed(999)
+        before = np.random.standard_normal(3).copy()
+        np.random.seed(999)
+        run(11)
+        after = np.random.standard_normal(3)
+        assert (before == after).all()
+        second = run(11)
+        assert np.asarray(first).tolist() == np.asarray(second).tolist()
+
+
+class TestCorrelationGuard:
+    def _assets(self):
+        return [
+            {"ticker": "A", "S0": 100, "mu": 0.05, "sigma": 0.2},
+            {"ticker": "B", "S0": 50, "mu": 0.03, "sigma": 0.25},
+        ]
+
+    def test_valid_matrix_passes_through_unflagged(self):
+        out = CAPMAnalyzer.gbm_multi_paths(
+            self._assets(), 0.5, 20, 100, corr_matrix=[[1.0, 0.5], [0.5, 1.0]], seed=4
+        )
+        assert out["correlation_repaired"] is False
+
+    def test_indefinite_matrix_repaired_not_crashed(self):
+        # [1, .99; .99, 1] is PD; push past the edge with an impossible triple
+        out = CAPMAnalyzer.gbm_multi_paths(
+            self._assets() + [{"ticker": "C", "S0": 10, "mu": 0.01, "sigma": 0.3}],
+            0.25, 10, 50,
+            corr_matrix=[[1.0, 0.99, -0.99], [0.99, 1.0, 0.99], [-0.99, 0.99, 1.0]],
+            seed=4,
+        )
+        assert out["correlation_repaired"] is True
+        assert len(out["assets"]) == 3
+
+    def test_malformed_matrix_raises(self):
+        with pytest.raises(ValueError, match="2x2"):
+            CAPMAnalyzer.gbm_multi_paths(self._assets(), 0.25, 10, 50, corr_matrix=[[1.0]])
+        with pytest.raises(ValueError, match="\\[-1, 1\\]"):
+            CAPMAnalyzer.gbm_multi_paths(
+                self._assets(), 0.25, 10, 50, corr_matrix=[[1.0, 1.5], [1.5, 1.0]]
+            )
+
+
+class TestSharpeDegenerate:
+    def test_constant_series_returns_zero_not_inf(self):
+        from app.models.winners_curse import annualized_sharpe
+
+        assert annualized_sharpe(np.full(100, 0.001)) == 0.0
+        assert annualized_sharpe(np.zeros(100)) == 0.0
+
+
+class TestPricingWhatBroke:
+    def test_mc_flags_noisy_and_coarse_runs(self):
+        noisy = MonteCarlo.price(100, 100, 1.0, 0.05, 0.2, "call", n_simulations=1000, seed=9)
+        assert any("standard error" in w for w in noisy["what_broke"])
+        assert noisy["what_broke"] != []
+        fine = MonteCarlo.price(100, 100, 1.0, 0.05, 0.2, "call", n_simulations=200_000, seed=9)
+        assert fine["what_broke"] == []
+        coarse = MonteCarlo.price(100, 100, 1.0, 0.05, 0.2, "call", n_simulations=5000,
+                                 n_steps=10, seed=9)
+        assert any("Coarse time grid" in w for w in coarse["what_broke"])
+
+    def test_crr_flags_coarse_tree_and_divless_american_call(self):
+        coarse = BinomialTree.price(100, 100, 1.0, 0.05, 0.2, "call", n_steps=50)
+        assert any("Coarse tree" in w for w in coarse["what_broke"])
+        divless = BinomialTree.price(100, 100, 1.0, 0.05, 0.2, "call", american=True)
+        assert any("never exercises early" in w for w in divless["what_broke"])
+
+    def test_fd_flags_coarse_grid_and_boundary_spot(self):
+        coarse = FiniteDifference.price(100, 100, 1.0, 0.05, 0.2, "call", N_S=50, N_t=50)
+        assert any("Coarse grid" in w for w in coarse["what_broke"])
+        edge = FiniteDifference.price(280, 100, 1.0, 0.05, 0.2, "call")
+        assert any("upper boundary" in w for w in edge["what_broke"])

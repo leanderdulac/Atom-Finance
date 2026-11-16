@@ -4,7 +4,7 @@ import asyncio
 from functools import partial
 
 import numpy as np
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.limiter import limiter
@@ -98,7 +98,10 @@ async def fit_garch(req: GARCHRequest):
         forecast_result = model.forecast(returns, req.forecast_horizon)
         return {"fit": fit_result, "forecast": forecast_result}
 
-    return await _run_in_thread(_fit_and_forecast)
+    try:
+        return await _run_in_thread(_fit_and_forecast)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/heston")
