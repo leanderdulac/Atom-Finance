@@ -32,7 +32,7 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 - **EWMA** — RiskMetrics recursion that includes the latest return
 
 ### Quant desk papers (`/desk`)
-- **Heston 1993** — CF Europeans, Euler MC, smile calibration (price RMSE; five params on one expiry are unidentified)
+- **Heston 1993** — CF Europeans, Euler MC, multiexpiry calibration (vega weights, restarts, per-expiry RMSE, calendar diagnostics; chain→quotes adapter for live chains)
 - **Engle–Granger pairs** — residual ADF, expanding z-score, fill at t+1, costs on both legs
 - **Johansen 1991** — trace test and cointegration rank on a price panel
 - **Avellaneda–Stoikov** — reservation price and inventory-skewed quotes

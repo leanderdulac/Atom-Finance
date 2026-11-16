@@ -128,6 +128,9 @@ class HestonCalibrateRequest(BaseModel):
     r: float = 0.05
     q: float = Field(0.0, ge=0)
     quotes: list[dict] = Field(..., min_length=4, max_length=40)
+    weighting: Literal["price", "vega"] = "price"
+    n_restarts: int = Field(1, ge=1, le=8)
+    seed: int = 0
 
 
 class JohansenRequest(BaseModel):
@@ -194,7 +197,10 @@ async def heston_price(request: Request, req: HestonPriceRequest):
 @limiter.limit("20/minute")
 async def heston_calibrate(request: Request, req: HestonCalibrateRequest):
     try:
-        return await _run(HestonModel.calibrate, req.S0, req.r, req.quotes, req.q)
+        return await _run(
+            HestonModel.calibrate, req.S0, req.r, req.quotes, req.q,
+            weighting=req.weighting, n_restarts=req.n_restarts, seed=req.seed,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 

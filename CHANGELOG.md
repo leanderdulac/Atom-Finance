@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 24: frentes 1–4 — cobertura, quant, lint zero, DAST, Heston multiexpiry
+
+### Added
+- Heston multiexpiry em `calibrate`: `weighting="vega"` (vega BS na IV de mercado, normalizada), `n_restarts` com `seed`, `rmse_by_expiry`, diagnósticos de arbitragem de calendário (market e model), adaptador `quotes_from_option_chain` (shapes yfinance e `/market-data/options-chain`); `HestonCalibrateRequest` expõe `weighting`/`n_restarts`/`seed`; 7 testes novos em `test_desk.py`.
+- `scripts/dast-smoke.py`, executado no job containers do CI após o smoke funcional: 5 headers de segurança, `/docs` oculto em produção, fronteira 401, 429 no login, erros sem stack trace, 413 rápido em body > 5MB, CORS sem reflexão, `/health` sem material de chave, cookie de refresh HttpOnly + SameSite.
+- Testes de fluxo frontend (`PricingPage`, `BacktestingPage`, `StrategiesPage`); ratchets de cobertura (backend 64, frontend lines 18).
+
+### Fixed
+- `CSQAPage`: sizing usava 0.3 hardcoded com `position_size` (half-Kelly) calculado e ignorado — agora dimensiona pelo half-Kelly.
+- `DeskLabPage`: `setResult(await fn())` com `Promise<unknown>` quebrava o `tsc` — normalização com guarda de tipo.
+
+### Changed
+- ESLint: 0 warnings (183 no round 23; zerado com remoção de imports mortos e tipagem arquivo a arquivo); `coverage/` ignorado no eslint e no gitignore.
+- Docs: `README`/`WHAT-BROKE` refletem o Heston multiexpiry; `SECURITY.md` aposenta o advisory do KaTeX e zera a contagem de warnings.
+
+### Security
+- Removidas as dependências `katex`/`react-katex`/`@types/katex`: zero imports no `src`, advisory low sem fix semver — remoção em vez de upgrade.
+
 ## [Unreleased] — round 23: cliente de API tipado de ponta a ponta
 
 `src/services/api.ts` tinha 67 warnings de `any` e nenhum contrato: payload errado só explodia em runtime (422). Agora os contratos espelham os modelos Pydantic de `backend/app/api/*`.
