@@ -26,7 +26,11 @@ def kelly_derivatives(win_prob: float, payout_ratio: float, bankroll: float, fra
     """
     if win_prob <= 0 or win_prob >= 1:
         return {"erro": "Probabilidade (win_prob) deve ser entre 0 e 1."}
-    
+    if payout_ratio <= 0:
+        return {"erro": "Payout ratio (b) deve ser positivo."}
+    if bankroll <= 0:
+        return {"erro": "Bankroll deve ser positivo."}
+
     q = 1.0 - win_prob
     kelly_full = win_prob - (q / payout_ratio)
     

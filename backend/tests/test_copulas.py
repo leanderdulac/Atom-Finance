@@ -86,7 +86,7 @@ def test_log_density_matches_cdf_finite_difference(family, cdf, theta, uv):
 def test_frank_simulate_marginal_is_uniform():
     """The corrected Frank simulator must have U(0,1) marginals (was pinned at floor)."""
     fc = FrankCopula(); fc.theta = 2.0
-    s = fc.simulate(100_000)
+    s = fc.simulate(100_000, seed=7)
     v = s[:, 1]
     # 5th/95th percentiles should be near 0.05/0.95; a floor-collapsed marginal fails this.
     assert 0.045 < np.quantile(v, 0.05) < 0.055
@@ -100,7 +100,7 @@ def test_frank_dependence_monotonic_in_theta():
     corrs = []
     for th in (1.0, 3.0, 8.0):
         fc = FrankCopula(); fc.theta = th
-        s = fc.simulate(50_000)
+        s = fc.simulate(50_000, seed=11)
         corrs.append(np.corrcoef(s.T)[0, 1])
     assert corrs[0] < corrs[1] < corrs[2]
     assert corrs[2] > 0.5
@@ -114,7 +114,7 @@ def test_mle_recovers_theta(family, factory):
     """Simulate from a known θ, refit, and check θ̂ ≈ θ (catches wrong density/neg_ll)."""
     for true_theta in factory:
         model = family(); model.theta = true_theta
-        data = model.simulate(3000)
+        data = model.simulate(3000, seed=13)
         result = family().fit(data)
         assert result.parameters["theta"] == pytest.approx(true_theta, abs=0.4)
 
@@ -127,7 +127,7 @@ def test_mle_recovers_theta_frank():
     """
     true_theta = 2.0
     model = FrankCopula(); model.theta = true_theta
-    data = model.simulate(8000)
+    data = model.simulate(8000, seed=17)
     result = FrankCopula().fit(data)
     assert 1.0 < result.parameters["theta"] < 3.4
 
@@ -135,7 +135,7 @@ def test_mle_recovers_theta_frank():
 def test_aic_selects_the_generating_family():
     """fit_best_copula should flag the family that generated the data (Clayton → low-tail dependence)."""
     cc = ClaytonCopula(); cc.theta = 3.0
-    data = cc.simulate(1500)
+    data = cc.simulate(1500, seed=19)
     out = fit_best_copula(data)
     assert out["best_copula"] == "clayton"
     # The selected runner-up must also be a tail-dependent family, not Gaussian by mistake.
@@ -145,7 +145,7 @@ def test_aic_selects_the_generating_family():
 def test_gaussian_and_t_fit_ok():
     G = GaussianCopula()
     R = np.array([[1.0, 0.5], [0.5, 1.0]])
-    sim = G.simulate(2000, R)
+    sim = G.simulate(2000, R, seed=23)
     res_g = G.fit(empirical_copula(sim))
     assert np.isfinite(res_g.log_likelihood)
     res_t = StudentTCopula().fit(empirical_copula(sim))

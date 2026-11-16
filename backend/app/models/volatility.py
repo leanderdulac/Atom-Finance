@@ -10,6 +10,10 @@ from typing import Literal
 import numpy as np
 from scipy.optimize import minimize
 
+# np.trapz was removed in NumPy 2.0 (renamed np.trapezoid); the lock pins
+# 1.26.x, but this keeps the Heston CF integrator working on either.
+_trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+
 
 class GARCHModel:
     """GARCH(1,1) volatility model: σ²_t = ω + α·ε²_{t-1} + β·σ²_{t-1}"""
@@ -242,11 +246,27 @@ class HestonModel:
                 np.linspace(1.0, 200.0, 192),
             ])
             integrand = np.real(np.exp(-1j * u * ln_k) * _cf(u, j) / (1j * u))
-            return float(0.5 + np.trapz(integrand, u) / np.pi)
+            return float(0.5 + _trapezoid(integrand, u) / np.pi)
 
-        p1, p2 = _pj(1), _pj(2)
-        call = S0 * np.exp(-q * T) * p1 - K * np.exp(-r * T) * p2
-        put = call - S0 * np.exp(-q * T) + K * np.exp(-r * T)
+        p1_raw, p2_raw = _pj(1), _pj(2)
+        # P1/P2 are risk-neutral probabilities: outside [0, 1] is pure
+        # quadrature noise, and it would serve an arbitrable quote.
+        p1 = min(max(float(p1_raw), 0.0), 1.0)
+        p2 = min(max(float(p2_raw), 0.0), 1.0)
+        disc_s = S0 * np.exp(-q * T)
+        disc_k = K * np.exp(-r * T)
+        call = disc_s * p1 - disc_k * p2
+        call_floor = max(disc_s - disc_k, 0.0)
+        put_floor = max(disc_k - disc_s, 0.0)
+        violated = (
+            p1 != p1_raw or p2 != p2_raw
+            or call < call_floor - 1e-9
+        )
+        call = max(call, call_floor)
+        put = call - disc_s + disc_k
+        if put < put_floor - 1e-9:
+            violated = True
+            put = put_floor
         price = float(call if option_type == "call" else put)
         feller = 2.0 * kappa * theta - xi ** 2
         return {
@@ -257,11 +277,13 @@ class HestonModel:
             "model": "heston_cf",
             "feller_satisfied": bool(feller > 0),
             "feller_2k_theta_minus_xi2": round(float(feller), 6),
+            "arbitrage_violation": bool(violated),
             "limitations": [
                 "Fourier inversion uses a truncated trapezoid; deep OTM short-dated options need a finer grid.",
                 "Complex logarithm uses the Albrecher branch; extreme parameters can still oscillate.",
                 "This prices Europeans only. Americans need the PDE / tree / Longstaff–Schwartz.",
-            ],
+            ]
+            + (["Raw CF output violated no-arbitrage bounds and was floored; treat this quote as unreliable."] if violated else []),
         }
 
     @staticmethod
@@ -298,7 +320,7 @@ class HestonModel:
                 np.linspace(1.0, 150.0, n_far),
             ])
             integrand = np.real(np.exp(-1j * u * ln_k) * _cf(u, j) / (1j * u))
-            return float(0.5 + np.trapz(integrand, u) / np.pi)
+            return float(0.5 + _trapezoid(integrand, u) / np.pi)
 
         p1, p2 = _pj(1), _pj(2)
         call = S0 * np.exp(-q * T) * p1 - K * np.exp(-r * T) * p2
