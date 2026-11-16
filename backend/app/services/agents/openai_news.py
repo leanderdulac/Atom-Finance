@@ -139,7 +139,7 @@ class OpenAIProvider(LLMProvider):
     def __init__(self) -> None:
         self.api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
         self.model = openai_model()
-        self.timeout = float(os.getenv("ATOM_OPENAI_TIMEOUT", os.getenv("ATOM_AGENT_TIMEOUT", "45")))
+        self.timeout = _float_env("ATOM_OPENAI_TIMEOUT", _float_env("ATOM_AGENT_TIMEOUT", 45.0))
 
     async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs: Any) -> str:
         if not self.api_key:
@@ -204,7 +204,7 @@ async def news_brief(
         "tools": [{"type": "web_search"}],
         "store": False,
     }
-    timeout = float(os.getenv("ATOM_OPENAI_TIMEOUT", "45"))
+    timeout = _float_env("ATOM_OPENAI_TIMEOUT", 45.0)
     data = await _post_json("/responses", payload, timeout=timeout)
     if not data:
         return None

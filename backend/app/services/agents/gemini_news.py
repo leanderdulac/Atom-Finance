@@ -288,7 +288,7 @@ async def _generate(
     key = gemini_api_key()
     if not key:
         return None
-    timeout = float(os.getenv("ATOM_GEMINI_TIMEOUT", os.getenv("ATOM_AGENT_TIMEOUT", "45")))
+    timeout = _float_env("ATOM_GEMINI_TIMEOUT", _float_env("ATOM_AGENT_TIMEOUT", 45.0))
     try:
         from google import genai
         from google.genai import types

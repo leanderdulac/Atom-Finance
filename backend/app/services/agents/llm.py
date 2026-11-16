@@ -25,13 +25,20 @@ CLOUD_KEYS = {
 }
 
 
+def _float_env(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
 class OllamaProvider(LLMProvider):
     """Local Ollama. Used by news/risk agents. Never decides prices or size."""
 
     def __init__(self) -> None:
         self.host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
         self.model = os.getenv("OLLAMA_AGENT_MODEL") or os.getenv("OLLAMA_MODEL") or "gpt-oss:20b"
-        self.timeout = float(os.getenv("ATOM_AGENT_TIMEOUT", "25"))
+        self.timeout = _float_env("ATOM_AGENT_TIMEOUT", 25.0)
 
     async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs: Any) -> str:
         payload = {

@@ -32,6 +32,13 @@ CALLS_PER_HOUR_DEFAULT = 60
 _INLINE_CITE = re.compile(r"\[\[\d+\]\]\((https?://[^)\s]+)\)")
 
 
+def _float_env(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
 def xai_configured() -> bool:
     return bool((os.getenv("XAI_API_KEY") or "").strip())
 
@@ -91,7 +98,7 @@ class XAIProvider(LLMProvider):
     def __init__(self) -> None:
         self.api_key = (os.getenv("XAI_API_KEY") or "").strip()
         self.model = xai_model()
-        self.timeout = float(os.getenv("ATOM_XAI_TIMEOUT", os.getenv("ATOM_AGENT_TIMEOUT", "45")))
+        self.timeout = _float_env("ATOM_XAI_TIMEOUT", _float_env("ATOM_AGENT_TIMEOUT", 45.0))
 
     async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs: Any) -> str:
         if not self.api_key:
@@ -285,7 +292,7 @@ async def news_brief(
         ],
         "store": False,
     }
-    timeout = float(os.getenv("ATOM_XAI_TIMEOUT", "45"))
+    timeout = _float_env("ATOM_XAI_TIMEOUT", 45.0)
     data = await _post_json("/responses", payload, timeout=timeout)
     if not data:
         return None

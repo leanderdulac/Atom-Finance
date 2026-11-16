@@ -12,8 +12,22 @@ from app.core.cache import Cache
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = float(os.getenv("ATOM_CONTEXT_TIMEOUT", "4"))
-DEFAULT_TTL = int(os.getenv("ATOM_CONTEXT_TTL", "300"))
+def _float_env(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+DEFAULT_TIMEOUT = _float_env("ATOM_CONTEXT_TIMEOUT", 4.0)
+DEFAULT_TTL = _int_env("ATOM_CONTEXT_TTL", 300)
 
 
 def _key(prefix: str, url: str, extra: str = "") -> str:
