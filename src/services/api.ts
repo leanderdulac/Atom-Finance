@@ -92,6 +92,30 @@ export interface ResearchPaper {
   as_of: string;
 }
 export interface ResearchSummary { id: string; title: string; created_at: string }
+export interface SimulateRequest {
+  S0: number; direction: 'long' | 'short'; entry: number; stop: number; target: number;
+  horizon_days: number; vol_annual: number; drift_annual?: number; n_paths?: number;
+  seed?: number; size?: number; cost_total?: number;
+}
+export interface SimulateResult {
+  n_paths: number; n_entered: number; p_enter: number; p_profit: number;
+  p_profit_given_entry: number; p_stop: number; p_target: number; p_expiry: number;
+  pnl_p5: number; pnl_p25: number; pnl_p50: number; pnl_p75: number; pnl_p95: number;
+  pnl_mean: number; expected_shortfall_95: number; median_holding_days: number;
+  model: string; assumptions: Record<string, number | string>;
+  eligible_for_live_trading: boolean; what_broke: string[];
+}
+export interface OracleSource {
+  provider: string; ok: boolean; price?: number; bid?: number | null; ask?: number | null;
+  ts?: string | null; age_s?: number | null; age_unknown?: boolean; stale?: boolean;
+  data_mode?: string; currency?: string | null; error?: string;
+}
+export interface OracleSpot {
+  symbol: string; asset_class: string; usable: boolean; price: number | null;
+  method: string; sources: OracleSource[]; disagreement_bps: number | null;
+  stale: string[]; blockers: string[]; fetched_at: string;
+  eligible_for_live_trading: boolean;
+}
 
 // ── Request/response contracts ──────────────────────────────────────────────
 // These mirror the Pydantic models in backend/app/api/*.py — keep field names
@@ -321,6 +345,10 @@ export const api = {
   ) => request<unknown>('/client/ready-operation', { method: 'POST', body: JSON.stringify(data), ...init }),
   clientReadyPaper: (data: { ticker: string; instrument: string; horizon: string; tickers?: string[]; weights?: number[] }) =>
     request<unknown>('/client/ready-operation/paper', { method: 'POST', body: JSON.stringify(data) }),
+  clientSimulate: (data: SimulateRequest) => request<SimulateResult>(
+    '/client/simulate', { method: 'POST', body: JSON.stringify(data) }),
+  oracleSpot: (ticker: string) => request<OracleSpot>(
+    `/oracle/spot?ticker=${encodeURIComponent(ticker)}`),
 
   // Pricing
   blackScholes: (data: PricingRequest) => request<EnginePricingResult & { greeks: Record<string, number> }>('/pricing/black-scholes', { method: 'POST', body: JSON.stringify(data) }),

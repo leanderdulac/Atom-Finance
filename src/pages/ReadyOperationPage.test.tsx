@@ -6,11 +6,15 @@ import ReadyOperationPage from './ReadyOperationPage';
 
 const clientReadyOperation = vi.fn();
 const clientReadyPaper = vi.fn();
+const oracleSpot = vi.fn();
+const clientSimulate = vi.fn();
 
 vi.mock('../services/api', () => ({
   api: {
     clientReadyOperation: (...args: unknown[]) => clientReadyOperation(...args),
     clientReadyPaper: (...args: unknown[]) => clientReadyPaper(...args),
+    oracleSpot: (...args: unknown[]) => oracleSpot(...args),
+    clientSimulate: (...args: unknown[]) => clientSimulate(...args),
   },
 }));
 
@@ -55,6 +59,13 @@ describe('ReadyOperationPage', () => {
   beforeEach(() => {
     clientReadyOperation.mockReset();
     clientReadyPaper.mockReset();
+    oracleSpot.mockReset();
+    clientSimulate.mockReset();
+    oracleSpot.mockResolvedValue({
+      symbol: 'PETR4', asset_class: 'equity_br', usable: true, price: 38.1,
+      method: 'median_fresh', sources: [], disagreement_bps: 0,
+      stale: [], blockers: [], fetched_at: '', eligible_for_live_trading: false,
+    });
   });
 
   it('shows the four client choices and no desk menu / meu plano link', () => {

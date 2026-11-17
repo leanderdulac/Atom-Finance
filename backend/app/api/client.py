@@ -368,3 +368,30 @@ async def register_paper(request: Request, req: ReadyRequest, owner: str = Depen
         "eligible_for_live_trading": False,
         "message": "Registrada como operação paper, aguardando gatilho. O diário é o único escritor.",
     }
+
+
+class SimulateRequest(StrictModel):
+    S0: float = Field(gt=0)
+    direction: str = Field(pattern=r"^(long|short)$")
+    entry: float = Field(gt=0)
+    stop: float = Field(gt=0)
+    target: float = Field(gt=0)
+    horizon_days: int = Field(ge=1, le=365)
+    vol_annual: float = Field(gt=0, le=5)
+    drift_annual: float = Field(0.0, ge=-2, le=2)
+    n_paths: int = Field(5000, ge=100, le=20000)
+    seed: int = 0
+    size: float = Field(1.0, gt=0)
+    cost_total: float = Field(0.0, ge=0)
+
+
+@router.post("/simulate")
+@limiter.limit("20/minute")
+async def simulate(request: Request, req: SimulateRequest, _owner: str = Depends(get_current_user)):
+    """Paper-trade Monte Carlo over declared levels. Distribution, not a promise."""
+    from app.models.simulation import simulate_levels
+
+    try:
+        return await asyncio.to_thread(simulate_levels, **req.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

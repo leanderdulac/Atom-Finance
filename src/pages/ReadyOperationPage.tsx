@@ -10,6 +10,8 @@ import {
 import { formatDatePtBr, formatPricePtBr } from '../lib/moneyPtBr';
 import { api } from '../services/api';
 import { useClientConfig, type ClientAsset } from '../contexts/ClientModeContext';
+import OracleSpotCard from '../components/OracleSpotCard';
+import SimulationCard from '../components/SimulationCard';
 import {
   PROFILE_QUESTIONS,
   SLEEVES,
@@ -547,6 +549,23 @@ export default function ReadyOperationPage() {
                 <Metric label="Invalidação (stop)" value={result.invalidation != null ? money(result.invalidation, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
                 <Metric label="Alvo" value={result.target != null ? money(result.target, result.quote_currency === 'USD' ? 'USD' : 'BRL') : '—'} />
               </Box>
+            )}
+            {!isBasket && result.direction && result.spot != null && result.entry != null
+              && result.invalidation != null && result.target != null && result.ticker && (
+              <>
+                <OracleSpotCard ticker={result.ticker} />
+                <SimulationCard
+                  s0={result.spot}
+                  direction={result.direction}
+                  entry={result.entry}
+                  stop={result.invalidation}
+                  target={result.target}
+                  horizonDays={horizons.find((h) => h.id === horizon)?.holding_days ?? 21}
+                  horizonLabel={result.horizon_label || horizon}
+                  size={result.suggested_size?.quantity ?? result.quantity ?? 1}
+                  ccy={result.quote_currency === 'USD' ? 'USD' : 'BRL'}
+                />
+              </>
             )}
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{result.invalidation_reason}</Typography>
             {result.suggested_size && (

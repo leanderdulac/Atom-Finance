@@ -267,6 +267,47 @@ async def heston_calibrate(request: Request, req: HestonCalibrateRequest):
         raise HTTPException(400, str(exc)) from exc
 
 
+class HestonLiveRequest(BaseModel):
+    ticker: str = Field(..., min_length=1, max_length=25)
+    expiries: list[str] | None = Field(default=None, max_length=4)
+    r: float = Field(0.043, ge=0, le=0.5)
+    q: float = Field(0.0, ge=0, le=0.2)
+    weighting: Literal["price", "vega"] = "vega"
+    n_restarts: int = Field(3, ge=1, le=8)
+    seed: int = 0
+
+
+@router.post("/heston/calibrate-live")
+@limiter.limit("10/minute")
+async def heston_calibrate_live(request: Request, req: HestonLiveRequest):
+    """Calibrate Heston on a live US chain. r/q are the operator's assumptions."""
+    from datetime import date
+
+    from app.services import oracle
+    from app.services.market_sources import SourceError
+
+    try:
+        chain = await oracle.chain_us(req.ticker, req.expiries)
+    except SourceError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+    try:
+        quotes = await _run(
+            HestonModel.quotes_from_option_chain, chain["chains"],
+            S0=chain["S0"], as_of=date.today().isoformat(),
+        )
+        if len(quotes) < 4:
+            raise HTTPException(502, "Cadeia viva com quotes de menos para calibrar.")
+        fit = await _run(
+            HestonModel.calibrate, chain["S0"], req.r, quotes, req.q,
+            weighting=req.weighting, n_restarts=req.n_restarts, seed=req.seed,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    fit["chain"] = {"ticker": req.ticker.upper(), "expirations": chain["expirations"],
+                    "provider": chain["provider"], "fetched_at": chain["fetched_at"]}
+    return fit
+
+
 @router.post("/pairs/johansen")
 @limiter.limit("20/minute")
 async def pairs_johansen(request: Request, req: JohansenRequest):
