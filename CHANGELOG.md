@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 36: vol medida, custos e calibração publicada
+
+### Fixed
+- Simulação parte da vol anual medida no histórico (`volatility.used`) em vez de 30% fixos; sem medida, declara o fallback.
+- `cost_estimate` no payload (hipótese documentada 10bps/lado sobre o nocional) pré-preenche o campo de custos; sem nocional, sem estimativa.
+- CI: gate npm passa a auditar produção (`--omit=dev`); picomatch ReDoS sem patch (só devDeps) vira informativo + aceite documentado.
+
+### Added
+- Primeira medição de cobertura dos intervalos GBM (PETR4/BTC, 5/21d): 83,9–87,9% contra 90% nominais. Relatório em `docs/reports/calibration-gbm-20261117.md`.
+
 ## [Unreleased] — pairs backtest PnL on gross notional (paper)
 
 ### Fixed

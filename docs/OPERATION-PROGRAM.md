@@ -55,3 +55,8 @@ non-overlapping blocks (step = horizon, so no return counts twice).
 Reports coverage vs the nominal level with a binomial 95% band, mean
 interval width and block starts for audit. Past coverage does not
 promise future calibration.
+
+First measurement (2026-11-17, Yahoo adjusted closes): 90% nominal
+intervals covered 83.9–87.9% across PETR4/BTC × 5/21d horizons — inside
+the 95% band but systematically below nominal (fat-tail shortfall, as
+expected). Full report: `docs/reports/calibration-gbm-20261117.md`.
