@@ -92,6 +92,27 @@ class TestZScoreAndDecision:
         assert book.position == 1
         assert reconcile_book(book, 1.0)["ok"] is True
 
+    def test_mark_is_dollar_book_not_share_beta_times_percent(self):
+        """ETH/SOL paper pipeline already marks cash + qty×mid; β is frozen at entry."""
+        from app.models.stat_arb_paper import PaperBook
+
+        book = PaperBook(cash=0.0, shadow_cash=0.0)
+        enter = PairBar(1, 100.0, 10.0, 100.0, 100.0, 10.0, 10.0)
+        apply_spread_target(book, 1, beta=10.0, unit_qty=1.0, bar=enter, fee_bps=0.0, action="enter_long_spread")
+        assert book.entry_beta == pytest.approx(10.0)
+        assert book.y_qty == pytest.approx(1.0)
+        assert book.x_qty == pytest.approx(-10.0)
+        marked = book.mark(101.0, 11.0)
+        # +1 y vs 10 x: dollar = 101 − 10×11 + cash_after_entry.
+        # cash spent 1×100 − 10×10 = 0, so mark = 101 − 110 = −9.
+        assert marked == pytest.approx(-9.0)
+        old = (101.0 / 100.0 - 1.0) - 10.0 * (11.0 / 10.0 - 1.0)
+        assert abs(old) > 0.5
+        assert abs(marked / 200.0) < 0.1  # same dollar on gross notional 200
+        # Hold path: same target does not call apply_spread_target, so qty (and β) stay frozen.
+        assert book.x_qty == pytest.approx(-10.0)
+        assert book.entry_beta == pytest.approx(10.0)
+
 
 class TestFillsAndCosts:
     def test_buy_at_ask_sell_at_bid(self):

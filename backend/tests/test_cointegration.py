@@ -8,7 +8,7 @@ prove causality and that the backtest still runs.
 import numpy as np
 import pytest
 
-from app.models.cointegration import _expanding_hedge, pairs_backtest
+from app.models.cointegration import _expanding_hedge, frozen_spread_return, pairs_backtest
 
 
 def _coint_pair(n=400, seed=5):
@@ -42,6 +42,32 @@ def test_pairs_backtest_still_runs_causally():
     bt = pairs_backtest(y, x)
     assert bt["eligible_for_live_trading"] is False
     assert "what_broke" in bt
+    assert bt["pnl_unit"] == "gross_two_leg_notional"
+    assert bt["hedge"] == "expanding_ols_frozen_at_entry"
     assert bt["total_return_pct"] == pytest.approx(
         (bt["final_equity"] / 100_000.0 - 1.0) * 100, abs=5e-4  # report rounds to 4 decimals
     )
+
+
+def test_frozen_spread_return_is_not_share_beta_times_percent():
+    """OLS share-count β applied to percent returns would print −99% on this bar."""
+    r = frozen_spread_return(100.0, 10.0, 101.0, 11.0, beta0=10.0)
+    dollar = (101.0 - 100.0) - 10.0 * (11.0 - 10.0)
+    assert r == pytest.approx(dollar / 200.0)
+    old = (101.0 / 100.0 - 1.0) - 10.0 * (11.0 / 10.0 - 1.0)
+    assert abs(old) > 0.5
+    assert abs(r) < 0.1
+
+
+def test_pairs_backtest_does_not_wipe_a_share_beta_ten_book():
+    """Regression: r_y − β_shares r_x with β≈10 detonates equity; gross notional does not."""
+    rng = np.random.default_rng(0)
+    n = 400
+    x = np.maximum(10.0 + np.cumsum(rng.normal(0.0, 0.2, n)), 1.0)
+    y = 50.0 + 10.0 * x + rng.normal(0.0, 0.3, n)
+    bt = pairs_backtest(y, x)
+    assert bt["eligible_for_live_trading"] is False
+    assert bt["final_equity"] > 1.0
+    assert bt["total_return_pct"] > -99.0
+    assert bt["annualized_vol_pct"] < 80.0
+    # Old formula on this DGP printed vol in the hundreds and often wiped the book.
