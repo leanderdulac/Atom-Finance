@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 32: ETH/SOL paper stat-arb + perp feeds sem chave
+
+### Added
+- Keyless mark-candle + funding adapters in `backend/app/services/perp_feeds.py` (OKX `history-mark-price-candles` with pagination, `funding-rate` / `funding-rate-history`; Hyperliquid `candleSnapshot` / `fundingHistory`). Normalized UTC-ms OHLC plus funding rate per interval. HTTP/empty failures log a warning and return `[]`.
+- `venue` on `perp_klines.fetch_mark_klines` / `fetch_eth_sol_pair` (`binance` default, `okx`, `hyperliquid`). Desk `--fetch` / `POST /api/desk/pairs/eth-sol-paper` accept the same flag.
+- Accrued funding in each ETH/SOL paper leg (`monitoring.pnl_funding` vs `pnl_price`). Longs pay a positive rate.
+- OKX top-of-book on `perp_collector` so the live basis scan can cover three venues.
+- Apache-2.0 attribution for the hummingbot REST shapes (`NOTICE`, `third_party/hummingbot/`). The `hummingbot` package is not a dependency.
+- Tests: `backend/tests/test_perp_feeds.py` with recorded JSON fixtures (no network in CI).
+- Closed **paper-only** loop for one perpetual pair (`ETHUSDT` / `SOLUSDT`): data (aligned marks, documented gaps, no silent NaNs) → Engle–Granger p-gate + OU half-life + rolling z → entry `|z|>2` / exit `|z|<0.5` → max position / max drawdown / kill switch that flattens the paper book **before** any further paper fills → bid/ask fills with two-leg inventory and reconcile → PnL net of costs, gap flags, kill reason.
+- Reuses `engle_granger`, `_expanding_hedge`, `_half_life` and the mean-reversion AR(1) half-life. No broker OMS, no signed exchange keys for trading. `eligible_for_live_trading` stays `false`.
+- Entrypoints: `POST /api/desk/pairs/eth-sol-paper` (`demo`, caller series, or unsigned `markPriceKlines`) and `python -m app.models.stat_arb_paper --demo|--fetch`.
+- Tests in `backend/tests/test_stat_arb_paper.py` (synthetic cointegrated series; no network in CI). Note: [docs/ETH-SOL-PAPER-PIPELINE.md](docs/ETH-SOL-PAPER-PIPELINE.md).
+- EG gate on the warmup prefix only; vectorized causal rolling z; `{ETHUSDT, SOLUSDT}` allowlist (unlisted symbols never become a Binance proxy).
+
 ## [Unreleased] — round 31: logs JSON estruturados
 
 ### Added

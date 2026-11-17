@@ -1,0 +1,6 @@
+[
+  {"coin": "ETH", "fundingRate": "0.0000125", "premium": "0.00001", "time": 1700000000002},
+  {"coin": "ETH", "fundingRate": "0.0000125", "premium": "0.00001", "time": 1700003600001},
+  {"coin": "ETH", "fundingRate": "0.0000100", "premium": "0.00000", "time": 1700007200003},
+  {"coin": "ETH", "fundingRate": "0.0000100", "premium": "0.00000", "time": 1700010800000}
+]
