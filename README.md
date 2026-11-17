@@ -214,7 +214,9 @@ Every router is mounted under `/api` in [backend/main.py](backend/main.py); most
 | `/api/derivatives` | Derivatives desk planner |
 | `/api/sources` | Market data source quality/monitoring |
 | `/api/research` | QuantMind paper history & extraction |
-| `/api/desk` | Heston CF/calibrate, Engle–Granger, Johansen, Avellaneda–Stoikov, FF5, live perp books, EDGAR Form 4, regime classifier |
+| `/api/desk` | Heston CF/calibrate/live, Engle–Granger, Johansen, Avellaneda–Stoikov, FF5, live perp books, EDGAR Form 4, regime classifier, interval calibration |
+| `/api/oracle` | Arbitrated spot, provider heartbeat, US option chains |
+| `/api/client` | Ready operation, paper register, Monte Carlo simulate, thesis monitors |
 | `/api/metrics` | Prometheus metrics (JWT or `ATOM_METRICS_PUBLIC` on a trusted network) |
 | `/api/paper-trades` | Simulated paper-trading ledger (no broker execution) |
 

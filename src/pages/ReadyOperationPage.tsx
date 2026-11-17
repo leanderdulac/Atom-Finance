@@ -3,6 +3,7 @@
  * Meu plano (perfil + carteira) vive aqui. Sem menu de mesa.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider,
   Stack, ToggleButton, ToggleButtonGroup, Typography,
@@ -110,6 +111,7 @@ const strategyLabel: Record<string, string> = {
 
 export default function ReadyOperationPage() {
   const cfg = useClientConfig();
+  const navigate = useNavigate();
   const universe = cfg.universe.length ? cfg.universe : FALLBACK_UNIVERSE;
   const instruments = cfg.instruments.length ? cfg.instruments : FALLBACK_INSTRUMENTS;
   const horizons = cfg.horizons.length ? cfg.horizons : FALLBACK_HORIZONS;
@@ -487,6 +489,10 @@ export default function ReadyOperationPage() {
               <Chip label={strategyLabel[result.structure?.strategy || ''] || result.structure?.strategy} />
               <Chip label={`Confiança ${result.confidence}`} />
               <Chip label="Paper only" variant="outlined" />
+              <Box sx={{ flexGrow: 1 }} />
+              <Button size="small" variant="outlined" onClick={() => navigate('/cliente/monitores')}>
+                Meus monitores
+              </Button>
             </Stack>
             <Typography variant="h6" sx={{ mt: 2 }}>
               {strategyLabel[result.structure?.strategy || ''] || 'Operação'} · {result.horizon_label}

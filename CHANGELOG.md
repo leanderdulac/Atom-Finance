@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 30: monitores de tese + calibração de intervalos
+
+### Added
+- Monitores de tese (`/api/client/monitors`, página `/cliente/monitores`): declarar operação paper com baseline simulada; cada verificação avalia o spot do oráculo contra entrada/stop/alvo/horizonte (watching→active→stopped/target_hit/expired), com alertas de proximidade, tempo, staleness e divergência. Gaps que cruzam stop e alvo resolvem no stop.
+- Calibração (`POST /api/desk/calibration/coverage`): cobertura walk-forward de intervalos GBM em blocos sem sobreposição, com banda binomial de 95%.
+- Migration `c59e013daef9` (`operation_monitors`, `monitor_checks`); docs em `docs/OPERATION-PROGRAM.md`.
+- 24 testes novos (modelo, endpoints com pool fake, página).
+
+### Not
+- Verificações são pontuais: toques entre leituras passam despercebidos. Preenchimento assumido no nível. Cobertura passada não promete calibração futura. Paper only.
+
 ## [Unreleased] — round 29: oráculos + painel de operação (paper)
 
 ### Added

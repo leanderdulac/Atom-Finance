@@ -9,7 +9,7 @@ import {
   ShowChart, Assessment, AccountBalance, Psychology, Warning,
   Timeline, DarkMode, LightMode, Menu as MenuIcon, Waves, Terminal, AutoGraph,
   FindInPage, Functions, TrendingUp, MonetizationOn, CallMerge, RocketLaunch, AutoFixHigh,
-  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune, Speed, Person,
+  CurrencyExchange, Logout, Science, Percent, MenuBook, Tune, Speed, Person, Visibility,
 } from '@mui/icons-material';
 import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -56,6 +56,7 @@ const TargetChoicePage = lazy(() => import('./pages/TargetChoicePage'));
 const QuantDoctrinePage = lazy(() => import('./pages/QuantDoctrinePage'));
 const ErrorMaximizerPage = lazy(() => import('./pages/ErrorMaximizerPage'));
 const ReadyOperationPage = lazy(() => import('./pages/ReadyOperationPage'));
+const MonitorPage = lazy(() => import('./pages/MonitorPage'));
 function RouteFallback() {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
@@ -116,6 +117,7 @@ const exploratoryItems = [
 
 const coreItems = [
   { label: 'Operação pronta', path: '/cliente', icon: <ShowChart /> },
+  { label: 'Monitores de tese', path: '/cliente/monitores', icon: <Visibility /> },
   { label: 'Mesa de operações', path: '/operations', icon: <Speed /> },
   { label: 'Doutrina da mesa', path: '/quant-doctrine', icon: <MenuBook /> },
   { label: 'Mesa de papers', path: '/desk', icon: <Functions /> },
@@ -297,6 +299,7 @@ function AppLayout() {
         <Routes>
           <Route path="/cliente" element={<ProtectedRoute><ReadyOperationPage /></ProtectedRoute>} />
           <Route path="/cliente/operacao" element={<ProtectedRoute><ReadyOperationPage /></ProtectedRoute>} />
+          <Route path="/cliente/monitores" element={<ProtectedRoute><MonitorPage /></ProtectedRoute>} />
           <Route path="/cliente/plano" element={<Navigate to="/cliente" replace />} />
           <Route path="/operations" element={<OperatorRoute><OperationsPage /></OperatorRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><ExperimentsPage /></ProtectedRoute>} />
