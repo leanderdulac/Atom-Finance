@@ -373,6 +373,27 @@ async def mm_sim(request: Request, req: MMSimRequest):
     )
 
 
+class CalibrationRequest(BaseModel):
+    prices: list[float] = Field(..., min_length=70, max_length=5000)
+    horizon_days: int = Field(5, ge=1, le=63)
+    vol_lambda: float = Field(0.94, gt=0, lt=1)
+    level: float = Field(0.90, gt=0.5, lt=0.99)
+
+
+@router.post("/calibration/coverage")
+@limiter.limit("20/minute")
+async def calibration_coverage(request: Request, req: CalibrationRequest):
+    from app.models.calibration import interval_coverage
+
+    try:
+        return await _run(
+            interval_coverage, req.prices, req.horizon_days,
+            req.vol_lambda, 60, req.level,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.post("/fama-french/decompose")
 async def ff_dec(req: FFRequest):
     try:

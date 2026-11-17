@@ -193,10 +193,12 @@ protected.include_router(paper_trades_router, prefix="/api/paper-trades", tags=[
 protected.include_router(desk_router, prefix="/api/desk", tags=["Quant Desk"])
 protected.include_router(oracle_router, prefix="/api/oracle", tags=["Oracle"])
 from app.api.client import router as client_router
+from app.api.monitors import router as monitors_router
 
 # /api/client/config is public (landing). The remaining client routes still
 # declare Depends(get_current_user) on the router in client.py except config.
 app.include_router(client_router, prefix="/api/client", tags=["Client"])
+app.include_router(monitors_router, prefix="/api/client", tags=["Monitors"])
 app.include_router(protected)
 
 @app.middleware("http")

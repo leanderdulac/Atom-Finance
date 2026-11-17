@@ -116,6 +116,31 @@ export interface OracleSpot {
   stale: string[]; blockers: string[]; fetched_at: string;
   eligible_for_live_trading: boolean;
 }
+export interface MonitorDeclare {
+  ticker: string; direction: 'long' | 'short'; entry: number; stop: number;
+  target: number; horizon_days: number; size?: number; vol_annual: number; note?: string;
+}
+export interface MonitorSummary {
+  id: string; ticker: string; direction: string; entry: number; stop: number;
+  target: number; horizon_days: number; state: string; declared_at: string;
+  last_spot: number | null; last_check: string | null;
+}
+export interface MonitorAlert { kind: string; text: string }
+export interface MonitorCheck {
+  checked_at: string; spot: number; oracle_usable: boolean; state: string;
+  alerts: MonitorAlert[]; metrics: Record<string, number | string>;
+}
+export interface MonitorDetail extends MonitorSummary {
+  size: number; vol_annual: number; baseline: SimulateResult; entered_at: string | null;
+  entry_px: number | null; note: string; checks: MonitorCheck[];
+}
+export interface MonitorEvaluation {
+  id: string; state: string; prev_state?: string; terminal?: boolean; spot?: number;
+  checked_at?: string; entered_at?: string | null; entry_px?: number | null;
+  exit_px?: number | null; exit_reason?: string; pnl_pct?: number | null;
+  metrics?: Record<string, number | string>; alerts?: MonitorAlert[];
+  note?: string; eligible_for_live_trading: boolean;
+}
 
 // ── Request/response contracts ──────────────────────────────────────────────
 // These mirror the Pydantic models in backend/app/api/*.py — keep field names
@@ -349,6 +374,15 @@ export const api = {
     '/client/simulate', { method: 'POST', body: JSON.stringify(data) }),
   oracleSpot: (ticker: string) => request<OracleSpot>(
     `/oracle/spot?ticker=${encodeURIComponent(ticker)}`),
+  monitorsList: () => request<{ monitors: MonitorSummary[] }>('/client/monitors'),
+  monitorsDeclare: (data: MonitorDeclare) => request<{ id: string; state: string; baseline: SimulateResult }>(
+    '/client/monitors', { method: 'POST', body: JSON.stringify(data) }),
+  monitorsGet: (id: string) => request<MonitorDetail>(
+    `/client/monitors/${encodeURIComponent(id)}`),
+  monitorsCheck: (id: string) => request<MonitorEvaluation>(
+    `/client/monitors/${encodeURIComponent(id)}/check`, { method: 'POST', body: '{}' }),
+  monitorsDelete: (id: string) => request<{ deleted: string }>(
+    `/client/monitors/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // Pricing
   blackScholes: (data: PricingRequest) => request<EnginePricingResult & { greeks: Record<string, number> }>('/pricing/black-scholes', { method: 'POST', body: JSON.stringify(data) }),
