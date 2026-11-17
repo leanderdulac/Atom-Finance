@@ -439,4 +439,37 @@ describe('ReadyOperationPage', () => {
     expect(clientReadyOperation.mock.calls[0][0]).toEqual({ ticker: 'ETH', instrument: 'spot', horizon: 'weeks' });
     expect(clientReadyOperation.mock.calls[0][0]).not.toHaveProperty('tickers');
   });
+
+  it('shows unsized state instead of inventing size or notional', async () => {
+    clientReadyOperation.mockResolvedValue({
+      status: 'ready',
+      ticker: 'BTC',
+      label: 'Bitcoin',
+      instrument: 'spot',
+      horizon_label: 'Algumas semanas',
+      direction: 'bullish',
+      structure: { strategy: 'long_stock', legs: [{ side: 'buy', symbol: 'BTC', strike: 64000, quantity: 0 }] },
+      quote_currency: 'USD',
+      spot: 64648.27,
+      entry: 64518.97,
+      invalidation: 58000,
+      target: 71000,
+      quantity: 0,
+      suggested_size: { quantity: 0, risk_budget_brl: 100, notional_brl: null, notional_usd: 0, can_register_paper: false, paper_block: 'O arsenal não tem câmbio USD/BRL agora.' },
+      confidence: 'média',
+      invalidation_reason: 'A tese cai.',
+      why: 'Cenário.',
+      eligible_for_live_trading: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: /^cripto$/i }));
+    await user.click(screen.getByRole('button', { name: /^bitcoin$/i }));
+    await user.click(screen.getByRole('button', { name: /montar operação/i }));
+    expect(await screen.findByText('não dimensionado', { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.getAllByText(/não tem câmbio USD\/BRL agora/).length).toEqual(3);
+    expect(screen.queryByText(/nocional da posição/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Sem simulação: tamanho não dimensionado/)).toBeInTheDocument();
+    expect(clientSimulate).not.toHaveBeenCalled();
+  });
 });

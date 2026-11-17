@@ -153,10 +153,13 @@ export default function ReadyOperationPage() {
   const answered = answers.horizon !== null && answers.drop !== null && answers.goal !== null;
   const profile = answered ? recommendedProfile(answers, sleeve) : profileFor('moderado', sleeve);
   const isBasket = Boolean(result?.basket?.length);
-  const notionalBrl = result?.suggested_size?.notional_brl
-    ?? (result?.quantity != null && result?.entry != null
-      ? Math.abs(result.quantity * result.entry)
-      : null);
+  const effectiveQty = result?.suggested_size?.quantity ?? result?.quantity ?? 0;
+  const notionalBrl = effectiveQty > 0
+    ? (result?.suggested_size?.notional_brl
+      ?? (result?.quantity != null && result?.entry != null
+        ? Math.abs(result.quantity * result.entry)
+        : null))
+    : null;
 
   function readyPayload(): ReadyPayload {
     if (sleeve === 'mixed' && tickers.length > 1) {
@@ -568,7 +571,8 @@ export default function ReadyOperationPage() {
                   target={result.target}
                   horizonDays={horizons.find((h) => h.id === horizon)?.holding_days ?? 21}
                   horizonLabel={result.horizon_label || horizon}
-                  size={result.suggested_size?.quantity ?? result.quantity ?? 1}
+                  size={result.suggested_size?.quantity ?? result.quantity ?? 0}
+                  sizeNote={result.suggested_size?.paper_block ?? undefined}
                   ccy={result.quote_currency === 'USD' ? 'USD' : 'BRL'}
                 />
               </>
@@ -578,16 +582,18 @@ export default function ReadyOperationPage() {
               <Typography sx={{ mt: 2 }}>
                 {isBasket ? (
                   <>Carteira com <strong>{result.suggested_size.quantity}</strong> perna{result.suggested_size.quantity === 1 ? '' : 's'}</>
-                ) : (
+                ) : effectiveQty > 0 ? (
                   <>Tamanho sugerido: <strong>{num(result.suggested_size.quantity)}</strong></>
+                ) : (
+                  <>Tamanho: <strong>não dimensionado</strong>{result.suggested_size.paper_block ? ` — ${result.suggested_size.paper_block}` : ''}</>
                 )}
                 {' · risco máximo de '}
                 {money(result.suggested_size.risk_budget_brl)}
-                {notionalBrl != null ? ` · nocional da posição ${money(notionalBrl)}` : (
+                {effectiveQty > 0 && (notionalBrl != null ? ` · nocional da posição ${money(notionalBrl)}` : (
                   result.suggested_size.notional_usd != null
                     ? ` · nocional da posição ${money(result.suggested_size.notional_usd, 'USD')}`
                     : ''
-                )}
+                ))}
                 {result.fx_usd_brl?.rate
                   ? ` · câmbio USD/BRL ${formatPricePtBr(result.fx_usd_brl.rate, 4)}`
                   : ''}
