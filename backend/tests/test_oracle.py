@@ -92,7 +92,7 @@ async def test_spot_disagreement_is_flagged(monkeypatch):
 @pytest.mark.asyncio
 async def test_spot_stale_source_excluded_and_reported(monkeypatch):
     async def yf(symbol, owner):
-        return {"price": 50.0, "bid": None, "ask": None, "ts": _ts(900),
+        return {"price": 50.0, "bid": None, "ask": None, "ts": _ts(2000),
                 "data_mode": "delayed", "currency": "USD"}
 
     async def tradier(symbol, owner):
@@ -104,7 +104,32 @@ async def test_spot_stale_source_excluded_and_reported(monkeypatch):
     out = await oracle.spot("AAPL")
     assert out["price"] == 55.0
     assert out["stale"] == ["yfinance"]
-    assert any("velha" in b for b in out["blockers"])
+    assert any("2000" in b and "1500" in b for b in out["blockers"])
+
+
+def test_stale_after_is_mode_aware_with_strict_fallback():
+    assert oracle.stale_after("crypto", "realtime") == 30.0
+    assert oracle.stale_after("crypto", "delayed") == 300.0
+    assert oracle.stale_after("equity_br", "realtime") == 300.0
+    assert oracle.stale_after("equity_br", "delayed") == 1500.0
+    assert oracle.stale_after("equity_us", "delayed") == 1500.0
+    assert oracle.stale_after("equity_us", "unverified") == 300.0
+    assert oracle.stale_after("equity_us", None) == 300.0
+    assert oracle.stale_after("crypto", "weird") == 30.0
+
+
+@pytest.mark.asyncio
+async def test_spot_delayed_quote_within_25min_is_fresh(monkeypatch):
+    async def yf(symbol, owner):
+        return {"price": 100.0, "bid": None, "ask": None, "ts": _ts(900),
+                "data_mode": "delayed", "currency": "USD"}
+
+    _patch(monkeypatch, _fetch_yfinance=yf)
+    out = await oracle.spot("AAPL")
+    assert out["usable"] is True
+    assert out["price"] == 100.0
+    assert out["stale"] == []
+    assert out["method"] == "median_fresh"
 
 
 @pytest.mark.asyncio

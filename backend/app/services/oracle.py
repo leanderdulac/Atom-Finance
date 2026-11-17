@@ -7,7 +7,8 @@ This module only routes, timestamps, arbitrates and reports:
   *USDT) → binance + hyperliquid + yfinance; anything else → yfinance
   + tradier (US).
 - freshness: a quote is fresh when its *source* timestamp is younger than
-  the class threshold. Providers without a source timestamp (brapi,
+  the (class, mode) threshold — delayed feeds get 25min on equities.
+  Providers without a source timestamp (brapi,
   Binance spot) have unknown age: usable for display, excluded from
   arbitration unless they are the only source — and then flagged.
 - arbitration: median of the fresh lasts. Disagreement above 50 bps across
@@ -35,7 +36,22 @@ from app.services.market_sources import SourceError
 logger = logging.getLogger(__name__)
 
 # Freshness thresholds (seconds) on the SOURCE timestamp, not fetch time.
-STALE_AFTER = {"crypto": 30.0, "equity_br": 300.0, "equity_us": 300.0}
+# Delayed feeds lag ~15min by design, so they get 25min (expected delay +
+# margin); realtime keeps the strict bar. Unknown modes with a timestamp
+# are held to the strict bar — trust, but verify.
+STALE_AFTER = {
+    ("crypto", "realtime"): 30.0,
+    ("crypto", "delayed"): 300.0,
+    ("equity_br", "realtime"): 300.0,
+    ("equity_br", "delayed"): 1500.0,
+    ("equity_us", "realtime"): 300.0,
+    ("equity_us", "delayed"): 1500.0,
+}
+_STALE_STRICT = {"crypto": 30.0, "equity_br": 300.0, "equity_us": 300.0}
+
+
+def stale_after(asset_class: str, data_mode: str | None) -> float:
+    return STALE_AFTER.get((asset_class, data_mode or ""), _STALE_STRICT[asset_class])
 DISAGREE_BPS = 50.0
 DIARY_KEY = "atom:oracle:diary"
 DIARY_MAX = 50
@@ -153,7 +169,6 @@ async def spot(symbol: str, owner: str = "") -> dict[str, Any]:
     asset_class = classify(symbol)
     sym = symbol.strip().upper()
     now = datetime.now(UTC)
-    threshold = STALE_AFTER[asset_class]
 
     if asset_class == "crypto":
         base = sym[:-4] if sym.endswith("-USD") else sym[:-4] if sym.endswith("USDT") else sym
@@ -197,13 +212,16 @@ async def spot(symbol: str, owner: str = "") -> dict[str, Any]:
             sources.append({"provider": provider, "ok": False, "error": "Preço inválido."})
             continue
         age = _age_seconds(row.get("ts"), now)
-        stale = age is not None and (age > threshold or age < -60)
+        mode = row.get("data_mode", "unverified")
+        limit = stale_after(asset_class, mode if isinstance(mode, str) else None)
+        stale = age is not None and (age > limit or age < -60)
         sources.append({
             "provider": provider, "ok": True, "price": price_f,
             "bid": row.get("bid"), "ask": row.get("ask"),
             "ts": row.get("ts"), "age_s": None if age is None else round(age, 1),
             "age_unknown": age is None, "stale": stale,
-            "data_mode": row.get("data_mode", "unverified"),
+            "stale_after_s": limit,
+            "data_mode": mode,
             "currency": row.get("currency"),
         })
 
@@ -215,7 +233,7 @@ async def spot(symbol: str, owner: str = "") -> dict[str, Any]:
         if not s.get("ok"):
             blockers.append(f"{s['provider']}: {s.get('error')}")
         elif s["stale"]:
-            blockers.append(f"{s['provider']}: cotação velha ({s['age_s']}s > {threshold:g}s).")
+            blockers.append(f"{s['provider']}: cotação velha ({s['age_s']}s > {s['stale_after_s']:g}s).")
 
     pool = fresh or unknown
     if not pool:
