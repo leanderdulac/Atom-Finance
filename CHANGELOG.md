@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 29: oráculos + painel de operação (paper)
+
+### Added
+- Oráculo unificado (`/api/oracle/spot|heartbeat|chain`): arbitragem por mediana das fontes frescas, staleness por classe de ativo, flag de divergência > 50 bps, sem fallback sintético; cadeia US multi-expiry (yfinance) para calibração.
+- `POST /api/desk/heston/calibrate-live`: Heston sobre cadeia viva (r/q como premissas do operador).
+- `POST /api/client/simulate`: Monte Carlo GBM sobre entrada/stop/alvo — P(lucro), percentis de P&L, expected shortfall, split stop/alvo/vencimento, premissas e `what_broke` em toda resposta.
+- Painel `/cliente`: card de simulação (slider de vol, distribuição, ressalvas) + card de proveniência do oráculo (preço, idade por fonte, avisos).
+- 32 testes novos (oráculo, simulação, endpoints, componentes).
+
+### Not
+- Probabilidades são frequências em caminhos simulados, não certeza sobre o mercado. Paper only.
+
 ## [Unreleased] — round 28: polish visual — tema quant-terminal
 
 ### Changed

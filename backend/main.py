@@ -186,10 +186,12 @@ protected.include_router(ai_proxy_router,        prefix="/api/ai",            ta
 
 
 from app.api.desk import router as desk_router
+from app.api.oracle import router as oracle_router
 from app.api.paper_trades import router as paper_trades_router
 
 protected.include_router(paper_trades_router, prefix="/api/paper-trades", tags=["Paper Trading"])
 protected.include_router(desk_router, prefix="/api/desk", tags=["Quant Desk"])
+protected.include_router(oracle_router, prefix="/api/oracle", tags=["Oracle"])
 from app.api.client import router as client_router
 
 # /api/client/config is public (landing). The remaining client routes still

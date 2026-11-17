@@ -13,10 +13,10 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/vite-env.d.ts'],
-      // Ratchet over the whole src tree (measured 2026-11-16 with 90 tests:
-      // lines 24.1 / branches 20.1 / functions 18.1 / statements 27.5).
+      // Ratchet over the whole src tree (measured 2026-11-16 with 96 tests:
+      // lines 25.2 / branches 22.2 / functions 19.6 / statements 28.7).
       // CI fails if coverage drops. Raise as suites grow.
-      thresholds: { lines: 20, branches: 16, functions: 14, statements: 22 },
+      thresholds: { lines: 22, branches: 18, functions: 16, statements: 24 },
     },
   },
 })
