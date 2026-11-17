@@ -181,7 +181,7 @@ def parse_okx_mark_candles(payload: Any) -> list[PerpCandle]:
         return []
     out: list[PerpCandle] = []
     for row in rows:
-        if not isinstance(row, (list, tuple)) or len(row) < 5:
+        if not isinstance(row, list | tuple) or len(row) < 5:
             logger.warning("OKX mark candle skipped (short row): %s", row)
             continue
         ts = to_utc_ms(row[0])
