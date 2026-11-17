@@ -32,4 +32,5 @@ issues for exploitable vulnerabilities.
 | Item | Severity | Why deferred | Review when |
 |------|----------|--------------|-------------|
 | (katex advisory retired 2026-11-16: `katex`/`react-katex` had zero imports — removed instead of upgraded) | — | — | — |
+| picomatch ReDoS ([GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)), high, range `*` (no patched release) via vitest/vite/eslint | low (here) | Dev-only file globbing of our own config patterns; no attacker input reaches it. CI gates on `--omit=dev`, full audit stays visible non-blocking | picomatch ships a fix, or it appears in prod deps |
 | ESLint warnings: 0 (was ~190 on 2026-11-15; cleaned file-by-file 2026-11-16) | hygiene | Warning level only; does not gate CI | Keep at zero; `npm run lint` in CI |
