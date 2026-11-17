@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 34: guarda de tamanho não dimensionado
+
+### Fixed
+- `/cliente` não inventa mais tamanho: quantidade zero (ex.: sem câmbio USD/BRL) mostra "não dimensionado" com o motivo, esconde o nocional zerado e desativa a simulação em vez de simular 1 unidade silenciosamente.
+
 ## [Unreleased] — round 33: lab de vetorização (loops em série de preço)
 
 `for i in range(len(df))` com `.iloc[i]` encerra a avaliação numa mesa. Não é estilo: é 50–100× mais lento, look-ahead i vs i-1, e 10 vs 10.000 hipóteses por dia.

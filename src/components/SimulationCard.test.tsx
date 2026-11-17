@@ -38,6 +38,14 @@ describe('SimulationCard', () => {
     expect(screen.getByText(/sem saltos/)).toBeInTheDocument();
   });
 
+  it('refuses to simulate an unsized quantity', async () => {
+    render(<SimulationCard {...PROPS} size={0} sizeNote="sem câmbio USD/BRL" />);
+    expect(screen.getByText(/tamanho não dimensionado/)).toBeInTheDocument();
+    expect(screen.getByText(/sem câmbio USD\/BRL/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /simular/i })).not.toBeInTheDocument();
+    expect(clientSimulate).not.toHaveBeenCalled();
+  });
+
   it('maps bearish to short and surfaces backend errors', async () => {
     clientSimulate.mockRejectedValueOnce(new Error('stop < entry < target'));
     render(<SimulationCard {...PROPS} direction="bearish" />);

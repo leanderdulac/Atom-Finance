@@ -14,6 +14,7 @@ type Props = {
   horizonDays: number;
   horizonLabel: string;
   size: number;
+  sizeNote?: string;
   ccy: 'BRL' | 'USD';
 };
 
@@ -27,6 +28,8 @@ export default function SimulationCard(p: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sim, setSim] = useState<SimulateResult | null>(null);
+  // Never simulate an invented size: without a sized quantity there is no P&L.
+  const sized = Number.isFinite(p.size) && p.size > 0;
 
   async function run() {
     setBusy(true);
@@ -61,19 +64,27 @@ export default function SimulationCard(p: Props) {
           5.000 caminhos GBM sobre entrada, stop e alvo · {p.horizonLabel} · antes de custos.
           Frequência em caminhos simulados — não é certeza sobre o mercado.
         </Typography>
-        <Box sx={{ mt: 2, maxWidth: 420 }}>
-          <Typography variant="body2">Vol anual: {volPct}%</Typography>
-          <Slider
-            aria-label="Volatilidade anual"
-            value={volPct}
-            min={5}
-            max={150}
-            onChange={(_, v) => setVolPct(v as number)}
-          />
-        </Box>
-        <Button variant="outlined" onClick={run} disabled={busy} sx={{ mt: 1 }}>
-          {busy ? <CircularProgress size={18} /> : 'Simular 5.000 caminhos'}
-        </Button>
+        {!sized ? (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            Sem simulação: tamanho não dimensionado{p.sizeNote ? ` — ${p.sizeNote}` : '.'}
+          </Alert>
+        ) : (
+          <>
+            <Box sx={{ mt: 2, maxWidth: 420 }}>
+              <Typography variant="body2">Vol anual: {volPct}%</Typography>
+              <Slider
+                aria-label="Volatilidade anual"
+                value={volPct}
+                min={5}
+                max={150}
+                onChange={(_, v) => setVolPct(v as number)}
+              />
+            </Box>
+            <Button variant="outlined" onClick={run} disabled={busy} sx={{ mt: 1 }}>
+              {busy ? <CircularProgress size={18} /> : 'Simular 5.000 caminhos'}
+            </Button>
+          </>
+        )}
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
         {sim && (
           <Box sx={{ mt: 2 }}>
