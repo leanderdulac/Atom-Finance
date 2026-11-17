@@ -35,7 +35,8 @@ ignore = [
 
 [tool.basedpyright]
 include = ["app", "main.py"]
-exclude = ["app/models/kronos", "**/__pycache__"]
+exclude = ["app/models/kronos", "app/models/afml", "**/__pycache__"]
+# afml: pandas Index/Series stubs fight the AFML helpers; behaviour is locked by tests.
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 # This codebase predates type annotations; "Unknown"-type noise from untyped

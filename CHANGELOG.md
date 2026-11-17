@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 36: barreiras triplas, meta-rótulo e portão DSR (paper)
+
+### Added
+- Registro append-only de toda variante testada (`app.models.afml.trials.TrialRegistry`) e portão de promoção a paper: DSR de Bailey & López de Prado ≥ 0,95, retornos líquidos de taxa/spread, assimetria, curtose e MinTRL. PSR/DSR continuam em `winners_curse` — o gate não duplica a fórmula.
+- Rótulos de três barreiras (alvo, stop, prazo) líquidos de custo, no lugar de «subiu ou desceu», e meta-rótulo com PurgedKFold + embargo: o primário dá a direção; o segundo modelo estima P(a operação dar certo). Abaixo do limiar não entra; acima, define o tamanho.
+- Primeiro teste no sinal de pares já existente (Gatev / Avellaneda–Lee, cointegração expanding). Relatório reproduzível em `docs/reports/pairs-meta-label-oos.md`. `POST /api/desk/pairs/meta-label`. `eligible_for_live_trading` permanece false.
+
 ## [Unreleased] — round 35: Hyperliquid no oráculo (spot, book, mark/funding/OI)
 
 ### Added

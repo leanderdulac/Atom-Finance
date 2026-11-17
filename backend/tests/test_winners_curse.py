@@ -90,3 +90,13 @@ class TestDeskRoutes:
         dsr = haircut.json()
         assert dsr["significant_at_95"] is False
         assert dsr["sr_star"] > 1.5
+
+        meta = client.post(
+            "/api/desk/pairs/meta-label",
+            json={"demo": True, "n": 2200, "seed": 11},
+        )
+        assert meta.status_code == 200, meta.text
+        body = meta.json()
+        assert body["eligible_for_live_trading"] is False
+        assert body["gate"]["n_trials"] == 2
+        assert body["primary"]["n_trades"] >= body["filtered"]["n_trades"]

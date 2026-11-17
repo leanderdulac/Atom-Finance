@@ -1,0 +1,83 @@
+{
+  "family_id": "pairs_gatev_avellaneda",
+  "n_bars": 2200,
+  "n_events": 49,
+  "n_oos_scored": 49,
+  "n_trials_registered": 2,
+  "entry_z": 2.0,
+  "threshold": 0.55,
+  "round_trip_cost": 0.0028,
+  "engle_granger": {
+    "cointegrated": true,
+    "beta": 1.40345963,
+    "adf_tstat": -13.1871,
+    "half_life_days": 3.99
+  },
+  "johansen_rank": 2,
+  "primary": {
+    "n_trades": 49,
+    "hit_rate": 0.857143,
+    "net_per_trade": 0.00741847,
+    "total_net": 0.36350525
+  },
+  "filtered": {
+    "n_trades": 34,
+    "hit_rate": 0.882353,
+    "net_per_trade": 0.00775895,
+    "total_net": 0.26380427
+  },
+  "filter_improves_hit_or_net": true,
+  "hit_rate_delta": 0.02521,
+  "net_per_trade_delta": 0.00034047,
+  "gate": {
+    "approved": true,
+    "reasons": [],
+    "observed_sharpe": 1.245382,
+    "psr": 0.999998,
+    "dsr": 0.999946,
+    "sr_star": 0.201726,
+    "min_trl": 387.4639,
+    "n_obs": 2140,
+    "n_trials": 2.0,
+    "n_eff": 1.1940925439836483,
+    "se_hat": 0.269699,
+    "skew": 6.438527,
+    "excess_kurtosis": 77.624664,
+    "costs_included": true,
+    "threshold": 0.95,
+    "details": {
+      "psr": {
+        "observed_sharpe": 1.245382,
+        "sr_benchmark": 0.0,
+        "psr": 0.999998,
+        "z": 4.617676,
+        "se_hat": 0.269699,
+        "n_obs": 2140,
+        "significant_at_95": true
+      },
+      "dsr": {
+        "observed_sharpe": 1.245382,
+        "sr_star": 0.201726,
+        "deflated_sharpe_prob": 0.999946,
+        "z": 3.869707,
+        "se_hat": 0.269699,
+        "n_trials": 2.0,
+        "n_obs": 2140,
+        "significant_at_95": true,
+        "haircut": 1.043655,
+        "expected_max_blp": 0.201726,
+        "z_blp": 0.519755
+      }
+    }
+  },
+  "eligible_for_live_trading": false,
+  "out_of_sample": true,
+  "math": "Prim\u00e1rio: z expanding do res\u00edduo y\u2212(\u03b1_t+\u03b2_t x), entrada |z|>entry_z, lado = \u2212sign(z). R\u00f3tulo: primeira barreira (alvo / stop / prazo) no PnL do book, l\u00edquido de 4\u00d7(taxa+spread). Meta: RF com PurgedKFold + embargo; P(bin=1) OOF. Gate: DSR de Bailey & L\u00f3pez de Prado \u2265 0,95 com N registrado, assimetria, curtose e MinTRL.",
+  "what_broke": [
+    "Sinal prim\u00e1rio \u00e9 o z expanding do res\u00edduo EG (Gatev / Avellaneda\u2013Lee), n\u00e3o um Kalman.",
+    "Barreiras usam o PnL do book unit\u00e1rio; lote, aluguel e funding ficam de fora.",
+    "Meta-r\u00f3tulo \u00e9 um RF raso com purga/embargo \u2014 n\u00e3o \u00e9 um modelo de produ\u00e7\u00e3o.",
+    "DSR \u2265 0,95 autoriza s\u00f3 considerar paper. eligible_for_live_trading permanece false.",
+    "DGP sint\u00e9tico do relat\u00f3rio reproduz cointegra\u00e7\u00e3o com saltos; n\u00e3o \u00e9 um livro real."
+  ]
+}
