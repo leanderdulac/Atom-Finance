@@ -27,6 +27,7 @@ from app.models.afml.gate import gate_trial
 from app.models.afml.labeling import triple_barrier_on_pnl
 from app.models.afml.trials import TrialRegistry
 from app.models.cointegration import _expanding_hedge, _half_life, engle_granger, johansen
+from app.models.winners_curse import DEFAULT_PERIODS
 
 FAMILY_ID = "pairs_gatev_avellaneda"
 ENTRY_Z = 2.0
@@ -160,6 +161,7 @@ def build_event_table(
     slippage: float = SLIPPAGE,
     pt: float = PT_MULT,
     sl: float = SL_MULT,
+    min_events: int = MIN_EVENTS,
 ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
     """Primary entries → three-barrier labels net of round-trip costs."""
     state = causal_pairs_state(y, x, warmup=warmup)
@@ -186,14 +188,22 @@ def build_event_table(
         horizons.append(h)
         hls.append(hl)
         z5.append(state["z"][t0] - state["z"][max(t0 - 5, 0)])
-    if len(keep) < MIN_EVENTS:
-        raise ValueError(
-            f"Poucos eventos de pares ({len(keep)}; mínimo {MIN_EVENTS}). "
-            "Aumente o histórico ou relaxe o z de entrada — isto não é um ajuste de grade."
-        )
+    empty_cols = [
+        "t0", "t1", "side", "touch", "ret", "ret_net", "bin",
+        "z_delta_5", "half_life", "horizon",
+    ]
+    if len(keep) < min_events:
+        if min_events > 0:
+            raise ValueError(
+                f"Poucos eventos de pares ({len(keep)}; mínimo {min_events}). "
+                "Aumente o histórico ou relaxe o z de entrada — isto não é um ajuste de grade."
+            )
+        return pd.DataFrame({c: [] for c in empty_cols}), state
     labels = triple_barrier_on_pnl(path, keep, sides, widths, horizons, pt=pt, sl=sl, cost=cost)
-    if len(labels) < MIN_EVENTS:
-        raise ValueError(f"Poucas barreiras resolvidas ({len(labels)}; mínimo {MIN_EVENTS}).")
+    if len(labels) < min_events:
+        if min_events > 0:
+            raise ValueError(f"Poucas barreiras resolvidas ({len(labels)}; mínimo {min_events}).")
+        return pd.DataFrame({c: [] for c in empty_cols}), state
     extra = pd.DataFrame({"t0": keep, "z_delta_5": z5, "half_life": hls, "horizon": horizons})
     labels = labels.merge(extra, on="t0", how="left")
     feat_idx = labels["t0"].to_numpy(dtype=int)
@@ -301,6 +311,12 @@ def _occupy_bar_returns(
     return rets
 
 
+def _oos_slice(n: int, oos_frac: float) -> int:
+    frac = min(max(float(oos_frac), 0.1), 0.5)
+    cut = int(round(n * (1.0 - frac)))
+    return min(max(cut, 60), n - 60) if n >= 120 else n // 2
+
+
 def evaluate_pairs_meta(
     y: np.ndarray,
     x: np.ndarray,
@@ -312,6 +328,13 @@ def evaluate_pairs_meta(
     warmup: int = WARMUP,
     registry: TrialRegistry | None = None,
     family_id: str = FAMILY_ID,
+    pair_id: str | None = None,
+    periods_per_year: float = DEFAULT_PERIODS,
+    min_events: int = MIN_EVENTS,
+    min_oos_scored: int = 10,
+    apply_gate: bool = True,
+    oos_frac: float = 0.3,
+    include_bar_returns: bool = False,
 ) -> dict[str, Any]:
     """Run primary pairs → triple barrier → meta-label OOF → DSR gate.
 
@@ -322,31 +345,67 @@ def evaluate_pairs_meta(
     cost = round_trip_cost(commission, slippage)
     events, state = build_event_table(
         y, x, entry_z=entry_z, warmup=warmup, commission=commission, slippage=slippage,
+        min_events=min_events,
     )
-    oof = _meta_oof(events, threshold=threshold)
-    events = events.copy()
-    events["p_success"] = oof.to_numpy()
-    scored = events.dropna(subset=["p_success"])
-    if len(scored) < 10:
-        raise ValueError("Purga/embargo deixou poucas previsões fora da amostra.")
-
-    primary = _trade_stats(scored["ret_net"].to_numpy(), scored["bin"].to_numpy())
-    accepted = scored["p_success"].to_numpy() >= threshold
-    filtered = _trade_stats(
-        scored["ret_net"].to_numpy()[accepted],
-        scored["bin"].to_numpy()[accepted],
-    )
-    size = np.zeros(len(scored))
-    p = scored["p_success"].to_numpy()
-    size[accepted] = np.clip((p[accepted] - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
-
-    dy = np.diff(y) / y[:-1]
-    dx = np.diff(x) / x[:-1]
-    pair_ret = np.zeros(len(y))
-    pair_ret[1:] = np.where(np.isfinite(dy - state["beta"][:-1] * dx), dy - state["beta"][:-1] * dx, 0.0)
-    primary_size = np.ones(len(scored))
-    bar_primary = _occupy_bar_returns(len(y), scored, pair_ret, primary_size, cost)
-    bar_filtered = _occupy_bar_returns(len(y), scored, pair_ret, size, cost)
+    skipped_meta = False
+    skip_reason = None
+    n_oos_scored = 0
+    pair_ret = np.zeros(len(y), dtype=float)
+    if len(y) > 1:
+        dy = np.diff(y) / y[:-1]
+        dx = np.diff(x) / x[:-1]
+        pair_ret[1:] = np.where(
+            np.isfinite(dy - state["beta"][:-1] * dx),
+            dy - state["beta"][:-1] * dx,
+            0.0,
+        )
+    if events.empty:
+        skipped_meta = True
+        skip_reason = "sem eventos de entrada resolvidos"
+        scored = events
+        primary = _trade_stats(np.array([]), np.array([], dtype=int))
+        filtered = _trade_stats(np.array([]), np.array([], dtype=int))
+        bar_primary = np.zeros(len(y), dtype=float)
+        bar_filtered = np.zeros(len(y), dtype=float)
+    elif len(events) < 8:
+        skipped_meta = True
+        skip_reason = f"poucos eventos para meta OOF ({len(events)})"
+        if min_oos_scored > 0:
+            raise ValueError("Purga/embargo deixou poucas previsões fora da amostra.")
+        scored = events
+        primary = _trade_stats(events["ret_net"].to_numpy(), events["bin"].to_numpy())
+        filtered = _trade_stats(np.array([]), np.array([], dtype=int))
+        bar_primary = _occupy_bar_returns(len(y), events, pair_ret, np.ones(len(events)), cost)
+        bar_filtered = np.zeros(len(y), dtype=float)
+    else:
+        oof = _meta_oof(events, threshold=threshold)
+        events = events.copy()
+        events["p_success"] = oof.to_numpy()
+        scored = events.dropna(subset=["p_success"])
+        n_oos_scored = int(len(scored))
+        if len(scored) < min_oos_scored or (min_oos_scored == 0 and scored.empty):
+            if min_oos_scored > 0:
+                raise ValueError("Purga/embargo deixou poucas previsões fora da amostra.")
+            skipped_meta = True
+            skip_reason = f"poucas previsões OOF ({len(scored)})"
+            scored = events
+            primary = _trade_stats(events["ret_net"].to_numpy(), events["bin"].to_numpy())
+            filtered = _trade_stats(np.array([]), np.array([], dtype=int))
+            bar_primary = _occupy_bar_returns(len(y), events, pair_ret, np.ones(len(events)), cost)
+            bar_filtered = np.zeros(len(y), dtype=float)
+        else:
+            primary = _trade_stats(scored["ret_net"].to_numpy(), scored["bin"].to_numpy())
+            accepted = scored["p_success"].to_numpy() >= threshold
+            filtered = _trade_stats(
+                scored["ret_net"].to_numpy()[accepted],
+                scored["bin"].to_numpy()[accepted],
+            )
+            size = np.zeros(len(scored))
+            p = scored["p_success"].to_numpy()
+            size[accepted] = np.clip((p[accepted] - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
+            primary_size = np.ones(len(scored))
+            bar_primary = _occupy_bar_returns(len(y), scored, pair_ret, primary_size, cost)
+            bar_filtered = _occupy_bar_returns(len(y), scored, pair_ret, size, cost)
 
     close_reg = False
     if registry is None:
@@ -360,12 +419,16 @@ def evaluate_pairs_meta(
         "pt": PT_MULT,
         "sl": SL_MULT,
         "warmup": warmup,
+        "periods_per_year": periods_per_year,
     }
+    if pair_id:
+        params_common["pair_id"] = pair_id
     registry.register(
         family_id,
         {**params_common, "variant": "primary_triple_barrier"},
         returns=bar_primary[warmup:].tolist(),
         costs_included=True,
+        periods_per_year=periods_per_year,
         notes="Todas as entradas Gatev/EG, barreiras triplas, custo nas duas pernas.",
     )
     meta_trial = registry.register(
@@ -373,9 +436,12 @@ def evaluate_pairs_meta(
         {**params_common, "variant": "meta_filtered", "threshold": threshold},
         returns=bar_filtered[warmup:].tolist(),
         costs_included=True,
+        periods_per_year=periods_per_year,
         notes="Mesmo primário; só opera se P(sucesso) OOF ≥ limiar; tamanho ∝ probabilidade.",
     )
-    verdict = gate_trial(registry, family_id, costs_included=True, trial_id=meta_trial.id)
+    verdict = None
+    if apply_gate:
+        verdict = gate_trial(registry, family_id, costs_included=True, trial_id=meta_trial.id)
     n_trials = registry.count(family_id)
     if close_reg:
         registry.close()
@@ -391,43 +457,73 @@ def evaluate_pairs_meta(
         and (hit_delta > 0 or pnl_delta > 0)
     )
     eg = engle_granger(y, x)
+    cut = _oos_slice(len(y), oos_frac)
+    try:
+        eg_oos = engle_granger(y[cut:], x[cut:])
+        eg_oos_payload = {
+            "cointegrated": eg_oos["cointegrated"],
+            "beta": eg_oos["beta"],
+            "adf_tstat": eg_oos["adf_tstat"],
+            "half_life_days": eg_oos["half_life_days"],
+            "n": eg_oos["n"],
+            "cut": int(cut),
+        }
+    except ValueError as exc:
+        eg_oos_payload = {
+            "cointegrated": False,
+            "beta": None,
+            "adf_tstat": None,
+            "half_life_days": None,
+            "n": int(max(len(y) - cut, 0)),
+            "cut": int(cut),
+            "error": str(exc),
+        }
     try:
         joh = johansen(np.column_stack([y, x]), k_ar=2)
         johansen_rank = joh["rank"]
     except ValueError:
         johansen_rank = None
 
-    def _round_stats(s: dict[str, float]) -> dict[str, float]:
-        out = dict(s)
+    def _round_stats(s: dict[str, float]) -> dict[str, Any]:
+        out: dict[str, Any] = dict(s)
         out["n_trades"] = int(s["n_trades"])
         if s["n_trades"]:
             out["hit_rate"] = round(float(s["hit_rate"]), 6)
             out["net_per_trade"] = round(float(s["net_per_trade"]), 8)
             out["total_net"] = round(float(s["total_net"]), 8)
+        else:
+            out["hit_rate"] = None
+            out["net_per_trade"] = None
+            out["total_net"] = 0.0
         return out
 
-    return {
+    out: dict[str, Any] = {
         "family_id": family_id,
+        "pair_id": pair_id,
         "n_bars": int(len(y)),
         "n_events": int(len(events)),
-        "n_oos_scored": int(len(scored)),
+        "n_oos_scored": int(n_oos_scored),
         "n_trials_registered": int(n_trials),
         "entry_z": entry_z,
         "threshold": threshold,
         "round_trip_cost": cost,
+        "periods_per_year": float(periods_per_year),
         "engle_granger": {
             "cointegrated": eg["cointegrated"],
             "beta": eg["beta"],
             "adf_tstat": eg["adf_tstat"],
             "half_life_days": eg["half_life_days"],
         },
+        "engle_granger_oos": eg_oos_payload,
         "johansen_rank": johansen_rank,
         "primary": _round_stats(primary),
         "filtered": _round_stats(filtered),
         "filter_improves_hit_or_net": filter_helps,
         "hit_rate_delta": None if not np.isfinite(hit_delta) else round(float(hit_delta), 6),
         "net_per_trade_delta": None if not np.isfinite(pnl_delta) else round(float(pnl_delta), 8),
-        "gate": verdict.to_dict(),
+        "gate": None if verdict is None else verdict.to_dict(),
+        "skipped_meta": skipped_meta,
+        "skip_reason": skip_reason,
         "eligible_for_live_trading": False,
         "out_of_sample": True,
         "math": (
@@ -438,6 +534,10 @@ def evaluate_pairs_meta(
         ),
         "what_broke": list(_WHAT_BROKE),
     }
+    if include_bar_returns:
+        out["bar_primary"] = [round(float(v), 10) for v in bar_primary]
+        out["bar_filtered"] = [round(float(v), 10) for v in bar_filtered]
+    return out
 
 
 def render_report_md(result: dict[str, Any]) -> str:
