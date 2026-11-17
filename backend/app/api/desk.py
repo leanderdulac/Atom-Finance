@@ -20,6 +20,7 @@ from app.models.forward_test import evaluate as forward_evaluate
 from app.models.insider_clusters import detect as detect_insiders
 from app.models.market_making import avellaneda_stoikov_quotes, simulate_inventory
 from app.models.mean_reversion import scan as mr_scan
+from app.models.pairs_meta import evaluate_pairs_meta, synthetic_coint_pair
 from app.models.perp_arb import scan as perp_scan
 from app.models.regime import demo_payload
 from app.models.regime import evaluate as regime_evaluate
@@ -127,6 +128,18 @@ class PairRequest(BaseModel):
     exit_z: float = Field(0.5, gt=0, le=2)
     commission: float = Field(0.0005, ge=0, le=0.01)
     slippage: float = Field(0.0002, ge=0, le=0.01)
+
+
+class PairsMetaRequest(BaseModel):
+    y: list[float] | None = Field(None, min_length=120)
+    x: list[float] | None = Field(None, min_length=120)
+    demo: bool = True
+    n: int = Field(2200, ge=400, le=4000)
+    seed: int = Field(11, ge=0)
+    entry_z: float = Field(2.0, gt=0, le=5)
+    commission: float = Field(0.0005, ge=0, le=0.01)
+    slippage: float = Field(0.0002, ge=0, le=0.01)
+    threshold: float = Field(0.55, gt=0.5, lt=0.9)
 
 
 class QuotesRequest(BaseModel):
@@ -349,6 +362,30 @@ async def pairs_bt(request: Request, req: PairRequest):
             pairs_backtest,
             np.array(req.y), np.array(req.x),
             req.entry_z, req.exit_z, 60, req.commission, req.slippage,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/pairs/meta-label")
+@limiter.limit("10/minute")
+async def pairs_meta_label(request: Request, req: PairsMetaRequest):
+    """Triple-barrier + meta-label on the existing pairs signal. Paper only."""
+    if req.demo or req.y is None or req.x is None:
+        y, x = synthetic_coint_pair(n=req.n, seed=req.seed)
+    else:
+        if len(req.y) != len(req.x):
+            raise HTTPException(400, "y and x must have the same length")
+        y, x = np.array(req.y, dtype=float), np.array(req.x, dtype=float)
+    try:
+        return await _run(
+            evaluate_pairs_meta,
+            y,
+            x,
+            entry_z=req.entry_z,
+            commission=req.commission,
+            slippage=req.slippage,
+            threshold=req.threshold,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

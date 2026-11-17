@@ -543,6 +543,7 @@ export const api = {
   deskEngleGranger: <T = unknown>(data: object) => request<T>('/desk/pairs/engle-granger', { method: 'POST', body: JSON.stringify(data) }),
   deskJohansen: <T = unknown>(data: object) => request<T>('/desk/pairs/johansen', { method: 'POST', body: JSON.stringify(data) }),
   deskPairsBacktest: <T = unknown>(data: object) => request<T>('/desk/pairs/backtest', { method: 'POST', body: JSON.stringify(data) }),
+  deskPairsMetaLabel: <T = unknown>(data: object) => request<T>('/desk/pairs/meta-label', { method: 'POST', body: JSON.stringify(data) }),
   deskMarketMaking: <T = unknown>(data: object) => request<T>('/desk/market-making/quotes', { method: 'POST', body: JSON.stringify(data) }),
   deskFamaFrench: <T = unknown>(data: object) => request<T>('/desk/fama-french/decompose', { method: 'POST', body: JSON.stringify(data) }),
   deskMeanReversion: <T = unknown>(data: object) => request<T>('/desk/mean-reversion/scan', { method: 'POST', body: JSON.stringify(data) }),
