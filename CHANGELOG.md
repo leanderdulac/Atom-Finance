@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 37: staleness por modo (fresco vs atrasado)
+
+### Fixed
+- Oráculo: limiar de velhice agora depende de (classe, modo) — feeds atrasados ganham 25min em ações (atraso esperado ~15min + margem) em vez de cair na régua de 5min; modos desconhecidos com timestamp seguem na régua estrita. Resposta inclui `stale_after_s` por fonte.
+
+## [Unreleased] — pairs backtest PnL on gross notional (paper)
+
 ## [Unreleased] — round 36: vol medida, custos e calibração publicada
 
 ### Fixed

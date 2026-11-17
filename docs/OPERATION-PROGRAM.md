@@ -9,7 +9,10 @@ ships with the assumptions that produced it.
 One quote per symbol from many providers. Routing: B3 → brapi + yfinance;
 crypto → Binance + yfinance; US → yfinance + Tradier (when configured).
 The oracle arbitrates by median of the *fresh* lasts, flags disagreement
-above 50 bps, and reports staleness per source. Providers without a source
+above 50 bps, and reports staleness per source. Freshness is mode-aware:
+realtime keeps the strict bar (30s crypto, 5min equities) while delayed
+feeds get 25min on equities (expected ~15min lag + margin). Providers
+without a source
 timestamp are display-only unless alone (flagged). When every provider
 fails the answer is `usable: false` + blockers — never a synthetic price.
 

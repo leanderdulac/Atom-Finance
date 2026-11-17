@@ -108,7 +108,7 @@ export interface SimulateResult {
 export interface OracleSource {
   provider: string; ok: boolean; price?: number; bid?: number | null; ask?: number | null;
   ts?: string | null; age_s?: number | null; age_unknown?: boolean; stale?: boolean;
-  data_mode?: string; currency?: string | null; error?: string;
+  stale_after_s?: number; data_mode?: string; currency?: string | null; error?: string;
 }
 export interface OracleSpot {
   symbol: string; asset_class: string; usable: boolean; price: number | null;
