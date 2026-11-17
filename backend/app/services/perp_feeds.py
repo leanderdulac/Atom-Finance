@@ -286,6 +286,89 @@ def parse_hyperliquid_funding(payload: Any) -> list[tuple[int, float]]:
     return out
 
 
+def _finite_num(value: Any) -> float | None:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    return num if math.isfinite(num) else None
+
+
+def parse_hyperliquid_book(payload: Any) -> dict[str, Any] | None:
+    """Top-of-book from l2Book. None when empty/malformed (never raises)."""
+    if not isinstance(payload, dict):
+        logger.warning("Hyperliquid l2Book unexpected type %s", type(payload).__name__)
+        return None
+    levels = payload.get("levels")
+    if not isinstance(levels, list) or len(levels) != 2:
+        logger.warning("Hyperliquid l2Book malformed levels")
+        return None
+    bids, asks = levels
+    if not bids or not asks:
+        logger.warning("Hyperliquid l2Book one-sided book for %s", payload.get("coin"))
+        return None
+    bid, ask = _finite_px(bids[0].get("px")), _finite_px(asks[0].get("px"))
+    if bid is None or ask is None:
+        logger.warning("Hyperliquid l2Book non-finite top of book")
+        return None
+    return {
+        "coin": str(payload.get("coin", "")),
+        "time_ms": to_utc_ms(payload.get("time")),
+        "bid": bid, "ask": ask,
+        "bid_sz": _finite_num(bids[0].get("sz")),
+        "ask_sz": _finite_num(asks[0].get("sz")),
+    }
+
+
+def parse_hyperliquid_asset_ctx(payload: Any, coin: str) -> dict[str, Any] | None:
+    """mark/funding/OI row for one coin from metaAndAssetCtxs. None when absent."""
+    if not isinstance(payload, list) or len(payload) != 2:
+        logger.warning("Hyperliquid metaAndAssetCtxs unexpected shape")
+        return None
+    meta, ctxs = payload
+    universe = meta.get("universe") if isinstance(meta, dict) else None
+    if not isinstance(universe, list) or not isinstance(ctxs, list):
+        logger.warning("Hyperliquid metaAndAssetCtxs malformed")
+        return None
+    idx = next((i for i, u in enumerate(universe)
+                if isinstance(u, dict) and u.get("name") == coin), None)
+    if idx is None or idx >= len(ctxs) or not isinstance(ctxs[idx], dict):
+        logger.warning("Hyperliquid asset ctx missing for %s", coin)
+        return None
+    row = ctxs[idx]
+    mark, mid = _finite_px(row.get("markPx")), _finite_px(row.get("midPx"))
+    if mark is None and mid is None:
+        logger.warning("Hyperliquid asset ctx without mark/mid for %s", coin)
+        return None
+    return {
+        "coin": coin, "mark_px": mark, "mid_px": mid,
+        "funding": _finite_num(row.get("funding")),
+        "open_interest": _finite_num(row.get("openInterest")),
+        "oracle_px": _finite_px(row.get("oraclePx")),
+        "prev_day_px": _finite_px(row.get("prevDayPx")),
+    }
+
+
+async def fetch_hyperliquid_book(
+    symbol: str, *, client: httpx.AsyncClient,
+) -> dict[str, Any] | None:
+    """Live top-of-book with exchange timestamp. None on HTTP/empty/malformed."""
+    payload = await _hl_post(client, {"type": "l2Book", "coin": to_hyperliquid_coin(symbol)})
+    if payload is None:
+        return None
+    return parse_hyperliquid_book(payload)
+
+
+async def fetch_hyperliquid_asset_ctx(
+    symbol: str, *, client: httpx.AsyncClient,
+) -> dict[str, Any] | None:
+    """Live mark/funding/OI row. None on HTTP/empty/unknown coin."""
+    payload = await _hl_post(client, {"type": "metaAndAssetCtxs"})
+    if payload is None:
+        return None
+    return parse_hyperliquid_asset_ctx(payload, to_hyperliquid_coin(symbol))
+
+
 def infer_funding_period_ms(events: Sequence[tuple[int, float]], default_ms: int) -> int:
     if len(events) < 2:
         return default_ms

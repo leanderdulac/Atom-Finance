@@ -1,0 +1,71 @@
+[
+ {
+  "universe": [
+   {
+    "szDecimals": 5,
+    "name": "BTC",
+    "maxLeverage": 40,
+    "marginTableId": 56
+   },
+   {
+    "szDecimals": 4,
+    "name": "ETH",
+    "maxLeverage": 25,
+    "marginTableId": 55
+   },
+   {
+    "szDecimals": 2,
+    "name": "ATOM",
+    "maxLeverage": 5,
+    "marginTableId": 5
+   }
+  ]
+ },
+ [
+  {
+   "funding": "0.0000097121",
+   "openInterest": "37599.53096",
+   "prevDayPx": "65008.0",
+   "dayNtlVlm": "3914279599.4446454048",
+   "premium": "-0.0004150207",
+   "oraclePx": "65057.0",
+   "markPx": "65029.0",
+   "midPx": "65029.5",
+   "impactPxs": [
+    "65029.0",
+    "65030.0"
+   ],
+   "dayBaseVlm": "60504.7295400001"
+  },
+  {
+   "funding": "0.000007867",
+   "openInterest": "603638.0237999997",
+   "prevDayPx": "1823.7",
+   "dayNtlVlm": "753749801.2372299433",
+   "premium": "-0.0003929059",
+   "oraclePx": "1832.5",
+   "markPx": "1831.6",
+   "midPx": "1831.65",
+   "impactPxs": [
+    "1831.6",
+    "1831.78"
+   ],
+   "dayBaseVlm": "414437.2619999996"
+  },
+  {
+   "funding": "-0.0000114815",
+   "openInterest": "3200617.1399999997",
+   "prevDayPx": "1.3021",
+   "dayNtlVlm": "1051954.103051",
+   "premium": "-0.000747105",
+   "oraclePx": "1.3385",
+   "markPx": "1.3361",
+   "midPx": "1.3362",
+   "impactPxs": [
+    "1.3357",
+    "1.3375"
+   ],
+   "dayBaseVlm": "795856.4899999999"
+  }
+ ]
+]

@@ -27,7 +27,8 @@ def _patch(monkeypatch, **overrides):
     async def _boom(*a, **k):
         raise SourceError(502, "down")
     defaults = {"_fetch_yfinance": _boom, "_fetch_tradier": _boom,
-                "_fetch_brapi": _boom, "_fetch_binance": _boom}
+                "_fetch_brapi": _boom, "_fetch_binance": _boom,
+                "_fetch_hyperliquid": _boom}
     defaults.update(overrides)
     for name, fn in defaults.items():
         monkeypatch.setattr(oracle, name, fn)
@@ -118,6 +119,30 @@ async def test_spot_sole_unknown_age_is_display_only(monkeypatch):
     assert out["usable"] is True
     assert out["method"] == "sole_unknown_age"
     assert any("Idade desconhecida" in b for b in out["blockers"])
+
+
+@pytest.mark.asyncio
+async def test_spot_hyperliquid_joins_crypto_arbitration(monkeypatch):
+    async def bn(symbol):
+        return {"price": 90000.0, "bid": None, "ask": None, "ts": None,
+                "data_mode": "unverified", "currency": "USDT"}
+
+    async def hl(base):
+        assert base == "BTC"
+        return {"price": 90100.0, "bid": 90090.0, "ask": 90110.0, "ts": _ts(3),
+                "data_mode": "realtime", "currency": "USD"}
+
+    async def yf(symbol, owner):
+        return {"price": 90200.0, "bid": None, "ask": None, "ts": _ts(10),
+                "data_mode": "delayed", "currency": "USD"}
+
+    _patch(monkeypatch, _fetch_binance=bn, _fetch_hyperliquid=hl, _fetch_yfinance=yf)
+    out = await oracle.spot("BTC")
+    assert out["usable"] is True
+    assert out["price"] == 90150.0  # median of the two fresh lasts
+    assert {s["provider"] for s in out["sources"]} == {"binance", "hyperliquid", "yfinance"}
+    hl_row = next(s for s in out["sources"] if s["provider"] == "hyperliquid")
+    assert hl_row["stale"] is False and hl_row["age_unknown"] is False
 
 
 @pytest.mark.asyncio

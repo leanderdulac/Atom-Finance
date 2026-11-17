@@ -4,7 +4,8 @@ Each provider keeps its own fetcher (brapi, yfinance, Binance, Tradier).
 This module only routes, timestamps, arbitrates and reports:
 
 - routing: B3 (.SA / XXXX9) → brapi + yfinance; crypto (BTC/ETH/SOL,
-  *USDT) → binance + yfinance; anything else → yfinance + tradier (US).
+  *USDT) → binance + hyperliquid + yfinance; anything else → yfinance
+  + tradier (US).
 - freshness: a quote is fresh when its *source* timestamp is younger than
   the class threshold. Providers without a source timestamp (brapi,
   Binance spot) have unknown age: usable for display, excluded from
@@ -118,6 +119,19 @@ async def _fetch_brapi(ticker: str) -> dict[str, Any]:
             "ts": None, "data_mode": "unverified", "currency": row.get("currency", "BRL")}
 
 
+async def _fetch_hyperliquid(base: str) -> dict[str, Any]:
+    import httpx
+
+    from app.services.perp_feeds import fetch_hyperliquid_book
+    async with httpx.AsyncClient(timeout=10) as client:
+        book = await fetch_hyperliquid_book(base, client=client)
+    if not book or book.get("time_ms") is None:
+        raise SourceError(502, "Hyperliquid sem livro utilizável.")
+    ts = datetime.fromtimestamp(book["time_ms"] / 1000, tz=UTC).isoformat()
+    return {"price": (book["bid"] + book["ask"]) / 2.0, "bid": book["bid"],
+            "ask": book["ask"], "ts": ts, "data_mode": "realtime", "currency": "USD"}
+
+
 async def _fetch_binance(symbol: str) -> dict[str, Any]:
     from app.services.binance_service import BinanceService
     row = await BinanceService.get_ticker_price(symbol)
@@ -145,6 +159,7 @@ async def spot(symbol: str, owner: str = "") -> dict[str, Any]:
         base = sym[:-4] if sym.endswith("-USD") else sym[:-4] if sym.endswith("USDT") else sym
         jobs = [
             ("binance", _fetch_binance(f"{base}USDT")),
+            ("hyperliquid", _fetch_hyperliquid(base)),
             ("yfinance", _fetch_yfinance(f"{base}-USD", owner)),
         ]
     elif asset_class == "equity_br":

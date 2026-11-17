@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 35: Hyperliquid no oráculo (spot, book, mark/funding/OI)
+
+### Added
+- `fetch_hyperliquid_book` (top-of-book `l2Book` com timestamp da exchange) e `fetch_hyperliquid_asset_ctx` (`markPx`, `funding`, `openInterest` via `metaAndAssetCtxs`), keyless, com fixtures reais gravadas.
+- Oráculo cripto agora arbitra Binance + Hyperliquid + yfinance; HL entra com `data_mode: realtime` (snapshot de livro com horário da exchange).
+- 7 testes novos (parsers, fetches com client mockado, arbitragem de 3 fontes).
+
 ## [Unreleased] — round 34: guarda de tamanho não dimensionado
 
 ### Fixed
