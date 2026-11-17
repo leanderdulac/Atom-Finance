@@ -1,8 +1,7 @@
-"""Pure tests for the observability helpers (structured logging + Prometheus)."""
+"""Pure tests for the JSON log formatter (metrics live in app/api/metrics.py)."""
 import json
 import logging
 
-from app.core.metrics import _route_group, metrics_response
 from app.core.observability import JsonFormatter
 
 
@@ -26,18 +25,3 @@ def test_json_formatter_defaults_request_id():
     payload = json.loads(JsonFormatter().format(rec))
     assert payload["request_id"] == "-"  # contextvar default
     assert "exc" not in payload
-
-
-def test_route_group_is_bounded():
-    assert _route_group("/api/market-data/history/PETR4") == "api/market-data"
-    assert _route_group("/api/auth/login") == "api/auth"
-    assert _route_group("/metrics") == "metrics"
-    assert _route_group("/") == "root"
-
-
-def test_metrics_exposition_contains_http_metrics():
-    # metrics_response ignores the request object; the registry is module-level.
-    body = metrics_response(None).body.decode("utf-8")
-    assert "http_requests_total" in body
-    assert "http_request_duration_seconds" in body
-    assert "http_requests_in_progress" in body

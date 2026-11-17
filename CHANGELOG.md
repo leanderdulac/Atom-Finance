@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 31: logs JSON estruturados
+
+### Added
+- `ATOM_LOG_FORMAT=json`: uma linha JSON por log (com `request_id` e campos estruturados allowlistados) para coletores; default `text` para dev/CI. Compose prod ativa JSON.
+
+### Not
+- A metade Prometheus do PR original foi descartada no rebase: a main já tem `/api/metrics` (fail-closed com JWT) e o segundo coletor duplicaria séries com env conflitante.
+
 ## [Unreleased] — round 30: monitores de tese + calibração de intervalos
 
 ### Added
