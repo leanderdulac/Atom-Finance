@@ -55,6 +55,35 @@ def test_labels_are_net_of_round_trip_cost():
     assert set(events["touch"]).issubset({"pt", "sl", "t1"})
     assert (events["bin"] == (events["ret_net"] > 0).astype(int)).all()
     assert len(primary_entry_indices(causal_pairs_state(y, x)["z"])) >= 10
+    assert cost == 2.0 * (0.0005 + 0.0002)
+
+
+def test_pnl_is_return_on_gross_notional_not_beta_times_return():
+    from app.models.pairs_meta import frozen_gross_path, gross_notional
+
+    y = np.array([100.0, 101.0, 102.0])
+    x = np.array([10.0, 11.0, 10.5])
+    beta0 = 10.0  # ETH/SOL-like share hedge
+    g = gross_notional(100.0, 10.0, beta0)
+    path = frozen_gross_path(y, x, 0, beta0)
+    dollar = (101.0 - 100.0) - 10.0 * (11.0 - 10.0)
+    assert g == 200.0
+    np.testing.assert_allclose(path[1], dollar / g)
+    # Old bug: r = dy/y - beta * dx/x ≈ 0.01 - 10*0.10 = -0.99
+    old = (101.0 / 100.0 - 1.0) - beta0 * (11.0 / 10.0 - 1.0)
+    assert abs(old) > 0.5
+    assert abs(path[1]) < 0.1
+
+
+def test_frozen_hedge_does_not_rehedge_during_hold():
+    from app.models.pairs_meta import frozen_gross_path
+
+    y = np.array([100.0, 100.0, 110.0])
+    x = np.array([10.0, 20.0, 20.0])
+    # If β updated after x doubles, a rehedged book would look very different.
+    p = frozen_gross_path(y, x, 0, beta0=2.0)
+    g = 100.0 + 2.0 * 10.0
+    np.testing.assert_allclose(p[2], ((110.0 - 100.0) - 2.0 * (20.0 - 10.0)) / g)
 
 
 def test_evaluate_pairs_meta_oos_and_gate(tmp_path):

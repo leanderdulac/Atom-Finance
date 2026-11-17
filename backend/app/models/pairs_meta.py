@@ -46,7 +46,9 @@ DEMO_SEED = 11
 
 _WHAT_BROKE = [
     "Sinal primário é o z expanding do resíduo EG (Gatev / Avellaneda–Lee), não um Kalman.",
-    "Barreiras usam o PnL do book unitário; lote, aluguel e funding ficam de fora.",
+    "PnL é retorno sobre o nocional bruto das duas pernas (|y|+|β||x|), hedge congelado na entrada.",
+    "β expanding é OLS em nível, congelado na entrada; ainda não é Kalman.",
+    "Lote, aluguel e funding de perpétuo ficam de fora do PnL à vista.",
     "Meta-rótulo é um RF raso com purga/embargo — não é um modelo de produção.",
     "DSR ≥ 0,95 autoriza só considerar paper. eligible_for_live_trading permanece false.",
     "DGP sintético do relatório reproduz cointegração com saltos; não é um livro real.",
@@ -54,8 +56,12 @@ _WHAT_BROKE = [
 
 
 def round_trip_cost(commission: float = COMMISSION, slippage: float = SLIPPAGE) -> float:
-    """Open+close, two legs, same costing as ``pairs_backtest``."""
-    return 4.0 * (commission + slippage)
+    """Open+close, both legs, as a fraction of gross two-leg notional.
+
+    Each fill costs ``commission+slippage`` of that leg. Two legs, twice
+    (open and close) ⇒ 2×(c+s) × (|y|+|β||x|).
+    """
+    return 2.0 * (commission + slippage)
 
 
 def synthetic_coint_pair(
@@ -98,7 +104,12 @@ def _vol20(prices: np.ndarray) -> np.ndarray:
 
 
 def causal_pairs_state(y: np.ndarray, x: np.ndarray, warmup: int = WARMUP) -> dict[str, np.ndarray]:
-    """Expanding hedge, residual z and 20-bar leg vol. Information at t uses ≤ t."""
+    """Expanding hedge, residual z and 20-bar leg vol. Information at t uses ≤ t.
+
+    β_t is OLS on data[:t+1] (Gatev residual). The fill is the next bar, so
+    today's print is not in the trade PnL. During the hold, β is frozen at
+    entry — see ``frozen_gross_path``.
+    """
     y = np.asarray(y, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     if y.shape != x.shape or len(y) < warmup + 20:
@@ -127,13 +138,47 @@ def primary_entry_indices(z: np.ndarray, entry_z: float = ENTRY_Z, warmup: int =
     return np.flatnonzero(cross)
 
 
+def gross_notional(y: float, x: float, beta: float) -> float:
+    """Gross two-leg notional of +1 share of y vs β shares of x."""
+    return float(abs(y) + abs(beta) * abs(x))
+
+
 def pair_pnl_path(y: np.ndarray, x: np.ndarray, beta: np.ndarray) -> np.ndarray:
-    """Cumulative return of a +1 spread unit: long y, short β_{t-1} x."""
-    dy = np.diff(y) / y[:-1]
-    dx = np.diff(x) / x[:-1]
-    r = dy - beta[:-1] * dx
+    """Cumulative *rehedged* return on gross notional. Prefer frozen-β event paths."""
+    y = np.asarray(y, dtype=np.float64)
+    x = np.asarray(x, dtype=np.float64)
+    beta = np.asarray(beta, dtype=np.float64)
     path = np.zeros(len(y))
-    path[1:] = np.cumsum(np.where(np.isfinite(r), r, 0.0))
+    if len(y) < 2:
+        return path
+    dy = np.diff(y)
+    dx = np.diff(x)
+    b = beta[:-1]
+    gross = np.abs(y[:-1]) + np.abs(b) * np.abs(x[:-1])
+    r = np.zeros(len(dy))
+    ok = np.isfinite(dy) & np.isfinite(dx) & np.isfinite(b) & (gross > 1e-12)
+    r[ok] = (dy[ok] - b[ok] * dx[ok]) / gross[ok]
+    path[1:] = np.cumsum(r)
+    return path
+
+
+def frozen_gross_path(y: np.ndarray, x: np.ndarray, t0: int, beta0: float) -> np.ndarray:
+    """MTM path of a book opened at t0: +1 y vs β0 x, return on gross notional at t0.
+
+    path[t] = [(y_t−y_t0) − β0 (x_t−x_t0)] / (|y_t0|+|β0||x_t0|), 0 for t < t0.
+    Hedge does not update during the hold — no silent rehedge.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    x = np.asarray(x, dtype=np.float64)
+    n = len(y)
+    path = np.zeros(n)
+    if t0 < 0 or t0 >= n:
+        return path
+    g = gross_notional(float(y[t0]), float(x[t0]), float(beta0))
+    if not np.isfinite(beta0) or g < 1e-12:
+        return path
+    dollar = (y - y[t0]) - float(beta0) * (x - x[t0])
+    path[t0:] = dollar[t0:] / g
     return path
 
 
@@ -167,9 +212,9 @@ def build_event_table(
     state = causal_pairs_state(y, x, warmup=warmup)
     entries = primary_entry_indices(state["z"], entry_z=entry_z, warmup=warmup)
     cost = round_trip_cost(commission, slippage)
-    path = pair_pnl_path(y, x, state["beta"])
     sides, widths, horizons, hls, z5 = [], [], [], [], []
     keep = []
+    chunks: list[pd.DataFrame] = []
     for t0 in entries:
         if t0 >= len(y) - 3:
             continue
@@ -177,29 +222,38 @@ def build_event_table(
         side = -float(np.sign(z0))
         if side == 0:
             continue
+        b0 = float(state["beta"][t0])
+        if not np.isfinite(b0):
+            continue
         sd = state["resid_std"][t0]
-        width = float(sd / y[t0]) if np.isfinite(sd) and y[t0] > 0 else 0.0
+        g = gross_notional(float(y[t0]), float(x[t0]), b0)
+        width = float(sd / g) if np.isfinite(sd) and g > 0 else 0.0
         width = max(width, 0.003)
         hl = _event_half_life(state["spread"], int(t0))
         h = _horizon_bars(hl)
+        path = frozen_gross_path(y, x, int(t0), b0)
+        lab = triple_barrier_on_pnl(path, [int(t0)], [side], [width], [h], pt=pt, sl=sl, cost=cost)
+        if lab.empty:
+            continue
         keep.append(int(t0))
         sides.append(side)
         widths.append(width)
         horizons.append(h)
         hls.append(hl)
         z5.append(state["z"][t0] - state["z"][max(t0 - 5, 0)])
+        chunks.append(lab)
     empty_cols = [
         "t0", "t1", "side", "touch", "ret", "ret_net", "bin",
         "z_delta_5", "half_life", "horizon",
     ]
-    if len(keep) < min_events:
+    if not chunks or len(keep) < min_events:
         if min_events > 0:
             raise ValueError(
                 f"Poucos eventos de pares ({len(keep)}; mínimo {min_events}). "
                 "Aumente o histórico ou relaxe o z de entrada — isto não é um ajuste de grade."
             )
         return pd.DataFrame({c: [] for c in empty_cols}), state
-    labels = triple_barrier_on_pnl(path, keep, sides, widths, horizons, pt=pt, sl=sl, cost=cost)
+    labels = pd.concat(chunks, ignore_index=True)
     if len(labels) < min_events:
         if min_events > 0:
             raise ValueError(f"Poucas barreiras resolvidas ({len(labels)}; mínimo {min_events}).")
@@ -221,9 +275,21 @@ def build_event_table(
 FEATURE_COLS = ["z", "abs_z", "z_delta_5", "beta", "resid_std", "half_life", "y_vol20", "x_vol20"]
 
 
-def _meta_oof(events: pd.DataFrame, threshold: float = META_THRESHOLD) -> pd.Series:
-    """Purged+embargo out-of-fold P(success). Features at t0; labels use t1."""
-    X = events[FEATURE_COLS].astype(float)
+def _meta_oof(
+    events: pd.DataFrame,
+    threshold: float = META_THRESHOLD,
+    feature_cols: list[str] | None = None,
+    regime_veto: bool = False,
+) -> pd.Series:
+    """Purged+embargo out-of-fold P(success). Features at t0; labels use t1.
+
+    Regime vetoes are chosen **inside each train fold** (hit rate < 0.5 with
+    ≥6 train events in that regime) and applied only to that fold's test rows.
+    """
+    cols = [c for c in (feature_cols or FEATURE_COLS) if c in events.columns]
+    if not cols:
+        raise ValueError("Nenhuma coluna de feature disponível para o meta-rótulo")
+    X = events[cols].astype(float)
     X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     y = events["bin"].astype(int)
     # Integer time index so purge sees the actual label span on the bar clock.
@@ -234,6 +300,7 @@ def _meta_oof(events: pd.DataFrame, threshold: float = META_THRESHOLD) -> pd.Ser
     n_splits = int(min(N_SPLITS, max(2, len(events) // 15)))
     cv = PurgedKFold(n_splits, t1, pct_embargo=PCT_EMBARGO)
     oof = pd.Series(np.nan, index=index, dtype=float)
+    regimes = events["regime"].astype(str) if "regime" in events.columns else None
     for tr, te in cv.split(X):
         if len(tr) < 12 or len(te) < 3:
             continue
@@ -252,10 +319,22 @@ def _meta_oof(events: pd.DataFrame, threshold: float = META_THRESHOLD) -> pd.Ser
         clf.fit(X.iloc[tr], y.iloc[tr])
         proba = np.asarray(clf.predict_proba(X.iloc[te]))
         classes = [int(c) for c in clf.classes_]
-        if 1 in classes:
-            oof.iloc[te] = proba[:, classes.index(1)]
-        else:
-            oof.iloc[te] = 0.0
+        p1 = proba[:, classes.index(1)] if 1 in classes else np.zeros(len(te))
+        if regime_veto and regimes is not None:
+            tr_reg = regimes.iloc[tr].to_numpy()
+            tr_y = y.iloc[tr].to_numpy()
+            veto: set[str] = set()
+            for rg in np.unique(tr_reg):
+                if rg in {"nan", "None", ""}:
+                    continue
+                m = tr_reg == rg
+                if int(m.sum()) >= 6 and float(np.mean(tr_y[m])) < 0.5:
+                    veto.add(str(rg))
+            te_reg = regimes.iloc[te].to_numpy()
+            for i, rg in enumerate(te_reg):
+                if str(rg) in veto:
+                    p1[i] = 0.0
+        oof.iloc[te] = p1
     # Chronological leftover (rows never in a test fold) stay NaN → treated as abstain.
     _ = threshold
     return oof
@@ -281,13 +360,19 @@ def _trade_stats(net: np.ndarray, bins: np.ndarray) -> dict[str, float]:
 
 
 def _occupy_bar_returns(
-    n_bars: int,
+    y: np.ndarray,
+    x: np.ndarray,
     events: pd.DataFrame,
-    pair_ret: np.ndarray,
     size: np.ndarray,
     cost: float,
 ) -> np.ndarray:
-    """Non-overlapping book: first accepted event occupies until t1; bar returns net of costs."""
+    """Non-overlapping book: first accepted event occupies until t1.
+
+    Bar return is frozen-β dollar PnL over the entry gross notional.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    x = np.asarray(x, dtype=np.float64)
+    n_bars = len(y)
     rets = np.zeros(n_bars, dtype=float)
     busy_until = -1
     order = np.argsort(events["t0"].to_numpy())
@@ -301,14 +386,34 @@ def _occupy_bar_returns(
         fill = t0 + 1
         if fill >= n_bars:
             continue
+        b0 = float(events["beta"].iloc[i]) if "beta" in events.columns else 1.0
+        g0 = gross_notional(float(y[t0]), float(x[t0]), b0)
+        if g0 < 1e-12:
+            continue
         s = float(events["side"].iloc[i]) * float(size[i])
         end = min(t1, n_bars - 1)
-        sl = slice(fill, end + 1)
-        rets[sl] += s * pair_ret[sl]
+        dy = np.diff(y[t0 : end + 1])
+        dx = np.diff(x[t0 : end + 1])
+        bar_r = (dy - b0 * dx) / g0
+        rets[fill : end + 1] += s * bar_r
         rets[fill] -= 0.5 * cost * abs(size[i])
         rets[end] -= 0.5 * cost * abs(size[i])
         busy_until = end
     return rets
+
+
+def _count_overlaps(events: pd.DataFrame) -> int:
+    if events.empty:
+        return 0
+    t0 = events["t0"].to_numpy(dtype=int)
+    t1 = events["t1"].to_numpy(dtype=int)
+    n = 0
+    for i in range(len(t0)):
+        for j in range(i + 1, len(t0)):
+            if t0[j] <= t1[i] and t0[i] <= t1[j]:
+                n += 1
+                break
+    return n
 
 
 def _oos_slice(n: int, oos_frac: float) -> int:
@@ -335,10 +440,17 @@ def evaluate_pairs_meta(
     apply_gate: bool = True,
     oos_frac: float = 0.3,
     include_bar_returns: bool = False,
+    extra_features: dict[str, np.ndarray] | None = None,
+    feature_cols: list[str] | None = None,
+    regimes: np.ndarray | None = None,
+    regime_veto: bool = False,
+    register_primary: bool = True,
+    meta_variant: str = "meta_filtered",
 ) -> dict[str, Any]:
     """Run primary pairs → triple barrier → meta-label OOF → DSR gate.
 
     Parameters are the desk defaults. This function does not search a grid.
+    ``extra_features`` are bar-aligned arrays (info ≤ t) attached at t0.
     """
     y = np.asarray(y, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
@@ -347,18 +459,19 @@ def evaluate_pairs_meta(
         y, x, entry_z=entry_z, warmup=warmup, commission=commission, slippage=slippage,
         min_events=min_events,
     )
+    if not events.empty:
+        idx = events["t0"].to_numpy(dtype=int)
+        if extra_features:
+            for name, arr in extra_features.items():
+                vec = np.asarray(arr, dtype=float)
+                events[name] = vec[idx] if len(vec) == len(y) else np.nan
+        if regimes is not None:
+            reg = np.asarray(regimes)
+            events["regime"] = [str(reg[i]) if i < len(reg) else "nan" for i in idx]
     skipped_meta = False
     skip_reason = None
     n_oos_scored = 0
-    pair_ret = np.zeros(len(y), dtype=float)
-    if len(y) > 1:
-        dy = np.diff(y) / y[:-1]
-        dx = np.diff(x) / x[:-1]
-        pair_ret[1:] = np.where(
-            np.isfinite(dy - state["beta"][:-1] * dx),
-            dy - state["beta"][:-1] * dx,
-            0.0,
-        )
+    used_cols = list(feature_cols or FEATURE_COLS)
     if events.empty:
         skipped_meta = True
         skip_reason = "sem eventos de entrada resolvidos"
@@ -375,10 +488,15 @@ def evaluate_pairs_meta(
         scored = events
         primary = _trade_stats(events["ret_net"].to_numpy(), events["bin"].to_numpy())
         filtered = _trade_stats(np.array([]), np.array([], dtype=int))
-        bar_primary = _occupy_bar_returns(len(y), events, pair_ret, np.ones(len(events)), cost)
+        bar_primary = _occupy_bar_returns(y, x, events, np.ones(len(events)), cost)
         bar_filtered = np.zeros(len(y), dtype=float)
     else:
-        oof = _meta_oof(events, threshold=threshold)
+        oof = _meta_oof(
+            events,
+            threshold=threshold,
+            feature_cols=used_cols,
+            regime_veto=regime_veto,
+        )
         events = events.copy()
         events["p_success"] = oof.to_numpy()
         scored = events.dropna(subset=["p_success"])
@@ -391,7 +509,7 @@ def evaluate_pairs_meta(
             scored = events
             primary = _trade_stats(events["ret_net"].to_numpy(), events["bin"].to_numpy())
             filtered = _trade_stats(np.array([]), np.array([], dtype=int))
-            bar_primary = _occupy_bar_returns(len(y), events, pair_ret, np.ones(len(events)), cost)
+            bar_primary = _occupy_bar_returns(y, x, events, np.ones(len(events)), cost)
             bar_filtered = np.zeros(len(y), dtype=float)
         else:
             primary = _trade_stats(scored["ret_net"].to_numpy(), scored["bin"].to_numpy())
@@ -404,8 +522,8 @@ def evaluate_pairs_meta(
             p = scored["p_success"].to_numpy()
             size[accepted] = np.clip((p[accepted] - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
             primary_size = np.ones(len(scored))
-            bar_primary = _occupy_bar_returns(len(y), scored, pair_ret, primary_size, cost)
-            bar_filtered = _occupy_bar_returns(len(y), scored, pair_ret, size, cost)
+            bar_primary = _occupy_bar_returns(y, x, scored, primary_size, cost)
+            bar_filtered = _occupy_bar_returns(y, x, scored, size, cost)
 
     close_reg = False
     if registry is None:
@@ -423,17 +541,27 @@ def evaluate_pairs_meta(
     }
     if pair_id:
         params_common["pair_id"] = pair_id
-    registry.register(
-        family_id,
-        {**params_common, "variant": "primary_triple_barrier"},
-        returns=bar_primary[warmup:].tolist(),
-        costs_included=True,
-        periods_per_year=periods_per_year,
-        notes="Todas as entradas Gatev/EG, barreiras triplas, custo nas duas pernas.",
-    )
+    params_common["pnl_unit"] = "gross_two_leg_notional"
+    params_common["hedge"] = "expanding_ols_frozen_at_entry"
+    meta_trial = None
+    if register_primary:
+        registry.register(
+            family_id,
+            {**params_common, "variant": "primary_triple_barrier"},
+            returns=bar_primary[warmup:].tolist(),
+            costs_included=True,
+            periods_per_year=periods_per_year,
+            notes="Todas as entradas Gatev/EG, barreiras triplas, custo nas duas pernas, PnL/nocional bruto.",
+        )
     meta_trial = registry.register(
         family_id,
-        {**params_common, "variant": "meta_filtered", "threshold": threshold},
+        {
+            **params_common,
+            "variant": meta_variant,
+            "threshold": threshold,
+            "regime_veto": regime_veto,
+            "feature_set": ",".join(used_cols),
+        },
         returns=bar_filtered[warmup:].tolist(),
         costs_included=True,
         periods_per_year=periods_per_year,
@@ -526,9 +654,14 @@ def evaluate_pairs_meta(
         "skip_reason": skip_reason,
         "eligible_for_live_trading": False,
         "out_of_sample": True,
+        "pnl_unit": "gross_two_leg_notional",
+        "n_overlapping": 0 if events.empty else _count_overlaps(events),
+        "meta_variant": meta_variant,
+        "feature_cols": used_cols,
+        "regime_veto": regime_veto,
         "math": (
-            "Primário: z expanding do resíduo y−(α_t+β_t x), entrada |z|>entry_z, lado = −sign(z). "
-            "Rótulo: primeira barreira (alvo / stop / prazo) no PnL do book, líquido de 4×(taxa+spread). "
+            "Primário: z expanding do resíduo y−(α_t+β_t x) (OLS em data[:t+1]; fill em t+1). "
+            "Rótulo: primeira barreira no PnL com β congelado na entrada, retorno sobre |y|+|β||x|, líquido de 2×(taxa+spread). "
             "Meta: RF com PurgedKFold + embargo; P(bin=1) OOF. "
             "Gate: DSR de Bailey & López de Prado ≥ 0,95 com N registrado, assimetria, curtose e MinTRL."
         ),
@@ -542,7 +675,7 @@ def evaluate_pairs_meta(
 
 def render_report_md(result: dict[str, Any]) -> str:
     p, f = result["primary"], result["filtered"]
-    g: dict[str, Any] = result["gate"]
+    g: dict[str, Any] = result["gate"] or {}
     dsr = g.get("dsr")
     approved = bool(g.get("approved"))
     reasons = g.get("reasons") or []
@@ -587,7 +720,8 @@ Pesquisa apenas. `eligible_for_live_trading` é **false**. Nada envia ordem a co
 
 Sinal primário: resíduo de Engle–Granger com hedge expanding, entrada quando |z| > {result["entry_z"]}
 (o backtest de pares já existente no ATOM). Rótulo: três barreiras (alvo, stop, prazo) no PnL
-do book unitário, **líquido** de taxa e spread nas duas pernas (ida e volta = {result["round_trip_cost"]:.4f}).
+do book, **retorno sobre o nocional bruto** das duas pernas (|y|+|β||x|),
+**líquido** de taxa e spread (ida e volta = {result["round_trip_cost"]:.4f} do nocional bruto).
 Meta-rótulo: um RF estima P(a operação dar certo) fora da amostra com PurgedKFold e embargo.
 Abaixo do limiar {result["threshold"]} não entra; acima, o tamanho segue a probabilidade.
 

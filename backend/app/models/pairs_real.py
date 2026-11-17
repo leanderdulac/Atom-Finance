@@ -112,7 +112,7 @@ _WHAT_BROKE = [
     "Lista de pares foi fixada por tese econômica; o N inclui os que não cointegraram OOS.",
     "B3: Yahoo Chart (adjclose) porque brapi exige token para tudo salvo PETR4; fapi.binance.com devolveu 451, então ETH/SOL veio de klines públicos Binance.US à vista.",
     "ELET3.SA/ELET6.SA retornam 404 no Yahoo (rebrand); o dual-class de utilidade na lista a priori passou a ser CMIG3/CMIG4, antes de qualquer Sharpe.",
-    "Custo cripto = 4×(taker 10 bps + half-spread 2 bps); funding de perpétuo fica de fora (série é spot).",
+    "Custo = 2×(taxa+spread) do nocional bruto das duas pernas; funding de perpétuo fica de fora (série é spot).",
     "EG OOS usa o último 30% da amostra com β reestimado nesse holdout — não é um teste rolante.",
     "DSR ≥ 0,95 autoriza só considerar paper. eligible_for_live_trading permanece false.",
 ]
@@ -521,10 +521,10 @@ def run_real_universe(
             "crypto": "Binance.US GET /api/v3/klines ETHUSDT e SOLUSDT, 1d, close. Sem chave. USDM mark klines (fapi.binance.com) geo-bloqueado (HTTP 451).",
         },
         "costs": {
-            "B3_round_trip": 4.0 * (B3_COMMISSION + B3_SLIPPAGE),
-            "crypto_round_trip": round(4.0 * (CRYPTO_COMMISSION + CRYPTO_SLIPPAGE), 6),
-            "B3_note": "Mesmo costing do desk de pares: 4×(comissao 5 bps + slippage 2 bps).",
-            "crypto_note": "Spot retail: taker 10 bps + half-spread 2 bps, quatro fills (duas pernas, ida e volta).",
+            "B3_round_trip": 2.0 * (B3_COMMISSION + B3_SLIPPAGE),
+            "crypto_round_trip": round(2.0 * (CRYPTO_COMMISSION + CRYPTO_SLIPPAGE), 6),
+            "B3_note": "2×(comissao 5 bps + slippage 2 bps) do nocional bruto das duas pernas (open+close).",
+            "crypto_note": "2×(taker 10 bps + half-spread 2 bps) do nocional bruto. Funding não entra (spot).",
         },
         "pairs": pair_rows,
         "registered_trials": registered,
