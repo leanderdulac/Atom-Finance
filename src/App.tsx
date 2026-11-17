@@ -57,6 +57,7 @@ const QuantDoctrinePage = lazy(() => import('./pages/QuantDoctrinePage'));
 const ErrorMaximizerPage = lazy(() => import('./pages/ErrorMaximizerPage'));
 const ReadyOperationPage = lazy(() => import('./pages/ReadyOperationPage'));
 const MonitorPage = lazy(() => import('./pages/MonitorPage'));
+const VectorizePage = lazy(() => import('./pages/VectorizePage'));
 function RouteFallback() {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
@@ -126,6 +127,7 @@ const coreItems = [
   { label: 'Teste sequencial', path: '/forward-test', icon: <Science /> },
   { label: 'Preço × retorno', path: '/target-choice', icon: <Percent /> },
   { label: 'Maximizadora de erros', path: '/error-maximizer', icon: <Tune /> },
+  { label: 'Vetorização', path: '/vectorize', icon: <Speed /> },
   { label: 'Fontes de mercado', path: '/sources', icon: <AccountBalance /> },
   { label: 'Mesa de derivativos', path: '/derivatives', icon: <ShowChart /> },
   { label: 'Operações simuladas', path: '/paper-trades', icon: <Timeline /> },
@@ -310,6 +312,7 @@ function AppLayout() {
           <Route path="/target-choice" element={<ProtectedRoute><TargetChoicePage /></ProtectedRoute>} />
           <Route path="/error-maximizer" element={<ProtectedRoute><ErrorMaximizerPage /></ProtectedRoute>} />
           <Route path="/quant-doctrine" element={<ProtectedRoute><QuantDoctrinePage /></ProtectedRoute>} />
+          <Route path="/vectorize" element={<ProtectedRoute><VectorizePage /></ProtectedRoute>} />
           <Route path="/pricing" element={<ProtectedRoute><PricingPage /></ProtectedRoute>} />
           <Route path="/strategies" element={<ProtectedRoute><StrategiesPage /></ProtectedRoute>} />
           <Route path="/risk" element={<ProtectedRoute><RiskPage /></ProtectedRoute>} />

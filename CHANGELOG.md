@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — round 33: lab de vetorização (loops em série de preço)
+
+`for i in range(len(df))` com `.iloc[i]` encerra a avaliação numa mesa. Não é estilo: é 50–100× mais lento, look-ahead i vs i-1, e 10 vs 10.000 hipóteses por dia.
+
+### Added
+- `POST /api/desk/vectorize/evaluate`: máscara cheap×momentum em loop vs broadcasting, Z-score transversal (`X - mean(axis=1)`), Sharpe no mesmo bar vs t+1. `eligible_for_live_trading` permanece false.
+- UI `/vectorize`. Doutrina `ATOM-QUANT-1.0` tenet 6 (ponto 6 do system prompt); `analyze_quant` / `ai_proxy` / QuantMind recusam o loop.
+
 ## [Unreleased] — round 32: ETH/SOL paper stat-arb + perp feeds sem chave
 
 ### Added
