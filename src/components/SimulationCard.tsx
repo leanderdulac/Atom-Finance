@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress,
-  Slider, Stack, Typography,
+  Slider, Stack, TextField, Typography,
 } from '@mui/material';
 import { api, type SimulateResult } from '../services/api';
 
@@ -15,8 +15,13 @@ type Props = {
   horizonLabel: string;
   size: number;
   sizeNote?: string;
+  measuredVol: number | null;
+  costDefault: number | null;
+  costMethod?: string;
   ccy: 'BRL' | 'USD';
 };
+
+const clampVolPct = (v: number) => Math.min(150, Math.max(5, Math.round(v)));
 
 const money = (n: number, ccy: 'BRL' | 'USD') =>
   `${ccy === 'USD' ? 'US$' : 'R$'} ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -24,7 +29,11 @@ const pct1 = (n: number) => `${(n * 100).toFixed(1).replace('.', ',')}%`;
 
 /** Honest Monte Carlo over the assembled levels: distributions, not promises. */
 export default function SimulationCard(p: Props) {
-  const [volPct, setVolPct] = useState(30);
+  const measuredPct = p.measuredVol != null && Number.isFinite(p.measuredVol) && p.measuredVol > 0
+    ? clampVolPct(p.measuredVol * 100)
+    : null;
+  const [volPct, setVolPct] = useState(measuredPct ?? 30);
+  const [cost, setCost] = useState(p.costDefault != null && p.costDefault >= 0 ? String(p.costDefault) : '0');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sim, setSim] = useState<SimulateResult | null>(null);
@@ -34,6 +43,7 @@ export default function SimulationCard(p: Props) {
   async function run() {
     setBusy(true);
     setError('');
+    const costTotal = Number(String(cost).replace(',', '.'));
     try {
       const out = await api.clientSimulate({
         S0: p.s0,
@@ -46,7 +56,7 @@ export default function SimulationCard(p: Props) {
         n_paths: 5000,
         seed: 7,
         size: p.size,
-        cost_total: 0,
+        cost_total: Number.isFinite(costTotal) && costTotal >= 0 ? costTotal : 0,
       });
       setSim(out);
     } catch (e) {
@@ -61,7 +71,8 @@ export default function SimulationCard(p: Props) {
       <CardContent>
         <Typography variant="subtitle1" fontWeight={700}>Simulação Monte Carlo</Typography>
         <Typography variant="body2" color="text.secondary">
-          5.000 caminhos GBM sobre entrada, stop e alvo · {p.horizonLabel} · antes de custos.
+          5.000 caminhos GBM sobre entrada, stop e alvo · {p.horizonLabel} · vol inicial medida
+          no histórico{p.costMethod ? ` · custos: ${p.costMethod}` : ''}.
           Frequência em caminhos simulados — não é certeza sobre o mercado.
         </Typography>
         {!sized ? (
@@ -71,13 +82,22 @@ export default function SimulationCard(p: Props) {
         ) : (
           <>
             <Box sx={{ mt: 2, maxWidth: 420 }}>
-              <Typography variant="body2">Vol anual: {volPct}%</Typography>
+              <Typography variant="body2">
+                Vol anual: {volPct}%{measuredPct != null ? ` (medida ${measuredPct}%)` : ' (padrão 30%: sem medida)'}
+              </Typography>
               <Slider
                 aria-label="Volatilidade anual"
                 value={volPct}
                 min={5}
                 max={150}
                 onChange={(_, v) => setVolPct(v as number)}
+              />
+            </Box>
+            <Box sx={{ mt: 1, maxWidth: 220 }}>
+              <TextField
+                fullWidth size="small" label={`Custos ida-volta (${p.ccy === 'USD' ? 'US$' : 'R$'})`}
+                value={cost} onChange={(e) => setCost(e.target.value)}
+                inputProps={{ inputMode: 'decimal' }}
               />
             </Box>
             <Button variant="outlined" onClick={run} disabled={busy} sx={{ mt: 1 }}>

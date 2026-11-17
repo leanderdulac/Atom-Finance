@@ -13,6 +13,7 @@ from app.core.security import get_current_user, hash_password
 from app.db import database
 from app.models.ready_operation import (
     MarketView,
+    _cost_estimate,
     assemble,
     assemble_basket,
     basket_weights,
@@ -261,6 +262,22 @@ def test_spot_trending_up_is_bullish():
     assert "e+" not in out["invalidation_reason"].lower()
     assert "EWMA" in {row["part"] for row in out["arsenal"]}
     assert "não é recomendação" in out["disclaimer"].lower() or "Não é recomendação" in out["disclaimer"]
+
+
+def test_cost_estimate_is_20bps_of_notional_or_absent():
+    hist = _history(start=40, daily=0.005)
+    spot = hist["close"][-1]
+    view = MarketView(quote=_quote(spot), history=hist, regime={"regime": "trending", "kill_switch": {"armed": False}})
+    out = assemble("PETR4", "spot", "days", market=view)
+    assert out["status"] == "ready"
+    cost = out["cost_estimate"]
+    assert cost["ccy"] == "BRL"
+    assert cost["round_trip_cash"] == round(out["suggested_size"]["notional_brl"] * 0.002, 2)
+    assert "10bps" in cost["method"]
+    # Crypto without FX has no BRL notional and no USD size: no invented zero.
+    assert _cost_estimate(None, None)["round_trip_cash"] is None
+    assert _cost_estimate(None, 1000.0) == {"round_trip_cash": 2.0, "ccy": "USD",
+                                            "method": "hipótese fixa 10bps/lado sobre o nocional"}
 
 
 def test_synthetic_quote_is_refused():

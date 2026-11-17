@@ -261,6 +261,24 @@ def _size(
     return float(round(qty, 8)), budget, True, None
 
 
+def _cost_estimate(notional_brl: float | None, notional_usd: float | None) -> dict:
+    """Round-trip cost hypothesis: 20 bps on the notional (10 bps/side).
+
+    A documented retail-liquid guess, not a measurement. Without a notional
+    there is no estimate — the caller must say so instead of inventing zero.
+    """
+    for value, ccy in ((notional_brl, "BRL"), (notional_usd, "USD")):
+        try:
+            cash = abs(float(value)) * 0.002 if value is not None else 0.0
+        except (TypeError, ValueError):
+            continue
+        if cash > 0:
+            return {"round_trip_cash": round(cash, 2), "ccy": ccy,
+                    "method": "hipótese fixa 10bps/lado sobre o nocional"}
+    return {"round_trip_cash": None, "ccy": None,
+            "method": "sem nocional — sem estimativa"}
+
+
 def _notional_brl(
     instrument: str,
     qty: float,
@@ -949,6 +967,8 @@ def assemble(
     payload["why"] = client_facing_why(payload["why_fallback"], payload["why_fallback"])
     if garch_fit:
         payload["volatility"]["garch_persistence"] = garch_fit.get("persistence")
+    _size_block = payload.get("suggested_size") or {}
+    payload["cost_estimate"] = _cost_estimate(_size_block.get("notional_brl"), _size_block.get("notional_usd"))
     return payload
 
 
@@ -1152,6 +1172,8 @@ def assemble_basket(
     }
     payload["why_fallback"] = _why_fallback(payload)
     payload["why"] = client_facing_why(payload["why_fallback"], payload["why_fallback"])
+    _size_block = payload.get("suggested_size") or {}
+    payload["cost_estimate"] = _cost_estimate(_size_block.get("notional_brl"), _size_block.get("notional_usd"))
     return payload
 
 

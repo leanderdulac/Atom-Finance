@@ -68,6 +68,8 @@ type ReadyBody = {
   quote_currency?: 'BRL' | 'USD';
   fx_usd_brl?: { rate: number; source?: string; stale?: boolean };
   suggested_size?: SuggestedSize;
+  volatility?: { ewma?: number | null; garch?: number | null; used?: number | null };
+  cost_estimate?: { round_trip_cash: number | null; ccy?: string | null; method?: string };
   confidence?: string;
   invalidation_reason?: string;
   why?: string;
@@ -573,6 +575,9 @@ export default function ReadyOperationPage() {
                   horizonLabel={result.horizon_label || horizon}
                   size={result.suggested_size?.quantity ?? result.quantity ?? 0}
                   sizeNote={result.suggested_size?.paper_block ?? undefined}
+                  measuredVol={result.volatility?.used ?? null}
+                  costDefault={result.cost_estimate?.round_trip_cash ?? null}
+                  costMethod={result.cost_estimate?.method ?? undefined}
                   ccy={result.quote_currency === 'USD' ? 'USD' : 'BRL'}
                 />
               </>
