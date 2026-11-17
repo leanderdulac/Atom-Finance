@@ -37,6 +37,7 @@ should read this before the feature list. Nothing below is live-trading eligible
 |---|---|---|
 | Heston 1993 | CF Europeans, Euler MC, **multiexpiry calibration** (vega weights, seeded restarts, per-expiry RMSE, calendar diagnostics, chain→quotes adapter) | Single-expiry fits still unidentified; calendar arb is diagnosed, not constrained; mid/last only, no bid/ask |
 | Engle–Granger 1987 | OLS hedge, ADF residual, lagged pairs backtest on **gross two-leg notional**, β frozen at entry | Full-sample β still leaks in the EG diagnostic; expanding z is a toy; **no broker**. Share-count β × percent returns is fixed. |
+| Pares + meta-rótulo / DSR gate | Triple-barrier net of costs, RF OOF with purge+embargo, TrialRegistry, DSR ≥ 0.95 paper gate | Synthetic DGP in the first report (N=2). Real-data report uses Yahoo/Binance.US fixtures; B3 pairs fail EG OOS; ETH/SOL +7% was β×return (audited −1.4% on gross notional); candles vs funding/OI/BTC-lead vs regime-veto all fail DSR (N=4); RF is shallow; **no broker** |
 | ETH/SOL paper stat-arb | EG gate on warmup prefix + OU half-life + rolling z + paper bid/ask book + kill flatten; funding accrued when the venue feed supplies a rate | Prefix gate is still research, not a rolling live rank test; synthesized book is not firm; funding history is not the live funding path; **no broker** |
 | Johansen 1991 | Trace test, rank, first β̂ | Asymptotic 5% table; lag p is not AIC-selected |
 | Avellaneda–Stoikov 2008 | Reservation price, optimal spread, Poisson inventory | Constant σ; unidentified A,k; no queue |

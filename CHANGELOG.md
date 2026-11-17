@@ -8,6 +8,18 @@ All notable changes to this project are documented here. Format loosely follows 
 - `cointegration.pairs_backtest` (desk `POST /api/desk/pairs/backtest`) applied OLS share-count β to percent returns (`r_y − β r_x`) and rehedged every bar. ETH/SOL wiped the simulated book (−100%, vol ~618%). PnL is now `(Δy − β0 Δx) / (|y|+|β0||x|)`, β frozen at entry, fill t+1, one-way cost (c+s) of gross two-leg notional. `eligible_for_live_trading` permanece false.
 - ETH/SOL paper pipeline (`stat_arb_paper.PaperBook.mark`) already marked cash + qty×mid with `entry_beta` frozen; regression test locks that it is not `r_y − β r_x`.
 
+## [Unreleased] — round 36: barreiras triplas, meta-rótulo e portão DSR (paper)
+
+### Added
+- Registro append-only de toda variante testada (`app.models.afml.trials.TrialRegistry`) e portão de promoção a paper: DSR de Bailey & López de Prado ≥ 0,95, retornos líquidos de taxa/spread, assimetria, curtose e MinTRL. PSR/DSR continuam em `winners_curse` — o gate não duplica a fórmula.
+- Rótulos de três barreiras (alvo, stop, prazo) líquidos de custo, no lugar de «subiu ou desceu», e meta-rótulo com PurgedKFold + embargo: o primário dá a direção; o segundo modelo estima P(a operação dar certo). Abaixo do limiar não entra; acima, define o tamanho.
+- Primeiro teste no sinal de pares já existente (Gatev / Avellaneda–Lee, cointegração expanding). Relatório reproduzível em `docs/reports/pairs-meta-label-oos.md`. `POST /api/desk/pairs/meta-label`. `eligible_for_live_trading` permanece false.
+- Mesma receita em dados reais (B3 diário + ETH/SOL à vista), pares escolhidos por tese econômica a priori, N = todo par × primário e meta. Snapshot versionado em `backend/tests/fixtures/pairs_real/`. Relatório `docs/reports/pairs-meta-label-oos-real.md`. Paper only.
+- Auditoria ETH/SOL + features informativas (taker Binance.US, funding OKX+Hyperliquid, OI OKX, BTC lead) e veto de regime escolhido só no fold de treino. Família `pairs_eth_sol_audit`, N=4. Relatório `docs/reports/pairs-eth-sol-audit-oos.md`. Nenhuma variante passou no DSR. `eligible_for_live_trading` permanece false.
+
+### Fixed
+- PnL de pares era `r_y − β_shares · r_x` (β OLS em nível). Passa a ser retorno sobre o nocional bruto das duas pernas, hedge congelado na entrada, custo 2×(taxa+spread) do bruto. O +7,2% líquido/trade do ETH/SOL era o bug de unidade; o número auditado é −1,366%.
+
 ## [Unreleased] — round 35: Hyperliquid no oráculo (spot, book, mark/funding/OI)
 
 ### Added

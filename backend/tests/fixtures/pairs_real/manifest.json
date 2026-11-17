@@ -1,0 +1,125 @@
+{
+  "fetched_at": "2026-11-17T15:27:36Z",
+  "family_id": "pairs_real_gatev_avellaneda",
+  "interval": "1d",
+  "universe": [
+    {
+      "pair_id": "PETR3_PETR4",
+      "y": "PETR3",
+      "x": "PETR4",
+      "venue": "B3",
+      "thesis": "Mesmo emissor (Petrobras ON/PN): dual-class, mesmo fluxo de caixa."
+    },
+    {
+      "pair_id": "CMIG3_CMIG4",
+      "y": "CMIG3",
+      "x": "CMIG4",
+      "venue": "B3",
+      "thesis": "Mesmo emissor (Cemig ON/PN): dual-class de utilidade el\u00e9trica."
+    },
+    {
+      "pair_id": "ITUB4_BBDC4",
+      "y": "ITUB4",
+      "x": "BBDC4",
+      "venue": "B3",
+      "thesis": "Dois maiores bancos privados: mesmo ciclo de cr\u00e9dito e juros."
+    },
+    {
+      "pair_id": "GGBR4_USIM5",
+      "y": "GGBR4",
+      "x": "USIM5",
+      "venue": "B3",
+      "thesis": "Siderurgia: mesmo ciclo de min\u00e9rio, a\u00e7o e c\u00e2mbio."
+    },
+    {
+      "pair_id": "VALE3_CSNA3",
+      "y": "VALE3",
+      "x": "CSNA3",
+      "venue": "B3",
+      "thesis": "Cadeia de min\u00e9rio/a\u00e7o (mineradora vs sider\u00fargica); tese mais fraca, inclu\u00edda a priori."
+    },
+    {
+      "pair_id": "ETHUSDT_SOLUSDT",
+      "y": "ETHUSDT",
+      "x": "SOLUSDT",
+      "venue": "crypto_spot",
+      "thesis": "ETH vs SOL \u00e0 vista: betas de risco cripto; o paper ETH/SOL do ATOM j\u00e1 usa este par."
+    }
+  ],
+  "tickers": {
+    "PETR3": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "PETR4": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "CMIG3": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "CMIG4": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "ITUB4": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "BBDC4": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "GGBR4": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "USIM5": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "VALE3": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "CSNA3": {
+      "n": 1249,
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "source": "yahoo_chart"
+    },
+    "ETHUSDT": {
+      "n": 1800,
+      "start": "2021-12-14",
+      "end": "2026-11-17",
+      "source": "binance_us_spot_klines"
+    },
+    "SOLUSDT": {
+      "n": 1800,
+      "start": "2021-12-14",
+      "end": "2026-11-17",
+      "source": "binance_us_spot_klines"
+    }
+  },
+  "license_note": "Snapshots EOD para reproduzir o relat\u00f3rio. Yahoo Chart e Binance.US klines s\u00e3o endpoints p\u00fablicos sem chave. brapi PETR4 p\u00fablico; demais tickers B3 sem token 401.",
+  "eligible_for_live_trading": false
+}

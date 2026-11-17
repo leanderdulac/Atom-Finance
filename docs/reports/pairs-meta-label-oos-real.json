@@ -1,0 +1,584 @@
+{
+  "family_id": "pairs_real_gatev_avellaneda",
+  "eligible_for_live_trading": false,
+  "out_of_sample": true,
+  "fetched_at": "2026-11-17T15:27:36Z",
+  "interval": "1d",
+  "oos_frac": 0.3,
+  "n_pairs_tested": 6,
+  "n_trials_registered": 12,
+  "n_trials_expected": 12,
+  "selection": "Pares escolhidos por tese econ\u00f4mica antes de olhar resultado. Nenhuma variante extra (z, limiar, horizonte) foi gradeada.",
+  "sources": {
+    "B3": "Yahoo Finance Chart v8, intervalo 1d, campo adjclose, range 5y. brapi tentado; s\u00f3 PETR4 responde sem token.",
+    "crypto": "Binance.US GET /api/v3/klines ETHUSDT e SOLUSDT, 1d, close. Sem chave. USDM mark klines (fapi.binance.com) geo-bloqueado (HTTP 451)."
+  },
+  "costs": {
+    "B3_round_trip": 0.0014,
+    "crypto_round_trip": 0.0024,
+    "B3_note": "2\u00d7(comissao 5 bps + slippage 2 bps) do nocional bruto das duas pernas (open+close).",
+    "crypto_note": "2\u00d7(taker 10 bps + half-spread 2 bps) do nocional bruto. Funding n\u00e3o entra (spot)."
+  },
+  "pairs": [
+    {
+      "pair_id": "PETR3_PETR4",
+      "y": "PETR3",
+      "x": "PETR4",
+      "venue": "B3",
+      "thesis": "Mesmo emissor (Petrobras ON/PN): dual-class, mesmo fluxo de caixa.",
+      "source_y": "yahoo_chart",
+      "source_x": "yahoo_chart",
+      "field_y": "adjclose",
+      "field_x": "adjclose",
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "n_bars": 1249,
+      "round_trip_cost": 0.0014,
+      "engle_granger": {
+        "cointegrated": false,
+        "beta": 1.09468509,
+        "adf_tstat": -2.7199,
+        "half_life_days": 30.13
+      },
+      "engle_granger_oos": {
+        "cointegrated": false,
+        "beta": 1.16282581,
+        "adf_tstat": -2.4728,
+        "half_life_days": 10.37,
+        "n": 375,
+        "cut": 874
+      },
+      "johansen_rank": 0,
+      "cointegrated_oos": false,
+      "n_events": 40,
+      "n_oos_scored": 40,
+      "skipped_meta": false,
+      "skip_reason": null,
+      "primary": {
+        "n_trades": 40,
+        "hit_rate": 0.65,
+        "net_per_trade": 0.00181869,
+        "total_net": 0.07274747
+      },
+      "filtered": {
+        "n_trades": 6,
+        "hit_rate": 0.333333,
+        "net_per_trade": -0.00362893,
+        "total_net": -0.0217736
+      },
+      "filter_improves_hit_or_net": false,
+      "hit_rate_delta": -0.316667,
+      "net_per_trade_delta": -0.00544762
+    },
+    {
+      "pair_id": "CMIG3_CMIG4",
+      "y": "CMIG3",
+      "x": "CMIG4",
+      "venue": "B3",
+      "thesis": "Mesmo emissor (Cemig ON/PN): dual-class de utilidade el\u00e9trica.",
+      "source_y": "yahoo_chart",
+      "source_x": "yahoo_chart",
+      "field_y": "adjclose",
+      "field_x": "adjclose",
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "n_bars": 1249,
+      "round_trip_cost": 0.0014,
+      "engle_granger": {
+        "cointegrated": false,
+        "beta": 1.23370142,
+        "adf_tstat": -2.0297,
+        "half_life_days": 58.96
+      },
+      "engle_granger_oos": {
+        "cointegrated": false,
+        "beta": 1.38980415,
+        "adf_tstat": -1.2604,
+        "half_life_days": 40.84,
+        "n": 375,
+        "cut": 874
+      },
+      "johansen_rank": 0,
+      "cointegrated_oos": false,
+      "n_events": 37,
+      "n_oos_scored": 37,
+      "skipped_meta": false,
+      "skip_reason": null,
+      "primary": {
+        "n_trades": 37,
+        "hit_rate": 0.459459,
+        "net_per_trade": -0.00618065,
+        "total_net": -0.22868423
+      },
+      "filtered": {
+        "n_trades": 1,
+        "hit_rate": 0.0,
+        "net_per_trade": -0.02097925,
+        "total_net": -0.02097925
+      },
+      "filter_improves_hit_or_net": false,
+      "hit_rate_delta": -0.459459,
+      "net_per_trade_delta": -0.01479859
+    },
+    {
+      "pair_id": "ITUB4_BBDC4",
+      "y": "ITUB4",
+      "x": "BBDC4",
+      "venue": "B3",
+      "thesis": "Dois maiores bancos privados: mesmo ciclo de cr\u00e9dito e juros.",
+      "source_y": "yahoo_chart",
+      "source_x": "yahoo_chart",
+      "field_y": "adjclose",
+      "field_x": "adjclose",
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "n_bars": 1249,
+      "round_trip_cost": 0.0014,
+      "engle_granger": {
+        "cointegrated": false,
+        "beta": 2.66074791,
+        "adf_tstat": -1.4227,
+        "half_life_days": 209.65
+      },
+      "engle_granger_oos": {
+        "cointegrated": false,
+        "beta": 2.23217726,
+        "adf_tstat": -0.6585,
+        "half_life_days": 363.12,
+        "n": 375,
+        "cut": 874
+      },
+      "johansen_rank": 0,
+      "cointegrated_oos": false,
+      "n_events": 16,
+      "n_oos_scored": 0,
+      "skipped_meta": true,
+      "skip_reason": "poucas previs\u00f5es OOF (0)",
+      "primary": {
+        "n_trades": 16,
+        "hit_rate": 0.5,
+        "net_per_trade": -0.00700547,
+        "total_net": -0.11208753
+      },
+      "filtered": {
+        "n_trades": 0,
+        "hit_rate": null,
+        "net_per_trade": null,
+        "total_net": 0.0
+      },
+      "filter_improves_hit_or_net": false,
+      "hit_rate_delta": null,
+      "net_per_trade_delta": null
+    },
+    {
+      "pair_id": "GGBR4_USIM5",
+      "y": "GGBR4",
+      "x": "USIM5",
+      "venue": "B3",
+      "thesis": "Siderurgia: mesmo ciclo de min\u00e9rio, a\u00e7o e c\u00e2mbio.",
+      "source_y": "yahoo_chart",
+      "source_x": "yahoo_chart",
+      "field_y": "adjclose",
+      "field_x": "adjclose",
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "n_bars": 1249,
+      "round_trip_cost": 0.0014,
+      "engle_granger": {
+        "cointegrated": false,
+        "beta": -0.01903258,
+        "adf_tstat": -1.9111,
+        "half_life_days": 107.57
+      },
+      "engle_granger_oos": {
+        "cointegrated": false,
+        "beta": 1.36168842,
+        "adf_tstat": -0.7743,
+        "half_life_days": 135.47,
+        "n": 375,
+        "cut": 874
+      },
+      "johansen_rank": 0,
+      "cointegrated_oos": false,
+      "n_events": 22,
+      "n_oos_scored": 0,
+      "skipped_meta": true,
+      "skip_reason": "poucas previs\u00f5es OOF (0)",
+      "primary": {
+        "n_trades": 22,
+        "hit_rate": 0.454545,
+        "net_per_trade": -0.00360189,
+        "total_net": -0.07924153
+      },
+      "filtered": {
+        "n_trades": 0,
+        "hit_rate": null,
+        "net_per_trade": null,
+        "total_net": 0.0
+      },
+      "filter_improves_hit_or_net": false,
+      "hit_rate_delta": null,
+      "net_per_trade_delta": null
+    },
+    {
+      "pair_id": "VALE3_CSNA3",
+      "y": "VALE3",
+      "x": "CSNA3",
+      "venue": "B3",
+      "thesis": "Cadeia de min\u00e9rio/a\u00e7o (mineradora vs sider\u00fargica); tese mais fraca, inclu\u00edda a priori.",
+      "source_y": "yahoo_chart",
+      "source_x": "yahoo_chart",
+      "field_y": "adjclose",
+      "field_x": "adjclose",
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "n_bars": 1249,
+      "round_trip_cost": 0.0014,
+      "engle_granger": {
+        "cointegrated": false,
+        "beta": -0.86558551,
+        "adf_tstat": -2.5968,
+        "half_life_days": 82.27
+      },
+      "engle_granger_oos": {
+        "cointegrated": false,
+        "beta": -1.8297254,
+        "adf_tstat": -1.3664,
+        "half_life_days": 89.98,
+        "n": 375,
+        "cut": 874
+      },
+      "johansen_rank": 0,
+      "cointegrated_oos": false,
+      "n_events": 21,
+      "n_oos_scored": 0,
+      "skipped_meta": true,
+      "skip_reason": "poucas previs\u00f5es OOF (0)",
+      "primary": {
+        "n_trades": 21,
+        "hit_rate": 0.47619,
+        "net_per_trade": -0.00204893,
+        "total_net": -0.04302758
+      },
+      "filtered": {
+        "n_trades": 0,
+        "hit_rate": null,
+        "net_per_trade": null,
+        "total_net": 0.0
+      },
+      "filter_improves_hit_or_net": false,
+      "hit_rate_delta": null,
+      "net_per_trade_delta": null
+    },
+    {
+      "pair_id": "ETHUSDT_SOLUSDT",
+      "y": "ETHUSDT",
+      "x": "SOLUSDT",
+      "venue": "crypto_spot",
+      "thesis": "ETH vs SOL \u00e0 vista: betas de risco cripto; o paper ETH/SOL do ATOM j\u00e1 usa este par.",
+      "source_y": "binance_us_spot_klines",
+      "source_x": "binance_us_spot_klines",
+      "field_y": "close",
+      "field_x": "close",
+      "start": "2021-12-14",
+      "end": "2026-11-17",
+      "n_bars": 1800,
+      "round_trip_cost": 0.0024000000000000002,
+      "engle_granger": {
+        "cointegrated": false,
+        "beta": 11.10447549,
+        "adf_tstat": -3.319,
+        "half_life_days": 60.56
+      },
+      "engle_granger_oos": {
+        "cointegrated": true,
+        "beta": 17.07685723,
+        "adf_tstat": -3.6007,
+        "half_life_days": 21.94,
+        "n": 540,
+        "cut": 1260
+      },
+      "johansen_rank": 0,
+      "cointegrated_oos": true,
+      "n_events": 35,
+      "n_oos_scored": 35,
+      "skipped_meta": false,
+      "skip_reason": null,
+      "primary": {
+        "n_trades": 35,
+        "hit_rate": 0.457143,
+        "net_per_trade": -0.01365928,
+        "total_net": -0.47807476
+      },
+      "filtered": {
+        "n_trades": 9,
+        "hit_rate": 0.333333,
+        "net_per_trade": -0.0312974,
+        "total_net": -0.28167663
+      },
+      "filter_improves_hit_or_net": false,
+      "hit_rate_delta": -0.12381,
+      "net_per_trade_delta": -0.01763813
+    }
+  ],
+  "registered_trials": [
+    {
+      "id": 1,
+      "pair_id": "PETR3_PETR4",
+      "variant": "primary_triple_barrier",
+      "sharpe": 0.12074319772128872,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 2,
+      "pair_id": "PETR3_PETR4",
+      "variant": "meta_filtered",
+      "sharpe": -0.34227437504656194,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 3,
+      "pair_id": "CMIG3_CMIG4",
+      "variant": "primary_triple_barrier",
+      "sharpe": -0.2792069947260129,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 4,
+      "pair_id": "CMIG3_CMIG4",
+      "variant": "meta_filtered",
+      "sharpe": -0.3186090330580472,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 5,
+      "pair_id": "ITUB4_BBDC4",
+      "variant": "primary_triple_barrier",
+      "sharpe": -0.5513631344159714,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 6,
+      "pair_id": "ITUB4_BBDC4",
+      "variant": "meta_filtered",
+      "sharpe": 0.0,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 7,
+      "pair_id": "GGBR4_USIM5",
+      "variant": "primary_triple_barrier",
+      "sharpe": -0.5737107283195482,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 8,
+      "pair_id": "GGBR4_USIM5",
+      "variant": "meta_filtered",
+      "sharpe": 0.0,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 9,
+      "pair_id": "VALE3_CSNA3",
+      "variant": "primary_triple_barrier",
+      "sharpe": -0.22323380382361685,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 10,
+      "pair_id": "VALE3_CSNA3",
+      "variant": "meta_filtered",
+      "sharpe": 0.0,
+      "n_obs": 1189,
+      "costs_included": true
+    },
+    {
+      "id": 11,
+      "pair_id": "ETHUSDT_SOLUSDT",
+      "variant": "primary_triple_barrier",
+      "sharpe": -0.29379535845437277,
+      "n_obs": 1740,
+      "costs_included": true
+    },
+    {
+      "id": 12,
+      "pair_id": "ETHUSDT_SOLUSDT",
+      "variant": "meta_filtered",
+      "sharpe": -0.8602867307015772,
+      "n_obs": 1740,
+      "costs_included": true
+    }
+  ],
+  "books": {
+    "b3_equal_weight_meta": {
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "n_bars": 1249,
+      "total_net": -0.00022826
+    },
+    "eth_sol_meta": {
+      "start": "2021-12-14",
+      "end": "2026-11-17",
+      "n_bars": 1800,
+      "total_net": -0.02089828
+    },
+    "combined_equal_weight_meta": {
+      "start": "2021-11-17",
+      "end": "2026-11-17",
+      "n_bars": 1819,
+      "total_net": -0.00926791
+    }
+  },
+  "gate_b3_meta": {
+    "approved": false,
+    "reasons": [
+      "DSR=0.0042 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.456, SR*=0.676, N=9.95424).",
+      "SR\u0302=-0.456 n\u00e3o supera o Sharpe esperado da busca (SR*=0.676); alongar a mesma amostra n\u00e3o resolve."
+    ],
+    "observed_sharpe": -0.455848,
+    "psr": 0.14453,
+    "dsr": 0.004238,
+    "sr_star": 0.676035,
+    "min_trl": null,
+    "n_obs": 1249,
+    "n_trials": 12.0,
+    "n_eff": 9.954241745690322,
+    "se_hat": 0.429971,
+    "skew": -3.359831,
+    "excess_kurtosis": 56.454393,
+    "costs_included": true,
+    "threshold": 0.95,
+    "details": {
+      "psr": {
+        "observed_sharpe": -0.455848,
+        "sr_benchmark": 0.0,
+        "psr": 0.14453,
+        "z": -1.060184,
+        "se_hat": 0.429971,
+        "n_obs": 1249,
+        "significant_at_95": false
+      },
+      "dsr": {
+        "observed_sharpe": -0.455848,
+        "sr_star": 0.676035,
+        "deflated_sharpe_prob": 0.004238,
+        "z": -2.632467,
+        "se_hat": 0.429971,
+        "n_trials": 9.954241745690322,
+        "n_obs": 1249,
+        "significant_at_95": false,
+        "haircut": -1.131883,
+        "expected_max_blp": 0.676035,
+        "z_blp": 1.572282
+      }
+    }
+  },
+  "gate_eth_sol_meta": {
+    "approved": false,
+    "reasons": [
+      "DSR=0.0000 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.846, SR*=0.532, N=9.95424).",
+      "SR\u0302=-0.846 n\u00e3o supera o Sharpe esperado da busca (SR*=0.532); alongar a mesma amostra n\u00e3o resolve."
+    ],
+    "observed_sharpe": -0.845794,
+    "psr": 0.006242,
+    "dsr": 2.3e-05,
+    "sr_star": 0.532316,
+    "min_trl": null,
+    "n_obs": 1800,
+    "n_trials": 12.0,
+    "n_eff": 9.954241745690322,
+    "se_hat": 0.338563,
+    "skew": -4.857663,
+    "excess_kurtosis": 106.65367,
+    "costs_included": true,
+    "threshold": 0.95,
+    "details": {
+      "psr": {
+        "observed_sharpe": -0.845794,
+        "sr_benchmark": 0.0,
+        "psr": 0.006242,
+        "z": -2.498188,
+        "se_hat": 0.338563,
+        "n_obs": 1800,
+        "significant_at_95": false
+      },
+      "dsr": {
+        "observed_sharpe": -0.845794,
+        "sr_star": 0.532316,
+        "deflated_sharpe_prob": 2.3e-05,
+        "z": -4.07047,
+        "se_hat": 0.338563,
+        "n_trials": 9.954241745690322,
+        "n_obs": 1800,
+        "significant_at_95": false,
+        "haircut": -1.37811,
+        "expected_max_blp": 0.532316,
+        "z_blp": 1.572282
+      }
+    }
+  },
+  "gate": {
+    "approved": false,
+    "reasons": [
+      "DSR=0.0001 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.589, SR*=0.447, N=9.95424).",
+      "SR\u0302=-0.589 n\u00e3o supera o Sharpe esperado da busca (SR*=0.447); alongar a mesma amostra n\u00e3o resolve."
+    ],
+    "observed_sharpe": -0.589164,
+    "psr": 0.019137,
+    "dsr": 0.000134,
+    "sr_star": 0.447092,
+    "min_trl": null,
+    "n_obs": 1819,
+    "n_trials": 12.0,
+    "n_eff": 9.954241745690322,
+    "se_hat": 0.284359,
+    "skew": -14.511928,
+    "excess_kurtosis": 352.105191,
+    "costs_included": true,
+    "threshold": 0.95,
+    "details": {
+      "psr": {
+        "observed_sharpe": -0.589164,
+        "sr_benchmark": 0.0,
+        "psr": 0.019137,
+        "z": -2.071907,
+        "se_hat": 0.284359,
+        "n_obs": 1819,
+        "significant_at_95": false
+      },
+      "dsr": {
+        "observed_sharpe": -0.589164,
+        "sr_star": 0.447092,
+        "deflated_sharpe_prob": 0.000134,
+        "z": -3.644189,
+        "se_hat": 0.284359,
+        "n_trials": 9.954241745690322,
+        "n_obs": 1819,
+        "significant_at_95": false,
+        "haircut": -1.036256,
+        "expected_max_blp": 0.447092,
+        "z_blp": 1.572282
+      }
+    }
+  },
+  "primary_b3_total_net": -0.12207209,
+  "what_broke": [
+    "Lista de pares foi fixada por tese econ\u00f4mica; o N inclui os que n\u00e3o cointegraram OOS.",
+    "B3: Yahoo Chart (adjclose) porque brapi exige token para tudo salvo PETR4; fapi.binance.com devolveu 451, ent\u00e3o ETH/SOL veio de klines p\u00fablicos Binance.US \u00e0 vista.",
+    "ELET3.SA/ELET6.SA retornam 404 no Yahoo (rebrand); o dual-class de utilidade na lista a priori passou a ser CMIG3/CMIG4, antes de qualquer Sharpe.",
+    "Custo = 2\u00d7(taxa+spread) do nocional bruto das duas pernas; funding de perp\u00e9tuo fica de fora (s\u00e9rie \u00e9 spot).",
+    "EG OOS usa o \u00faltimo 30% da amostra com \u03b2 reestimado nesse holdout \u2014 n\u00e3o \u00e9 um teste rolante.",
+    "DSR \u2265 0,95 autoriza s\u00f3 considerar paper. eligible_for_live_trading permanece false."
+  ],
+  "math": "Mesma receita do relat\u00f3rio sint\u00e9tico: z expanding Gatev/EG, barreiras triplas l\u00edquidas de custo, RF OOF com PurgedKFold+embargo, DSR Bailey & L\u00f3pez de Prado com N = todas as (par \u00d7 variante) registradas. O livro combinado \u00e9 a m\u00e9dia calend\u00e1rio dos pares pr\u00e9-escolhidos \u2014 n\u00e3o um campe\u00e3o cherry-picked."
+}
