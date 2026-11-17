@@ -9,6 +9,10 @@ All notable changes to this project are documented here. Format loosely follows 
 - Rótulos de três barreiras (alvo, stop, prazo) líquidos de custo, no lugar de «subiu ou desceu», e meta-rótulo com PurgedKFold + embargo: o primário dá a direção; o segundo modelo estima P(a operação dar certo). Abaixo do limiar não entra; acima, define o tamanho.
 - Primeiro teste no sinal de pares já existente (Gatev / Avellaneda–Lee, cointegração expanding). Relatório reproduzível em `docs/reports/pairs-meta-label-oos.md`. `POST /api/desk/pairs/meta-label`. `eligible_for_live_trading` permanece false.
 - Mesma receita em dados reais (B3 diário + ETH/SOL à vista), pares escolhidos por tese econômica a priori, N = todo par × primário e meta. Snapshot versionado em `backend/tests/fixtures/pairs_real/`. Relatório `docs/reports/pairs-meta-label-oos-real.md`. Paper only.
+- Auditoria ETH/SOL + features informativas (taker Binance.US, funding OKX+Hyperliquid, OI OKX, BTC lead) e veto de regime escolhido só no fold de treino. Família `pairs_eth_sol_audit`, N=4. Relatório `docs/reports/pairs-eth-sol-audit-oos.md`. Nenhuma variante passou no DSR. `eligible_for_live_trading` permanece false.
+
+### Fixed
+- PnL de pares era `r_y − β_shares · r_x` (β OLS em nível). Passa a ser retorno sobre o nocional bruto das duas pernas, hedge congelado na entrada, custo 2×(taxa+spread) do bruto. O +7,2% líquido/trade do ETH/SOL era o bug de unidade; o número auditado é −1,366%.
 
 ## [Unreleased] — round 35: Hyperliquid no oráculo (spot, book, mark/funding/OI)
 

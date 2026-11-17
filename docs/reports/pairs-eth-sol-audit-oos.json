@@ -1,0 +1,392 @@
+{
+  "family_id": "pairs_eth_sol_audit",
+  "eligible_for_live_trading": false,
+  "start": "2021-12-14",
+  "end": "2026-11-17",
+  "n_bars": 1800,
+  "n_trials_registered": 4,
+  "fetched_at": "2026-11-17T16:24:34Z",
+  "sources": {
+    "prices_flow": "Binance.US GET /api/v3/klines (spot, taker buy = kline[9])",
+    "funding_oi": "Funding: OKX SWAP history (~3 meses) preenchido com Hyperliquid fundingHistory (desde 2023-05). OI/taker: OKX rubik CONTRACTS.",
+    "blocked": "fapi.binance.com 451; api.bybit.com 403"
+  },
+  "costs": {
+    "round_trip_gross": 0.0024000000000000002,
+    "note": "2\u00d7(taker 10 bps + half-spread 2 bps) do nocional bruto. Funding n\u00e3o entra no PnL \u00e0 vista."
+  },
+  "audit": {
+    "beta_p10_p50_p90": [
+      10.2244,
+      13.315,
+      17.8796
+    ],
+    "n_events": 35,
+    "n_overlapping": 20,
+    "pnl_unit": "gross_two_leg_notional",
+    "hedge": "expanding_ols_frozen_at_entry",
+    "look_ahead": "\u03b2_t e z_t usam o print de t (OLS expanding em data[:t+1], residual Gatev). O fill \u00e9 t+1, ent\u00e3o o retorno de t n\u00e3o entra no PnL. Durante a opera\u00e7\u00e3o \u03b2 fica congelado.",
+    "funding_in_spot_pnl": false,
+    "by_year": [
+      {
+        "n": 7,
+        "hit_rate": 0.2857,
+        "net_per_trade": -0.045252,
+        "total_net": -0.316766,
+        "max_net": 0.053718,
+        "year": "2022"
+      },
+      {
+        "n": 4,
+        "hit_rate": 0.5,
+        "net_per_trade": -0.008272,
+        "total_net": -0.033089,
+        "max_net": 0.038936,
+        "year": "2023"
+      },
+      {
+        "n": 13,
+        "hit_rate": 0.4615,
+        "net_per_trade": 2.4e-05,
+        "total_net": 0.000315,
+        "max_net": 0.062631,
+        "year": "2024"
+      },
+      {
+        "n": 11,
+        "hit_rate": 0.5455,
+        "net_per_trade": -0.011685,
+        "total_net": -0.128534,
+        "max_net": 0.094705,
+        "year": "2025"
+      }
+    ],
+    "by_subperiod": [
+      {
+        "label": "primeira metade da amostra",
+        "n": 17,
+        "hit_rate": 0.5882,
+        "net_per_trade": -0.002995,
+        "total_net": -0.050912,
+        "max_net": 0.062631
+      },
+      {
+        "label": "segunda metade da amostra",
+        "n": 18,
+        "hit_rate": 0.3333,
+        "net_per_trade": -0.023731,
+        "total_net": -0.427163,
+        "max_net": 0.094705
+      },
+      {
+        "label": "2022\u20132023",
+        "n": 11,
+        "hit_rate": 0.3636,
+        "net_per_trade": -0.031805,
+        "total_net": -0.349855,
+        "max_net": 0.053718
+      },
+      {
+        "label": "fora de 2022\u20132023",
+        "n": 24,
+        "hit_rate": 0.5,
+        "net_per_trade": -0.005342,
+        "total_net": -0.12822,
+        "max_net": 0.094705
+      }
+    ],
+    "legacy_beta_times_return": {
+      "n": 35,
+      "net_per_trade": 0.216212,
+      "total_net": 7.567427,
+      "max_net": 3.975622,
+      "note": "r = r_ETH \u2212 \u03b2_shares \u00b7 r_SOL; custo 4\u00d7(10+2) bps da perna y. N\u00e3o \u00e9 retorno de book."
+    },
+    "audited_net_per_trade": -0.01365928,
+    "occupied": {
+      "n": 18,
+      "hit_rate": 0.5,
+      "net_per_trade": -0.010571,
+      "total_net": -0.190285,
+      "max_net": 0.08854,
+      "n_dropped_overlap": 17
+    },
+    "feature_coverage": {
+      "taker_buy_ratio_y": 1.0,
+      "taker_buy_ratio_x": 1.0,
+      "taker_okx_y": 0.04,
+      "taker_okx_x": 0.04,
+      "funding_y": 0.7144,
+      "funding_x": 0.7144,
+      "funding_spread": 0.7144,
+      "oi_chg5_y": 0.5822,
+      "oi_chg5_x": 0.5822,
+      "btc_lead_1d": 0.9989,
+      "btc_lead_5d": 0.9983
+    },
+    "old_bug": "ret = r_ETH \u2212 \u03b2_shares \u00b7 r_SOL com \u03b2\u224813\u201318 (OLS em n\u00edvel) inflava o PnL at\u00e9 \u00b1150% em um dia. O n\u00famero auditado usa (\u0394y\u2212\u03b20 \u0394x)/(|y|+|\u03b20||x|)."
+  },
+  "engle_granger_oos": {
+    "cointegrated": true,
+    "beta": 17.07734778,
+    "adf_tstat": -3.5987,
+    "half_life_days": 21.94,
+    "n": 540,
+    "cut": 1260
+  },
+  "variants": {
+    "primary": {
+      "n_trades": 35,
+      "hit_rate": 0.457143,
+      "net_per_trade": -0.01365928,
+      "total_net": -0.47807476
+    },
+    "meta_candles": {
+      "n_trades": 9,
+      "hit_rate": 0.333333,
+      "net_per_trade": -0.0312974,
+      "total_net": -0.28167663
+    },
+    "meta_info_features": {
+      "n_trades": 7,
+      "hit_rate": 0.428571,
+      "net_per_trade": -0.0177953,
+      "total_net": -0.12456713
+    },
+    "meta_regime_veto": {
+      "n_trades": 1,
+      "hit_rate": 0.0,
+      "net_per_trade": -0.06788636,
+      "total_net": -0.06788636
+    }
+  },
+  "gates": {
+    "primary": {
+      "approved": false,
+      "reasons": [
+        "DSR=0.0735 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.289, SR*=0.258, N=4).",
+        "SR\u0302=-0.289 n\u00e3o supera o Sharpe esperado da busca (SR*=0.258); alongar a mesma amostra n\u00e3o resolve."
+      ],
+      "observed_sharpe": -0.288858,
+      "psr": 0.22187,
+      "dsr": 0.073453,
+      "sr_star": 0.258219,
+      "min_trl": null,
+      "n_obs": 1800,
+      "n_trials": 4.0,
+      "n_eff": null,
+      "se_hat": 0.377152,
+      "skew": 0.645831,
+      "excess_kurtosis": 42.814599,
+      "costs_included": true,
+      "threshold": 0.95,
+      "details": {
+        "psr": {
+          "observed_sharpe": -0.288858,
+          "sr_benchmark": 0.0,
+          "psr": 0.22187,
+          "z": -0.765894,
+          "se_hat": 0.377152,
+          "n_obs": 1800,
+          "significant_at_95": false
+        },
+        "dsr": {
+          "observed_sharpe": -0.288858,
+          "sr_star": 0.258219,
+          "deflated_sharpe_prob": 0.073453,
+          "z": -1.450548,
+          "se_hat": 0.377152,
+          "n_trials": 4.0,
+          "n_obs": 1800,
+          "significant_at_95": false,
+          "haircut": -0.547077,
+          "expected_max_blp": 0.258219,
+          "z_blp": 1.052123
+        }
+      }
+    },
+    "meta_candles": {
+      "approved": false,
+      "reasons": [
+        "DSR=0.0006 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.846, SR*=0.258, N=4).",
+        "SR\u0302=-0.846 n\u00e3o supera o Sharpe esperado da busca (SR*=0.258); alongar a mesma amostra n\u00e3o resolve."
+      ],
+      "observed_sharpe": -0.845794,
+      "psr": 0.006242,
+      "dsr": 0.000555,
+      "sr_star": 0.258219,
+      "min_trl": null,
+      "n_obs": 1800,
+      "n_trials": 4.0,
+      "n_eff": null,
+      "se_hat": 0.338563,
+      "skew": -4.857663,
+      "excess_kurtosis": 106.65367,
+      "costs_included": true,
+      "threshold": 0.95,
+      "details": {
+        "psr": {
+          "observed_sharpe": -0.845794,
+          "sr_benchmark": 0.0,
+          "psr": 0.006242,
+          "z": -2.498188,
+          "se_hat": 0.338563,
+          "n_obs": 1800,
+          "significant_at_95": false
+        },
+        "dsr": {
+          "observed_sharpe": -0.845794,
+          "sr_star": 0.258219,
+          "deflated_sharpe_prob": 0.000555,
+          "z": -3.260878,
+          "se_hat": 0.338563,
+          "n_trials": 4.0,
+          "n_obs": 1800,
+          "significant_at_95": false,
+          "haircut": -1.104012,
+          "expected_max_blp": 0.258219,
+          "z_blp": 1.052123
+        }
+      }
+    },
+    "meta_info_features": {
+      "approved": false,
+      "reasons": [
+        "DSR=0.0197 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.435, SR*=0.258, N=4).",
+        "SR\u0302=-0.435 n\u00e3o supera o Sharpe esperado da busca (SR*=0.258); alongar a mesma amostra n\u00e3o resolve."
+      ],
+      "observed_sharpe": -0.435269,
+      "psr": 0.097899,
+      "dsr": 0.01965,
+      "sr_star": 0.258219,
+      "min_trl": null,
+      "n_obs": 1800,
+      "n_trials": 4.0,
+      "n_eff": null,
+      "se_hat": 0.336475,
+      "skew": -8.315725,
+      "excess_kurtosis": 190.822821,
+      "costs_included": true,
+      "threshold": 0.95,
+      "details": {
+        "psr": {
+          "observed_sharpe": -0.435269,
+          "sr_benchmark": 0.0,
+          "psr": 0.097899,
+          "z": -1.293617,
+          "se_hat": 0.336475,
+          "n_obs": 1800,
+          "significant_at_95": false
+        },
+        "dsr": {
+          "observed_sharpe": -0.435269,
+          "sr_star": 0.258219,
+          "deflated_sharpe_prob": 0.01965,
+          "z": -2.061041,
+          "se_hat": 0.336475,
+          "n_trials": 4.0,
+          "n_obs": 1800,
+          "significant_at_95": false,
+          "haircut": -0.693488,
+          "expected_max_blp": 0.258219,
+          "z_blp": 1.052123
+        }
+      }
+    },
+    "meta_regime_veto": {
+      "approved": false,
+      "reasons": [
+        "DSR=0.0006 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.420, SR*=0.258, N=4).",
+        "SR\u0302=-0.420 n\u00e3o supera o Sharpe esperado da busca (SR*=0.258); alongar a mesma amostra n\u00e3o resolve."
+      ],
+      "observed_sharpe": -0.42041,
+      "psr": 0.022831,
+      "dsr": 0.000628,
+      "sr_star": 0.258219,
+      "min_trl": null,
+      "n_obs": 1800,
+      "n_trials": 4.0,
+      "n_eff": null,
+      "se_hat": 0.210363,
+      "skew": -35.020404,
+      "excess_kurtosis": 1385.976043,
+      "costs_included": true,
+      "threshold": 0.95,
+      "details": {
+        "psr": {
+          "observed_sharpe": -0.42041,
+          "sr_benchmark": 0.0,
+          "psr": 0.022831,
+          "z": -1.998503,
+          "se_hat": 0.210363,
+          "n_obs": 1800,
+          "significant_at_95": false
+        },
+        "dsr": {
+          "observed_sharpe": -0.42041,
+          "sr_star": 0.258219,
+          "deflated_sharpe_prob": 0.000628,
+          "z": -3.225996,
+          "se_hat": 0.210363,
+          "n_trials": 4.0,
+          "n_obs": 1800,
+          "significant_at_95": false,
+          "haircut": -0.678629,
+          "expected_max_blp": 0.258219,
+          "z_blp": 1.052123
+        }
+      }
+    }
+  },
+  "gate": {
+    "approved": false,
+    "reasons": [
+      "DSR=0.0197 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.435, SR*=0.258, N=4).",
+      "SR\u0302=-0.435 n\u00e3o supera o Sharpe esperado da busca (SR*=0.258); alongar a mesma amostra n\u00e3o resolve."
+    ],
+    "observed_sharpe": -0.435269,
+    "psr": 0.097899,
+    "dsr": 0.01965,
+    "sr_star": 0.258219,
+    "min_trl": null,
+    "n_obs": 1800,
+    "n_trials": 4.0,
+    "n_eff": null,
+    "se_hat": 0.336475,
+    "skew": -8.315725,
+    "excess_kurtosis": 190.822821,
+    "costs_included": true,
+    "threshold": 0.95,
+    "details": {
+      "psr": {
+        "observed_sharpe": -0.435269,
+        "sr_benchmark": 0.0,
+        "psr": 0.097899,
+        "z": -1.293617,
+        "se_hat": 0.336475,
+        "n_obs": 1800,
+        "significant_at_95": false
+      },
+      "dsr": {
+        "observed_sharpe": -0.435269,
+        "sr_star": 0.258219,
+        "deflated_sharpe_prob": 0.01965,
+        "z": -2.061041,
+        "se_hat": 0.336475,
+        "n_trials": 4.0,
+        "n_obs": 1800,
+        "significant_at_95": false,
+        "haircut": -0.693488,
+        "expected_max_blp": 0.258219,
+        "z_blp": 1.052123
+      }
+    }
+  },
+  "what_broke": [
+    "O +7% l\u00edquido/trade anterior misturava \u03b2 em a\u00e7\u00f5es com retorno percentual (\u03b2\u224813\u00d7 r_SOL).",
+    "PnL auditado = (\u0394y \u2212 \u03b20 \u0394x) / (|y|+|\u03b20||x|), hedge congelado na entrada (fill em t+1).",
+    "Funding n\u00e3o entra no PnL \u00e0 vista; \u00e9 feature (OKX ~3 meses + Hyperliquid desde 2023-05). OI/taker OKX s\u00e3o perp\u00e9tuos alinhados por data UTC.",
+    "Regime usa Hurst/RV/correla\u00e7\u00e3o de BTC-ETH-SOL (classificador ATOM) sem VIX/cr\u00e9dito \u2014 proxy.",
+    "Veto de regime escolhido s\u00f3 no fold de treino. eligible_for_live_trading permanece false."
+  ]
+}

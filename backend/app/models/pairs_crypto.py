@@ -323,7 +323,8 @@ def aligned_book(panel: dict[str, Any]) -> dict[str, Any]:
     btc_ret[1:] = np.where(ok[1:] & ok[:-1], r, 0.0)
     btc_lead_1d = np.roll(btc_ret, 1)
     btc_lead_1d[:2] = np.nan
-    btc_lead_5d = pd.Series(btc_ret).rolling(5, min_periods=3).sum().shift(1).to_numpy()
+    btc_sum5 = np.asarray(pd.Series(btc_ret, dtype=float).rolling(5, min_periods=3).sum(), dtype=float)
+    btc_lead_5d = np.concatenate([[np.nan], btc_sum5[:-1]])
     fund_y = _map_day(panel.get("funding_eth") or {}, idx)
     fund_x = _map_day(panel.get("funding_sol") or {}, idx)
     oi_y = _map_day(panel.get("oi_eth") or {}, idx)
@@ -523,19 +524,19 @@ def run_crypto_audit(
     regimes = crypto_regime_labels(book["btc"], y, x)
     registry = TrialRegistry(registry_path) if registry_path else TrialRegistry(":memory:")
     close_reg = registry_path is None
-    common = dict(
-        entry_z=2.0,
-        commission=CRYPTO_COMMISSION,
-        slippage=CRYPTO_SLIPPAGE,
-        registry=registry,
-        family_id=FAMILY_ID,
-        pair_id="ETHUSDT_SOLUSDT",
-        periods_per_year=DEFAULT_PERIODS,
-        min_events=0,
-        min_oos_scored=0,
-        apply_gate=False,
-        include_bar_returns=True,
-    )
+    common: dict[str, Any] = {
+        "entry_z": 2.0,
+        "commission": CRYPTO_COMMISSION,
+        "slippage": CRYPTO_SLIPPAGE,
+        "registry": registry,
+        "family_id": FAMILY_ID,
+        "pair_id": "ETHUSDT_SOLUSDT",
+        "periods_per_year": DEFAULT_PERIODS,
+        "min_events": 0,
+        "min_oos_scored": 0,
+        "apply_gate": False,
+        "include_bar_returns": True,
+    }
     try:
         candles = evaluate_pairs_meta(
             y, x, extra_features=extras, feature_cols=list(FEATURE_COLS),
