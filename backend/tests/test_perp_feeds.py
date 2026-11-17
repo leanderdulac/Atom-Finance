@@ -20,8 +20,12 @@ from app.models.stat_arb_paper import (
 )
 from app.services.perp_feeds import (
     attach_funding,
+    fetch_hyperliquid_asset_ctx,
+    fetch_hyperliquid_book,
     fetch_okx_mark_candles,
     fetch_perp_candles,
+    parse_hyperliquid_asset_ctx,
+    parse_hyperliquid_book,
     parse_hyperliquid_candles,
     parse_hyperliquid_funding,
     parse_okx_funding_current,
@@ -185,6 +189,61 @@ class TestOkxPagination:
         candles = await fetch_okx_mark_candles("ETHUSDT", client=client, interval="1h", limit=80)
         assert candles == []
         assert any("failed" in r.message for r in caplog.records)
+
+
+class TestHyperliquidBook:
+    def test_top_of_book_with_exchange_timestamp(self):
+        book = parse_hyperliquid_book(_load("hl_l2book_btc.json"))
+        assert book["coin"] == "BTC"
+        assert book["time_ms"] == 1794887220448
+        assert book["bid"] == 65029.0
+        assert book["ask"] == 65030.0
+        assert book["bid_sz"] == pytest.approx(7.05195)
+
+    def test_malformed_books_are_none(self, caplog):
+        caplog.set_level("WARNING")
+        assert parse_hyperliquid_book([]) is None
+        assert parse_hyperliquid_book({"coin": "BTC", "levels": [[], []]}) is None
+        assert parse_hyperliquid_book({"levels": [[{"px": "NaN"}], [{"px": "1"}]]}) is None
+
+    def test_asset_ctx_lookup_by_coin(self):
+        ctx = parse_hyperliquid_asset_ctx(_load("hl_assetctx_sample.json"), "BTC")
+        assert ctx["mark_px"] == 65029.0
+        assert ctx["funding"] == pytest.approx(0.0000097121)
+        assert ctx["open_interest"] == pytest.approx(37599.53096)
+
+    def test_asset_ctx_unknown_coin_is_none(self, caplog):
+        caplog.set_level("WARNING")
+        assert parse_hyperliquid_asset_ctx(_load("hl_assetctx_sample.json"), "ZZZ") is None
+        assert parse_hyperliquid_asset_ctx({}, "BTC") is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_book_and_ctx(self):
+        async def _post(url, json=None, timeout=None, headers=None):
+            kind = (json or {}).get("type")
+            if kind == "l2Book":
+                assert json["coin"] == "BTC"
+                return _resp(_load("hl_l2book_btc.json"))
+            if kind == "metaAndAssetCtxs":
+                return _resp(_load("hl_assetctx_sample.json"))
+            raise AssertionError(json)
+
+        client = MagicMock()
+        client.post = _post
+        book = await fetch_hyperliquid_book("BTCUSDT", client=client)
+        assert (book["bid"] + book["ask"]) / 2 == 65029.5
+        ctx = await fetch_hyperliquid_asset_ctx("BTCUSDT", client=client)
+        assert ctx["coin"] == "BTC" and ctx["mark_px"] == 65029.0
+
+    @pytest.mark.asyncio
+    async def test_fetch_http_error_is_none(self):
+        async def _post(url, json=None, timeout=None, headers=None):
+            return _resp({}, status=500)
+
+        client = MagicMock()
+        client.post = _post
+        assert await fetch_hyperliquid_book("BTC", client=client) is None
+        assert await fetch_hyperliquid_asset_ctx("BTC", client=client) is None
 
 
 class TestHyperliquidFetch:

@@ -47,6 +47,17 @@ Saída normalizada: timestamps UTC em ms, OHLC, funding rate **por intervalo** (
 
 REST shapes adaptados de hummingbot/hummingbot (Apache-2.0). O pacote `hummingbot` **não** é dependência (conflito de numpy). Ver `NOTICE` e `third_party/hummingbot/`. Testes em `backend/tests/test_perp_feeds.py` usam fixtures JSON gravadas; CI sem rede.
 
+## Hyperliquid spot (oráculo cripto)
+
+Além de candles/funding, o oráculo usa a Hyperliquid como terceira fonte cripto (sem chave):
+
+| Tipo | Request | Resposta usada |
+|---|---|---|
+| `l2Book` | `POST /info` `{type, coin}` | top bid/ask + `time` (ms da exchange = freshness real) |
+| `metaAndAssetCtxs` | `POST /info` `{type}` | `markPx`, `midPx`, `funding`, `openInterest` por moeda |
+
+`oracle._fetch_hyperliquid` precifica pelo mid do livro com o timestamp da exchange (`data_mode: realtime`). Book vazio/malformado ou moeda fora do universo retornam `None` (registrado, sem derrubar). Doc-base: `for-developers/api` (info endpoint) do GitBook Hyperliquid.
+
 ## Próximo passo necessário para planos com mercado real
 Homologar OpLab ou Cedro com acesso autorizado: confirmar atraso contratado, timestamps, unidades de quantidades, lote, fator de cotação, origem do spot e estilo de exercício. Depois acrescentar a ponte server-side para o planejador e o calendário oficial de sessões/eventos. Não transformar EOD em cotação atual para contornar esse requisito.
 
