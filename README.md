@@ -35,7 +35,7 @@ A área **Pesquisa QuantMind** (`/research`) adiciona extração estruturada de 
 
 ### Quant desk papers (`/desk`)
 - **Heston 1993** — CF Europeans, Euler MC, multiexpiry calibration (vega weights, restarts, per-expiry RMSE, calendar diagnostics; chain→quotes adapter for live chains)
-- **Engle–Granger pairs** — residual ADF, expanding z-score, fill at t+1, costs on both legs
+- **Engle–Granger pairs** — residual ADF, expanding z-score, fill at t+1, PnL on gross two-leg notional with β frozen at entry, costs on both legs
 - **Pares + meta-rótulo** (`POST /api/desk/pairs/meta-label`) — barreiras triplas líquidas de custo, RF com purga/embargo, registro de tentativas e portão de Sharpe deflacionado (≥ 0,95) antes de considerar paper. Relatório sintético: [docs/reports/pairs-meta-label-oos.md](docs/reports/pairs-meta-label-oos.md). Relatório em dados reais (B3 + ETH/SOL, N honesto): [docs/reports/pairs-meta-label-oos-real.md](docs/reports/pairs-meta-label-oos-real.md). Auditoria ETH/SOL (unidades, overlap, funding, features, veto de regime): [docs/reports/pairs-eth-sol-audit-oos.md](docs/reports/pairs-eth-sol-audit-oos.md). Never sends orders.
 - **ETH/SOL paper stat-arb** (`POST /api/desk/pairs/eth-sol-paper`) — one-pair paper loop: EG gate, OU half-life, rolling z, bid/ask fills, kill-switch flatten. Public marks from Binance, OKX, or Hyperliquid; paper PnL splits price vs accrued funding. Never sends orders. See [docs/ETH-SOL-PAPER-PIPELINE.md](docs/ETH-SOL-PAPER-PIPELINE.md).
 - **Johansen 1991** — trace test and cointegration rank on a price panel

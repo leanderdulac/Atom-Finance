@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — pairs backtest PnL on gross notional (paper)
+
+### Fixed
+- `cointegration.pairs_backtest` (desk `POST /api/desk/pairs/backtest`) applied OLS share-count β to percent returns (`r_y − β r_x`) and rehedged every bar. ETH/SOL wiped the simulated book (−100%, vol ~618%). PnL is now `(Δy − β0 Δx) / (|y|+|β0||x|)`, β frozen at entry, fill t+1, one-way cost (c+s) of gross two-leg notional. `eligible_for_live_trading` permanece false.
+- ETH/SOL paper pipeline (`stat_arb_paper.PaperBook.mark`) already marked cash + qty×mid with `entry_beta` frozen; regression test locks that it is not `r_y − β r_x`.
+
 ## [Unreleased] — round 36: barreiras triplas, meta-rótulo e portão DSR (paper)
 
 ### Added

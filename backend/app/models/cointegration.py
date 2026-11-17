@@ -133,6 +133,17 @@ def _expanding_hedge(
     return alpha, beta, res
 
 
+def frozen_spread_return(y0: float, x0: float, y1: float, x1: float, beta0: float) -> float:
+    """One-bar return of +1 y vs β0 x on the entry gross notional.
+
+    (Δy − β0 Δx) / (|y0| + |β0||x0|). This is the book, not r_y − β r_x.
+    """
+    g0 = abs(float(y0)) + abs(float(beta0)) * abs(float(x0))
+    if g0 < 1e-12 or not np.isfinite(beta0):
+        return 0.0
+    return (float(y1) - float(y0) - float(beta0) * (float(x1) - float(x0))) / g0
+
+
 def pairs_backtest(
     y: np.ndarray,
     x: np.ndarray,
@@ -147,10 +158,13 @@ def pairs_backtest(
     Dollar-neutral pairs: long the cheap leg / short the rich leg when |z| > entry,
     flatten when |z| < exit. Signal at t, fill at t+1. Costs on both legs.
 
-    The hedge ratio and the spread it defines are **expanding**: (α_t, β_t) are
-    refit on data[:t+1], so nothing in the signal or PnL consumes t+1…T.
-    `engle_granger` is still run on the full sample as the (legitimate)
-    cointegration hypothesis test and reported as diagnostics.
+    PnL is the frozen book on gross two-leg notional:
+    r = (Δy − β0 Δx) / (|y| + |β0||x|), with β frozen at entry. Applying a
+    share-count OLS β to percent returns (r_y − β r_x) inflates ETH/SOL-like books.
+
+    The hedge ratio that *defines the z-score* is expanding: (α_t, β_t) on
+    data[:t+1]. `engle_granger` is still run on the full sample as the
+    (legitimate) cointegration hypothesis test and reported as diagnostics.
     """
     y = np.asarray(y, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
@@ -175,6 +189,8 @@ def pairs_backtest(
     costs_paid = 0.0
     wins = 0
     closed = 0
+    beta0 = 0.0
+    one_way = commission + slippage  # both legs, as a fraction of gross notional
 
     for t in range(warmup, n - 1):
         st = spread[t]
@@ -196,22 +212,24 @@ def pairs_backtest(
             target = 0
 
         fill = t + 1
-        dy = (y[fill] - y[fill - 1]) / y[fill - 1]
-        dx = (x[fill] - x[fill - 1]) / x[fill - 1]
-        # hedge applied to this bar's return is β_t (causal; does not include dy).
-        beta_t = beta[t] if np.isfinite(beta[t]) else float(stats["beta"])
+        b_sig = beta[t] if np.isfinite(beta[t]) else float(stats["beta"])
         if target != position:
             turnover = abs(target - position)
-            cost = turnover * (commission + slippage) * 2.0  # two legs
-            equity *= 1.0 - cost
+            cost = turnover * one_way
             costs_paid += cost * equity
+            equity *= 1.0 - cost
             if position != 0:
                 closed += 1
             trades += 1
+            if target != 0:
+                beta0 = float(b_sig)
             position = target
         if position != 0:
-            # Dollar-neutral: +1 y vs β x, scaled to unit gross on y.
-            pnl = position * (dy - beta_t * dx)
+            pnl = position * frozen_spread_return(
+                float(y[fill - 1]), float(x[fill - 1]),
+                float(y[fill]), float(x[fill]),
+                beta0,
+            )
             equity *= 1.0 + pnl
         curve.append(equity)
 
@@ -236,13 +254,19 @@ def pairs_backtest(
         "annualized_vol_pct": round(vol * 100, 4),
         "final_equity": round(float(curve[-1]), 2),
         "win_day_pct": round(100.0 * wins / max(len(rets), 1), 2),
-        "costs_drag_note": "Commission+slippage charged on both legs at each position change.",
+        "costs_drag_note": (
+            "One-way cost (c+s) of gross two-leg notional at each unit of turnover; "
+            "round-trip is 2×(c+s). β frozen at entry."
+        ),
+        "pnl_unit": "gross_two_leg_notional",
+        "hedge": "expanding_ols_frozen_at_entry",
         "out_of_sample": False,
         "eligible_for_live_trading": False,
         "equity_curve_sample": [round(v, 2) for v in curve[:: max(1, len(curve) // 80)]],
         "what_broke": stats["what_broke"] + [
             "Expanding hedge ratio is a toy OLS; a live book needs rolling/Kalman beta with a rebalance rule.",
             "β shares of x vs 1 share of y ignores lot size, borrow, and dividend timing.",
+            "PnL is (Δy − β0 Δx)/(|y|+|β0||x|); r_y − β r_x with share-count β inflates the book.",
             "No capacity, no halt on residual-variance jumps, no corporate-action calendar.",
         ],
     }
