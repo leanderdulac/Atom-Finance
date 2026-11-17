@@ -59,6 +59,8 @@ services:
       # client-seeded junk on the left, so the limiter never reads the leftmost).
       # Only enable while the ONLY path to /api is through that nginx (it is, here).
       - ATOM_TRUST_X_FORWARDED_FOR=1
+      # Structured logging: one JSON object per log line for shippers.
+      - ATOM_LOG_FORMAT=json
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
