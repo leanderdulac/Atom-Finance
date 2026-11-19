@@ -15,7 +15,8 @@ class BacktestEngine:
     def run_strategy(prices: np.ndarray, strategy: str = "sma_crossover",
                      params: dict | None = None, initial_capital: float = 100_000,
                      commission: float = 0.001, seed: int | None = 42,
-                     slippage: float = 0.0005) -> dict:
+                     slippage: float = 0.0005, *, entry_cost_k: float = 2.0,
+                     order_style: str = "market", limit_timeout: int = 5) -> dict:
         # NOTE: seed is accepted for API compatibility but this engine is
         # deterministic (no RNG calls); it intentionally seeds nothing.
         _ = seed
@@ -50,44 +51,157 @@ class BacktestEngine:
 
         traded_notional = 0.0
         total_costs = 0.0
+        fee_paid = 0.0
+        half_paid = 0.0
+        slip_paid = 0.0
         cost_basis = 0.0  # total cost paid at last buy (including commission)
+        skipped: list[dict] = []
+        pending: dict | None = None
+        n_orders = 0
+        n_expired = 0
+        round_trip = 2.0 * (commission + slippage)
+        style = (order_style or "market").lower()
+        if style not in ("market", "limit"):
+            raise ValueError("order_style must be market or limit")
+
+        def _edge(i: int) -> float:
+            """Expected move, as a fraction of price, known at the signal bar."""
+            px0 = float(prices[0])
+            if strategy == "sma_crossover":
+                sw = int(params.get("short_window", 20))
+                lw = int(params.get("long_window", 50))
+                sig = i - 1
+                if sig >= lw - 1 and prices[sig] > 0:
+                    sma_s = float(np.mean(prices[sig - sw + 1:sig + 1]))
+                    sma_l = float(np.mean(prices[sig - lw + 1:sig + 1]))
+                    return abs(sma_s - sma_l) / float(prices[sig])
+            elif strategy == "mean_reversion":
+                window = int(params.get("window", 20))
+                sig = i - 1
+                if sig >= window and prices[sig] > 0:
+                    mu = float(np.mean(prices[sig - window:sig]))
+                    return abs(float(prices[sig]) - mu) / float(prices[sig])
+            elif strategy == "momentum":
+                lookback = int(params.get("lookback", 20))
+                sig = i - 1
+                if sig >= lookback and prices[sig - lookback] > 0:
+                    return abs(float(prices[sig]) / float(prices[sig - lookback]) - 1.0)
+            if px0 > 0:
+                return abs(float(prices[i]) / px0 - 1.0)
+            return 0.0
+
+        def _components(mid: float, fill_px: float, qty: int, side: str) -> tuple[float, float, float]:
+            """Fee on the fill; the old slippage concession split into half-spread and impact.
+
+            Default market fills still execute at mid * (1 ± slippage). The two
+            pieces sum to that concession, so transaction_costs is unchanged.
+            """
+            fee = qty * fill_px * commission
+            concession = qty * mid * slippage
+            hs_rate = min(0.0002, slippage)
+            if slippage > 0:
+                half = concession * (hs_rate / slippage)
+                impact = concession - half
+            else:
+                half = 0.0
+                impact = 0.0
+            if side == "limit":
+                # A crossed limit fills at the level: no walk, and the
+                # improvement versus mid is spread capture, not a cost.
+                improve = (mid - fill_px) if fill_px < mid else (fill_px - mid)
+                return fee, 0.0, 0.0 if improve >= 0 else qty * abs(fill_px - mid)
+            return fee, half, impact
+
+        def _record(day: int, kind: str, fill_px: float, qty: int, pnl: float | None, side: str) -> None:
+            nonlocal traded_notional, total_costs, fee_paid, half_paid, slip_paid, capital, cost_basis
+            mid = float(prices[day])
+            fee, half, impact = _components(mid, fill_px, qty, side)
+            fee_paid += fee
+            half_paid += half
+            slip_paid += impact
+            if kind == "BUY":
+                paid = qty * fill_px + fee
+                traded_notional += qty * fill_px
+                total_costs += paid - qty * mid
+                capital -= paid
+                cost_basis = paid
+            else:
+                revenue = qty * fill_px - fee
+                traded_notional += qty * fill_px
+                total_costs += qty * mid - revenue
+                capital += revenue
+            row = {
+                "day": day, "type": kind, "price": round(float(fill_px), 2), "shares": qty,
+                "fee": round(float(fee), 4), "half_spread": round(float(half), 4),
+                "slippage": round(float(impact), 4), "liquidity": "maker" if side == "limit" else "taker",
+            }
+            if pnl is not None:
+                row["pnl"] = round(float(pnl), 2)
+            trades.append(row)
+
         for i in range(1, n):
-            if signals[i - 1] == 1 and position <= 0 and i < n - 1:  # Buy
-                execution_price = prices[i] * (1 + slippage)
-                shares = int(capital / (execution_price * (1 + commission)))
-                cost = shares * execution_price * (1 + commission)
-                if shares > 0 and cost <= capital:
-                    traded_notional += shares * execution_price
-                    total_costs += cost - shares * prices[i]
-                    capital -= cost
-                    cost_basis = cost
-                    position = 1
-                    trades.append({"day": i, "type": "BUY", "price": round(float(execution_price), 2), "shares": shares})
+            if pending is not None and position <= 0:
+                age = i - int(pending["placed"])
+                level = float(pending["level"])
+                prev = float(pending["prev"])
+                crossed = prev > level >= float(prices[i])
+                pending["prev"] = float(prices[i])
+                if crossed and age <= limit_timeout and i < n - 1:
+                    execution_price = level
+                    shares = int(capital / (execution_price * (1 + commission)))
+                    cost = shares * execution_price * (1 + commission)
+                    if shares > 0 and cost <= capital:
+                        _record(i, "BUY", execution_price, shares, None, "limit")
+                        position = 1
+                    pending = None
+                elif age >= limit_timeout or i >= n - 1:
+                    n_expired += 1
+                    skipped.append({"day": i, "reason": "expired", "level": level})
+                    pending = None
+            if signals[i - 1] == 1 and position <= 0 and i < n - 1 and pending is None:  # Buy
+                edge = _edge(i)
+                if entry_cost_k > 0 and edge < entry_cost_k * round_trip:
+                    skipped.append({
+                        "day": i, "reason": "expected_gain",
+                        "expected_gain": round(float(edge), 6),
+                        "round_trip_cost": round_trip, "k": entry_cost_k,
+                    })
+                elif style == "limit":
+                    pending = {"placed": i, "level": float(prices[i - 1]), "prev": float(prices[i])}
+                    n_orders += 1
+                else:
+                    execution_price = prices[i] * (1 + slippage)
+                    shares = int(capital / (execution_price * (1 + commission)))
+                    cost = shares * execution_price * (1 + commission)
+                    if shares > 0 and cost <= capital:
+                        _record(i, "BUY", float(execution_price), shares, None, "market")
+                        position = 1
+                        n_orders += 1
             elif signals[i - 1] == -1 and position > 0:  # Sell
+                # Sells stay on the market concession, including after a maker
+                # entry, so a round trip's cash matches the historical engine.
                 execution_price = prices[i] * (1 - slippage)
                 revenue = shares * execution_price * (1 - commission)
-                traded_notional += shares * execution_price
-                total_costs += shares * prices[i] - revenue
-                capital += revenue
                 pnl = revenue - cost_basis
-                trades.append({"day": i, "type": "SELL", "price": round(float(execution_price), 2), "shares": shares, "pnl": round(float(pnl), 2)})
+                _record(i, "SELL", float(execution_price), shares, pnl, "market")
                 shares = 0
                 position = 0
                 cost_basis = 0.0
+                n_orders += 1
 
             total_value = capital + shares * prices[i]
             portfolio_values.append(total_value)
 
         # Close any open position
         if shares > 0:
-            execution_price = prices[-1] * (1 - slippage)
+            execution_price = float(prices[-1] * (1 - slippage))
             revenue = shares * execution_price * (1 - commission)
-            traded_notional += shares * execution_price
-            total_costs += shares * prices[-1] - revenue
-            capital += revenue
-            trades.append({"day": n - 1, "type": "SELL", "reason": "final_liquidation",
-                           "price": round(float(execution_price), 2), "shares": shares,
-                           "pnl": round(float(revenue - cost_basis), 2)})
+            pnl = revenue - cost_basis
+            _record(n - 1, "SELL", execution_price, shares, pnl, "market")
+            trades[-1]["reason"] = "final_liquidation"
+            n_orders += 1
+            shares = 0
+            position = 0
             portfolio_values[-1] = capital
 
         portfolio_values = np.array(portfolio_values)
@@ -101,9 +215,35 @@ class BacktestEngine:
                                  "out_of_sample": False, "execution_delay_bars": 1,
                                  "note": "Use the ML research protocol for chronological out-of-sample validation."}
         metrics["performance"]["transaction_costs"] = round(float(total_costs), 2)
+        metrics["performance"]["fee"] = round(float(fee_paid), 2)
+        metrics["performance"]["half_spread"] = round(float(half_paid), 2)
+        metrics["performance"]["slippage"] = round(float(slip_paid), 2)
         metrics["performance"]["turnover_initial_capital"] = round(float(traded_notional / initial_capital), 4)
-        metrics["assumptions"] = {"commission": commission, "slippage": slippage,
-                                  "benchmark": "buy-and-hold gross, without costs"}
+        n_filled = n_orders - n_expired
+        metrics["execution"] = {
+            "order_style": style,
+            "n_orders": n_orders,
+            "n_filled": n_filled,
+            "n_expired": n_expired,
+            "n_unfilled": n_expired,
+            "fill_rate": None if n_orders == 0 else round(n_filled / n_orders, 6),
+            "n_skipped": len(skipped),
+            "skipped_by_reason": {
+                reason: sum(1 for row in skipped if row.get("reason") == reason)
+                for reason in ("expected_gain", "expired", "spread", "volume")
+            },
+            "skipped_signals": skipped[:40],
+            "entry_cost_k": entry_cost_k,
+            "half_spread_source": "estimate",
+            "slippage_source": "estimate",
+            "flagged_estimate": True,
+        }
+        metrics["assumptions"] = {
+            "commission": commission, "slippage": slippage,
+            "entry_cost_k": entry_cost_k, "order_style": style,
+            "cost_split": "fee on the fill; slippage concession split into 2 bps half-spread (capped) and the rest as impact",
+            "benchmark": "buy-and-hold gross, without costs",
+        }
         metrics["trades"] = trades[-50:]
         metrics["n_trades"] = len(trades)
         metrics["strategy"] = strategy

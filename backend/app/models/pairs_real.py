@@ -450,6 +450,8 @@ def run_real_universe(
                 "filter_improves_hit_or_net": result["filter_improves_hit_or_net"],
                 "hit_rate_delta": result["hit_rate_delta"],
                 "net_per_trade_delta": result["net_per_trade_delta"],
+                "signals": result.get("signals"),
+                "cost_model": result.get("cost_model"),
             })
 
         n_trials = registry.count(FAMILY_ID)
@@ -466,7 +468,8 @@ def run_real_universe(
 
         def _gate_series(returns: np.ndarray | None) -> dict[str, Any]:
             if returns is None or len(returns) < 3:
-                return gate(costs_included=True, returns=[0.0, 0.0, 0.0], n_trials=float(n_trials)).to_dict()
+                # A stub of zeros was never charged. Do not call that net of costs.
+                return gate(costs_included=False, returns=[0.0, 0.0, 0.0], n_trials=float(n_trials)).to_dict()
             return gate(
                 costs_included=True,
                 returns=returns.tolist(),

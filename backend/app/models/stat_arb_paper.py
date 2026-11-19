@@ -24,6 +24,19 @@ import numpy as np
 
 from app.models.cointegration import _expanding_hedge, _half_life, engle_granger
 from app.models.mean_reversion import _ar1_half_life
+from app.models.trading_costs import (
+    DEFAULT_ENTRY_K,
+    DEFAULT_IMPACT_BPS,
+    DEFAULT_MAX_SPREAD_BPS,
+    BookTop,
+    cash_delta,
+    check_liquidity,
+    entry_allowed,
+    limit_cross_index,
+    quote_fill,
+    spread_bps,
+    venue_fees,
+)
 
 DEFAULT_Y = "ETHUSDT"
 DEFAULT_X = "SOLUSDT"
@@ -68,6 +81,14 @@ class PairBar:
     x_ask: float
     y_funding: float = 0.0
     x_funding: float = 0.0
+    y_bid_sz: float | None = None
+    y_ask_sz: float | None = None
+    x_bid_sz: float | None = None
+    x_ask_sz: float | None = None
+    y_volume: float | None = None
+    x_volume: float | None = None
+    y_book_estimated: bool = False
+    x_book_estimated: bool = False
 
 
 @dataclass(frozen=True)
@@ -87,6 +108,15 @@ class PipelineConfig:
     unit_qty: float = UNIT_QTY
     initial_cash: float = INITIAL_CASH
     expected_interval_ms: int | None = None
+    venue: str = "binance_usdm"
+    execution: str = "taker"  # taker crosses; maker rests a limit
+    entry_cost_k: float = DEFAULT_ENTRY_K
+    max_spread_bps: float = DEFAULT_MAX_SPREAD_BPS
+    min_volume: float = 0.0
+    impact_bps: float = DEFAULT_IMPACT_BPS
+    fallback_slippage_bps: float = 0.0
+    limit_timeout_bars: int = 5
+    maker_fee_bps: float | None = None
 
 
 @dataclass
@@ -192,6 +222,12 @@ def bars_from_arrays(
     x_ask: Floats | None = None,
     y_funding: Floats | None = None,
     x_funding: Floats | None = None,
+    y_bid_sz: Floats | None = None,
+    y_ask_sz: Floats | None = None,
+    x_bid_sz: Floats | None = None,
+    x_ask_sz: Floats | None = None,
+    y_volume: Floats | None = None,
+    x_volume: Floats | None = None,
     half_spread_bps: float = HALF_SPREAD_BPS,
     expected_interval_ms: int | None = None,
 ) -> tuple[list[PairBar], dict[str, Any]]:
@@ -216,6 +252,9 @@ def bars_from_arrays(
     yb, ya = _opt("y_bid", y_bid), _opt("y_ask", y_ask)
     xb, xa = _opt("x_bid", x_bid), _opt("x_ask", x_ask)
     yf, xf = _opt("y_funding", y_funding), _opt("x_funding", x_funding)
+    ybs, yas = _opt("y_bid_sz", y_bid_sz), _opt("y_ask_sz", y_ask_sz)
+    xbs, xas = _opt("x_bid_sz", x_bid_sz), _opt("x_ask_sz", x_ask_sz)
+    yv, xv = _opt("y_volume", y_volume), _opt("x_volume", x_volume)
     if (yb is None) ^ (ya is None) or (xb is None) ^ (xa is None):
         raise ValueError("Bid and ask must be supplied together per leg")
 
@@ -223,18 +262,29 @@ def bars_from_arrays(
     for i in range(len(ts)):
         if yb is None or ya is None:
             y_b, y_a = _quotes_from_mid(float(y[i]), half_spread_bps)
+            y_est = True
         else:
             y_b, y_a = float(yb[i]), float(ya[i])
+            y_est = False
         if xb is None or xa is None:
             x_b, x_a = _quotes_from_mid(float(x[i]), half_spread_bps)
+            x_est = True
         else:
             x_b, x_a = float(xb[i]), float(xa[i])
+            x_est = False
         if y_b <= 0 or x_b <= 0 or y_a < y_b or x_a < x_b:
             raise ValueError(f"Invalid book at index {i}")
+
+        def _at(arr: np.ndarray | None, idx: int) -> float | None:
+            return None if arr is None else float(arr[idx])
+
         bars.append(PairBar(
             int(ts[i]), float(y[i]), float(x[i]), y_b, y_a, x_b, x_a,
             float(yf[i]) if yf is not None else 0.0,
             float(xf[i]) if xf is not None else 0.0,
+            y_bid_sz=_at(ybs, i), y_ask_sz=_at(yas, i), x_bid_sz=_at(xbs, i), x_ask_sz=_at(xas, i),
+            y_volume=_at(yv, i), x_volume=_at(xv, i),
+            y_book_estimated=y_est, x_book_estimated=x_est,
         ))
     return bars, document_gaps(ts, expected_interval_ms)
 
@@ -373,6 +423,29 @@ def rolling_zscore(values: np.ndarray, window: int) -> np.ndarray:
     return z
 
 
+def rolling_std(values: np.ndarray, window: int) -> np.ndarray:
+    """Causal sample std over the same window as ``rolling_zscore`` (ddof=1)."""
+    if window < 2:
+        raise ValueError("z_window must be ≥2")
+    x = np.asarray(values, dtype=np.float64)
+    n = len(x)
+    finite = np.isfinite(x)
+    filled = np.where(finite, x, 0.0)
+    c1 = np.concatenate(([0.0], np.cumsum(filled)))
+    c2 = np.concatenate(([0.0], np.cumsum(filled * filled)))
+    cnt = np.concatenate(([0], np.cumsum(finite.astype(np.int64))))
+    start = np.maximum(0, np.arange(n) - window + 1)
+    idx = np.arange(n)
+    count = (cnt[idx + 1] - cnt[start]).astype(np.float64)
+    s = c1[idx + 1] - c1[start]
+    q = c2[idx + 1] - c2[start]
+    ss = q - np.divide(s * s, count, out=np.zeros(n), where=count > 0)
+    var = np.divide(ss, count - 1.0, out=np.zeros(n), where=count >= 2)
+    sd = np.sqrt(np.maximum(var, 0.0))
+    sd[count < 2] = np.nan
+    return sd
+
+
 def signal_gate(
     *,
     cointegrated: bool,
@@ -428,19 +501,89 @@ def accrue_funding(book: PaperBook, bar: PairBar) -> float:
     return delta
 
 
-def fill_leg(delta_qty: float, bid: float, ask: float, fee_bps: float) -> tuple[float, float, float | None]:
-    """Positive delta buys at ask; negative delta sells at bid. Returns (cash, fee, px)."""
+def _book_top(bar: PairBar, leg: str) -> BookTop:
+    if leg == "y":
+        return BookTop(
+            bid=bar.y_bid, ask=bar.y_ask, bid_size=bar.y_bid_sz, ask_size=bar.y_ask_sz,
+            mid=bar.y_mid, volume=bar.y_volume, estimated=bar.y_book_estimated,
+        )
+    return BookTop(
+        bid=bar.x_bid, ask=bar.x_ask, bid_size=bar.x_bid_sz, ask_size=bar.x_ask_sz,
+        mid=bar.x_mid, volume=bar.x_volume, estimated=bar.x_book_estimated,
+    )
+
+
+def fill_leg(
+    delta_qty: float,
+    bid: float,
+    ask: float,
+    fee_bps: float,
+    *,
+    mid: float | None = None,
+    depth: float | None = None,
+    impact_bps: float = DEFAULT_IMPACT_BPS,
+    fallback_slippage_bps: float = 0.0,
+    liquidity: str = "taker",
+    venue: str = "binance_usdm",
+    book_estimated: bool = False,
+    fallback_half_spread_bps: float = HALF_SPREAD_BPS,
+    limit_px: float | None = None,
+) -> tuple[float, float, float | None]:
+    """Positive delta buys; negative delta sells. Returns (cash, fee, px)."""
+    cash, cost, px = fill_leg_cost(
+        delta_qty, bid, ask, fee_bps,
+        mid=mid, depth=depth, impact_bps=impact_bps,
+        fallback_slippage_bps=fallback_slippage_bps, liquidity=liquidity, venue=venue,
+        book_estimated=book_estimated, fallback_half_spread_bps=fallback_half_spread_bps,
+        limit_px=limit_px,
+    )
+    if cost is None:
+        return cash, 0.0, px
+    return cash, cost.fee, px
+
+
+def fill_leg_cost(
+    delta_qty: float,
+    bid: float,
+    ask: float,
+    fee_bps: float,
+    *,
+    mid: float | None = None,
+    depth: float | None = None,
+    impact_bps: float = DEFAULT_IMPACT_BPS,
+    fallback_slippage_bps: float = 0.0,
+    liquidity: str = "taker",
+    venue: str = "binance_usdm",
+    book_estimated: bool = False,
+    fallback_half_spread_bps: float = HALF_SPREAD_BPS,
+    limit_px: float | None = None,
+):
+    """Like ``fill_leg``, plus the fee / half-spread / slippage split."""
     if abs(delta_qty) < 1e-15:
-        return 0.0, 0.0, None
-    if delta_qty > 0:
-        px = ask
-        notional = delta_qty * px
-        fee = notional * fee_bps / 10_000.0
-        return -(notional + fee), fee, px
-    px = bid
-    notional = (-delta_qty) * px
-    fee = notional * fee_bps / 10_000.0
-    return notional - fee, fee, px
+        return 0.0, None, None
+    side = "buy" if delta_qty > 0 else "sell"
+    ref = float(mid) if mid is not None else (float(bid) + float(ask)) / 2.0
+    top = BookTop(
+        bid=bid, ask=ask, bid_size=depth, ask_size=depth, mid=ref, estimated=book_estimated,
+    )
+    cost = quote_fill(
+        side=side, qty=abs(delta_qty), mid=ref, venue=venue, liquidity=liquidity, book=top,
+        limit_px=limit_px, fallback_half_spread_bps=fallback_half_spread_bps,
+        impact_bps=impact_bps, fallback_slippage_bps=fallback_slippage_bps, fee_bps=fee_bps,
+    )
+    return cash_delta(cost), cost, cost.fill_px
+
+
+def _component_sum(costs: list) -> dict[str, float]:
+    fee = half = slip = capture = 0.0
+    for c in costs:
+        if c is None:
+            continue
+        fee += c.fee
+        half += c.half_spread
+        slip += c.slippage
+        capture += c.spread_capture
+    return {"fee": fee, "half_spread": half, "slippage": slip, "spread_capture": capture}
 
 
 def apply_spread_target(
@@ -452,13 +595,33 @@ def apply_spread_target(
     fee_bps: float,
     *,
     action: str,
+    liquidity: str = "taker",
+    venue: str = "binance_usdm",
+    impact_bps: float = DEFAULT_IMPACT_BPS,
+    fallback_slippage_bps: float = 0.0,
+    fallback_half_spread_bps: float = HALF_SPREAD_BPS,
+    y_limit: float | None = None,
+    x_limit: float | None = None,
 ) -> dict[str, Any]:
     want_y = target * unit_qty
     want_x = -target * beta * unit_qty
     dy = want_y - book.y_qty
     dx = want_x - book.x_qty
-    cash_y, fee_y, px_y = fill_leg(dy, bar.y_bid, bar.y_ask, fee_bps)
-    cash_x, fee_x, px_x = fill_leg(dx, bar.x_bid, bar.x_ask, fee_bps)
+    cash_y, cost_y, px_y = fill_leg_cost(
+        dy, bar.y_bid, bar.y_ask, fee_bps, mid=bar.y_mid,
+        depth=bar.y_ask_sz if dy > 0 else bar.y_bid_sz,
+        book_estimated=bar.y_book_estimated, limit_px=y_limit,
+        impact_bps=impact_bps, fallback_slippage_bps=fallback_slippage_bps,
+        liquidity=liquidity, venue=venue, fallback_half_spread_bps=fallback_half_spread_bps,
+    )
+    cash_x, cost_x, px_x = fill_leg_cost(
+        dx, bar.x_bid, bar.x_ask, fee_bps, mid=bar.x_mid,
+        depth=bar.x_ask_sz if dx > 0 else bar.x_bid_sz,
+        book_estimated=bar.x_book_estimated, limit_px=x_limit,
+        impact_bps=impact_bps, fallback_slippage_bps=fallback_slippage_bps,
+        liquidity=liquidity, venue=venue, fallback_half_spread_bps=fallback_half_spread_bps,
+    )
+    parts = _component_sum([cost_y, cost_x])
     mid_cash = -dy * bar.y_mid - dx * bar.x_mid
     actual_cash = cash_y + cash_x
     book.cash += actual_cash
@@ -467,7 +630,9 @@ def apply_spread_target(
     book.x_qty += dx
     book.position = target
     book.entry_beta = beta if target != 0 else None
-    book.costs_paid += mid_cash - actual_cash
+    # Drag versus marking the same quantities at the mid.
+    book.costs_paid += parts["fee"] + parts["half_spread"] + parts["slippage"] - parts["spread_capture"]
+    sources = [c.spread_source for c in (cost_y, cost_x) if c is not None]
     return {
         "ts_ms": bar.ts_ms,
         "action": action,
@@ -480,7 +645,13 @@ def apply_spread_target(
         "y_side": "buy" if dy > 0 else ("sell" if dy < 0 else "flat"),
         "x_side": "buy" if dx > 0 else ("sell" if dx < 0 else "flat"),
         "cash_delta": actual_cash,
-        "fee": fee_y + fee_x,
+        "fee": parts["fee"],
+        "half_spread": parts["half_spread"],
+        "slippage": parts["slippage"],
+        "spread_capture": parts["spread_capture"],
+        "liquidity": liquidity,
+        "spread_source": "estimate" if "estimate" in sources else ("book" if sources else None),
+        "flagged_estimate": any(c.flagged_estimate for c in (cost_y, cost_x) if c is not None),
         "inventory": {"y": book.y_qty, "x": book.x_qty, "position": book.position},
     }
 
@@ -608,16 +779,25 @@ def run_paper_pipeline(
     if not gate["ok"]:
         return _rejected(gate["reason"], cfg=cfg, data=data, signal=signal, extra={"pvalue": pvalue, "half_life_bars": signal["half_life_bars"], "gate_bars": gate_n})
 
+    if cfg.execution not in ("taker", "maker"):
+        raise ValueError("execution must be taker or maker")
     _, betas, spread = _expanding_hedge(y, x, min_est)
     z = rolling_zscore(spread, cfg.z_window)
+    spread_sd = rolling_std(spread, cfg.z_window)
+    maker_fee = cfg.maker_fee_bps if cfg.maker_fee_bps is not None else venue_fees(cfg.venue).maker_bps
 
     book = PaperBook(cash=cfg.initial_cash, peak_equity=cfg.initial_cash, shadow_cash=cfg.initial_cash)
     kill = KillSwitch()
     fills: list[dict[str, Any]] = []
     latency_flags: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    expired_orders: list[dict[str, Any]] = []
     curve = [cfg.initial_cash]
     last_z = None
     expected_dt = float(gap_doc.get("expected_interval_ms") or cfg.expected_interval_ms or 0)
+    resting: dict[str, Any] | None = None
+    n_posted = 0
+    n_maker_filled = 0
 
     def _drawdown(equity: float) -> float:
         book.peak_equity = max(book.peak_equity, equity)
@@ -626,9 +806,109 @@ def run_paper_pipeline(
         return equity / book.peak_equity - 1.0
 
     def _flatten(bar: PairBar, reason: str) -> None:
+        nonlocal n_posted
         beta = book.entry_beta if book.entry_beta is not None else float(eg["beta"])
-        fills.append(apply_spread_target(book, 0, beta, cfg.unit_qty, bar, cfg.taker_fee_bps, action=reason))
+        fills.append(apply_spread_target(
+            book, 0, beta, cfg.unit_qty, bar, cfg.taker_fee_bps, action=reason, venue=cfg.venue,
+            impact_bps=cfg.impact_bps, fallback_slippage_bps=cfg.fallback_slippage_bps,
+            fallback_half_spread_bps=cfg.half_spread_bps,
+        ))
+        n_posted += 1
         kill.flattened_at_ms = bar.ts_ms
+
+    def _expire(bar: PairBar, why: str) -> None:
+        nonlocal resting
+        if resting is None:
+            return
+        expired_orders.append({
+            "ts_ms": bar.ts_ms,
+            "reason": why,
+            "action": resting["action"],
+            "y_limit": resting["y_limit"],
+            "x_limit": resting["x_limit"],
+            "y_hit": resting["y_hit"],
+            "x_hit": resting["x_hit"],
+        })
+        resting = None
+
+    def _work_resting(fill_i: int, bar: PairBar) -> None:
+        nonlocal resting, n_maker_filled
+        if resting is None:
+            return
+        age = fill_i - int(resting["placed_i"])
+        if age > cfg.limit_timeout_bars:
+            _expire(bar, "timeout")
+            return
+        if limit_cross_index([bar.y_mid], resting["prev_y"], resting["y_limit"], 0) is not None:
+            resting["y_hit"] = True
+        if limit_cross_index([bar.x_mid], resting["prev_x"], resting["x_limit"], 0) is not None:
+            resting["x_hit"] = True
+        resting["prev_y"] = bar.y_mid
+        resting["prev_x"] = bar.x_mid
+        if resting["y_hit"] and resting["x_hit"]:
+            fills.append(apply_spread_target(
+                book, resting["target"], resting["beta"], cfg.unit_qty, bar, maker_fee,
+                action=resting["action"], liquidity="maker", venue=cfg.venue,
+                y_limit=resting["y_limit"], x_limit=resting["x_limit"],
+                impact_bps=cfg.impact_bps, fallback_slippage_bps=cfg.fallback_slippage_bps,
+                fallback_half_spread_bps=cfg.half_spread_bps,
+            ))
+            n_maker_filled += 1
+            resting = None
+            return
+        if age >= cfg.limit_timeout_bars:
+            _expire(bar, "timeout")
+
+    def _entry_skip(bar: PairBar, zt: float, beta_t: float) -> dict[str, Any] | None:
+        vol = None
+        if bar.y_volume is not None and bar.x_volume is not None:
+            vol = min(bar.y_volume, bar.x_volume)
+        elif bar.y_volume is not None:
+            vol = bar.y_volume
+        elif bar.x_volume is not None:
+            vol = bar.x_volume
+        for leg, bid, ask, mid in (
+            ("y", bar.y_bid, bar.y_ask, bar.y_mid),
+            ("x", bar.x_bid, bar.x_ask, bar.x_mid),
+        ):
+            decision = check_liquidity(
+                spread_bps_value=spread_bps(bid, ask, mid),
+                volume=vol,
+                max_spread_bps=cfg.max_spread_bps,
+                min_volume=cfg.min_volume,
+            )
+            if not decision.ok:
+                return {
+                    "ts_ms": bar.ts_ms, "reason": decision.reason, "leg": leg,
+                    "spread_bps": decision.spread_bps, "volume": decision.volume,
+                    "z": None if not math.isfinite(zt) else round(zt, 4),
+                }
+        sd = float(spread_sd[t]) if np.isfinite(spread_sd[t]) else float("nan")
+        expected = max(abs(zt) - cfg.exit_z, 0.0) * sd * cfg.unit_qty if math.isfinite(sd) else float("nan")
+        liq = cfg.execution
+        fee_bps = maker_fee if liq == "maker" else cfg.taker_fee_bps
+        y_cost = quote_fill(
+            side="buy", qty=cfg.unit_qty, mid=bar.y_mid, venue=cfg.venue, liquidity=liq,
+            book=_book_top(bar, "y"), fee_bps=fee_bps, impact_bps=cfg.impact_bps,
+            fallback_slippage_bps=cfg.fallback_slippage_bps, fallback_half_spread_bps=cfg.half_spread_bps,
+        )
+        x_cost = quote_fill(
+            side="sell", qty=abs(beta_t) * cfg.unit_qty, mid=bar.x_mid, venue=cfg.venue, liquidity=liq,
+            book=_book_top(bar, "x"), fee_bps=fee_bps, impact_bps=cfg.impact_bps,
+            fallback_slippage_bps=cfg.fallback_slippage_bps, fallback_half_spread_bps=cfg.half_spread_bps,
+        )
+        # Open plus a same-book exit: four legs.
+        round_trip = 2.0 * (y_cost.total + x_cost.total)
+        if not entry_allowed(expected, round_trip, cfg.entry_cost_k):
+            return {
+                "ts_ms": bar.ts_ms, "reason": "expected_gain",
+                "expected_gain": None if not math.isfinite(expected) else round(float(expected), 6),
+                "round_trip_cost": round(float(round_trip), 6),
+                "k": cfg.entry_cost_k,
+                "z": round(zt, 4),
+                "legs": 4,
+            }
+        return None
 
     n = len(bars)
     for t in range(gate_n, n - 1):
@@ -638,17 +918,20 @@ def run_paper_pipeline(
         equity = book.mark(fill_bar.y_mid, fill_bar.x_mid)
         dd = _drawdown(equity)
 
-        # Kill switch is authoritative: flatten (if needed) and refuse further paper fills.
         if kill.armed:
+            _expire(fill_bar, "kill")
             if book.position != 0:
                 _flatten(fill_bar, "kill_flatten")
             break
 
         if dd <= -cfg.max_drawdown:
             kill.arm("max_drawdown", ts_ms=fill_bar.ts_ms, drawdown=dd)
+            _expire(fill_bar, "kill")
             if book.position != 0:
                 _flatten(fill_bar, "kill_flatten")
             continue
+
+        _work_resting(fill_i, fill_bar)
 
         zt = float(z[t]) if np.isfinite(z[t]) else float("nan")
         last_z = zt if np.isfinite(zt) else last_z
@@ -661,6 +944,10 @@ def run_paper_pipeline(
                 "dt_ms": fill_bar.ts_ms - bars[t].ts_ms,
             })
 
+        if resting is not None:
+            curve.append(book.mark(fill_bar.y_mid, fill_bar.x_mid))
+            continue
+
         target = decide_target(zt, book.position, cfg.entry_z, cfg.exit_z)
         target = clip_position(target, cfg.max_position)
         if gap_here and book.position == 0 and target != 0:
@@ -672,26 +959,73 @@ def run_paper_pipeline(
         beta_t = float(betas[t]) if np.isfinite(betas[t]) else float(eg["beta"])
         if book.position != 0 and book.entry_beta is not None:
             beta_t = book.entry_beta
-        if target != 0 and book.position == 0:
+        opening = target != 0 and book.position == 0
+        if opening:
             action = "enter_long_spread" if target == 1 else "enter_short_spread"
+            blocked = _entry_skip(fill_bar, zt, beta_t)
+            if blocked is not None:
+                skipped.append(blocked)
+                curve.append(equity)
+                continue
         else:
             action = "exit"
-        fills.append(apply_spread_target(book, target, beta_t, cfg.unit_qty, fill_bar, cfg.taker_fee_bps, action=action))
+
+        if cfg.execution == "maker" and action != "exit":
+            if target == 1:
+                y_limit, x_limit = fill_bar.y_bid, fill_bar.x_ask
+            else:
+                y_limit, x_limit = fill_bar.y_ask, fill_bar.x_bid
+            resting = {
+                "placed_i": fill_i, "target": target, "beta": beta_t, "action": action,
+                "y_limit": y_limit, "x_limit": x_limit,
+                "prev_y": fill_bar.y_mid, "prev_x": fill_bar.x_mid,
+                "y_hit": False, "x_hit": False,
+            }
+            n_posted += 1
+            curve.append(equity)
+            continue
+        if cfg.execution == "maker" and action == "exit":
+            if target == 0 and book.position == 1:
+                # flattening a long spread: sell y at ask, buy x at bid
+                y_limit, x_limit = fill_bar.y_ask, fill_bar.x_bid
+            else:
+                y_limit, x_limit = fill_bar.y_bid, fill_bar.x_ask
+            resting = {
+                "placed_i": fill_i, "target": target, "beta": beta_t, "action": action,
+                "y_limit": y_limit, "x_limit": x_limit,
+                "prev_y": fill_bar.y_mid, "prev_x": fill_bar.x_mid,
+                "y_hit": False, "x_hit": False,
+            }
+            n_posted += 1
+            curve.append(equity)
+            continue
+
+        fills.append(apply_spread_target(
+            book, target, beta_t, cfg.unit_qty, fill_bar, cfg.taker_fee_bps, action=action,
+            venue=cfg.venue, impact_bps=cfg.impact_bps, fallback_slippage_bps=cfg.fallback_slippage_bps,
+            fallback_half_spread_bps=cfg.half_spread_bps,
+        ))
+        n_posted += 1
 
         equity = book.mark(fill_bar.y_mid, fill_bar.x_mid)
         dd = _drawdown(equity)
         if dd <= -cfg.max_drawdown:
             kill.arm("max_drawdown", ts_ms=fill_bar.ts_ms, drawdown=dd)
+            _expire(fill_bar, "kill")
             if book.position != 0:
                 _flatten(fill_bar, "kill_flatten")
         curve.append(equity)
 
     final_bar = bars[-1]
+    if resting is not None:
+        _expire(final_bar, "eod")
     if book.position != 0:
         fills.append(apply_spread_target(
             book, 0, book.entry_beta or float(eg["beta"]), cfg.unit_qty, final_bar, cfg.taker_fee_bps,
-            action="eod_flatten",
+            action="eod_flatten", venue=cfg.venue, impact_bps=cfg.impact_bps,
+            fallback_slippage_bps=cfg.fallback_slippage_bps, fallback_half_spread_bps=cfg.half_spread_bps,
         ))
+        n_posted += 1
 
     rec = reconcile_book(book, cfg.unit_qty)
     final_eq = book.mark(final_bar.y_mid, final_bar.x_mid)
@@ -736,9 +1070,31 @@ def run_paper_pipeline(
             "reconciled": rec["ok"],
             "reconcile": rec,
             "costs_paid": round(float(book.costs_paid), 6),
+            "fee": round(sum(float(f.get("fee") or 0.0) for f in fills), 6),
+            "half_spread": round(sum(float(f.get("half_spread") or 0.0) for f in fills), 6),
+            "slippage": round(sum(float(f.get("slippage") or 0.0) for f in fills), 6),
+            "spread_capture": round(sum(float(f.get("spread_capture") or 0.0) for f in fills), 6),
             "taker_fee_bps": cfg.taker_fee_bps,
+            "maker_fee_bps": maker_fee,
             "half_spread_bps": cfg.half_spread_bps,
+            "impact_bps": cfg.impact_bps,
+            "fallback_slippage_bps": cfg.fallback_slippage_bps,
+            "venue": cfg.venue,
+            "order_style": cfg.execution,
+            "n_orders": n_posted,
+            "n_filled": n_posted - len(expired_orders),
+            "n_expired": len(expired_orders),
+            "n_unfilled": len(expired_orders),
+            "fill_rate": None if n_posted == 0 else round((n_posted - len(expired_orders)) / n_posted, 6),
+            "expired_orders": expired_orders[:50],
+            "skipped_signals": skipped[:80],
+            "n_skipped": len(skipped),
+            "skipped_by_reason": {
+                reason: sum(1 for s in skipped if s.get("reason") == reason)
+                for reason in ("expected_gain", "spread", "volume", "volume_unavailable")
+            },
             "funding_applied": round(float(book.funding_pnl), 6),
+            "entry_cost_k": cfg.entry_cost_k,
         },
         "monitoring": {
             "pnl_net": round(final_eq - cfg.initial_cash, 6),
@@ -758,7 +1114,10 @@ def run_paper_pipeline(
         "math": (
             "y_t = α + β x_t + e_t (Engle–Granger). OU half-life = −ln 2 / ln φ on e_t. "
             "Causal expanding hedge + rolling z; |z|>entry opens, |z|<exit flattens. "
-            "Buys fill at ask, sells at bid, plus taker fee. Kill switch flattens paper first."
+            "Taker buys the ask and sells the bid; maker limits fill only when mid crosses the level "
+            "before the timeout. Cost = fee + half-spread + slippage − spread capture. "
+            "Entry requires expected reversion ≥ k times the four-leg round trip. "
+            "Kill switch flattens paper first."
         ),
         "what_broke": list(_WHAT_BROKE) + list(eg.get("what_broke") or []),
     }
@@ -794,24 +1153,42 @@ def evaluate(
                 parsed.append(b)
                 continue
             y_mid_b, x_mid_b = float(b["y_mid"]), float(b["x_mid"])
-            y_bid_b = b.get("y_bid")
-            y_ask_b = b.get("y_ask")
-            x_bid_b = b.get("x_bid")
-            x_ask_b = b.get("x_ask")
-            if y_bid_b is None or y_ask_b is None:
+            raw_y_bid, raw_y_ask = b.get("y_bid"), b.get("y_ask")
+            raw_x_bid, raw_x_ask = b.get("x_bid"), b.get("x_ask")
+            if raw_y_bid is None or raw_y_ask is None:
                 y_bid_b, y_ask_b = _quotes_from_mid(y_mid_b, cfg.half_spread_bps)
-            if x_bid_b is None or x_ask_b is None:
+                y_est = True
+            else:
+                y_bid_b, y_ask_b = float(raw_y_bid), float(raw_y_ask)
+                y_est = False
+            if raw_x_bid is None or raw_x_ask is None:
                 x_bid_b, x_ask_b = _quotes_from_mid(x_mid_b, cfg.half_spread_bps)
+                x_est = True
+            else:
+                x_bid_b, x_ask_b = float(raw_x_bid), float(raw_x_ask)
+                x_est = False
+
+            def _opt_num(raw: Any) -> float | None:
+                return None if raw is None else float(raw)
+
             parsed.append(PairBar(
                 ts_ms=int(b["ts_ms"]),
                 y_mid=y_mid_b,
                 x_mid=x_mid_b,
-                y_bid=float(y_bid_b),
-                y_ask=float(y_ask_b),
-                x_bid=float(x_bid_b),
-                x_ask=float(x_ask_b),
+                y_bid=y_bid_b,
+                y_ask=y_ask_b,
+                x_bid=x_bid_b,
+                x_ask=x_ask_b,
                 y_funding=float(b.get("y_funding") or 0.0),
                 x_funding=float(b.get("x_funding") or 0.0),
+                y_bid_sz=_opt_num(b.get("y_bid_sz")),
+                y_ask_sz=_opt_num(b.get("y_ask_sz")),
+                x_bid_sz=_opt_num(b.get("x_bid_sz")),
+                x_ask_sz=_opt_num(b.get("x_ask_sz")),
+                y_volume=_opt_num(b.get("y_volume")),
+                x_volume=_opt_num(b.get("x_volume")),
+                y_book_estimated=y_est,
+                x_book_estimated=x_est,
             ))
         gap = document_gaps([b.ts_ms for b in parsed], cfg.expected_interval_ms)
         return run_paper_pipeline(parsed, cfg, source=source, gap_doc=gap)

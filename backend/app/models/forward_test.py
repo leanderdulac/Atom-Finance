@@ -76,7 +76,15 @@ def sequential_pnl(
     r = np.diff(p) / p[:-1]
     sig = pos[:-1] if delay else pos[1:]
     turnover = np.abs(np.diff(np.concatenate([[0.0], sig])))
-    net = sig * r - (commission + slippage) * turnover
+    # Net is unchanged: fee + half-spread estimate + impact = commission + slippage.
+    # With no book, 2 bps of the slippage fraction is the half-spread estimate
+    # and the rest is impact. Both are flagged estimates.
+    half_rate = min(0.0002, max(slippage, 0.0))
+    impact_rate = max(slippage - half_rate, 0.0)
+    fee_series = commission * turnover
+    half_series = half_rate * turnover
+    slip_series = impact_rate * turnover
+    net = sig * r - (fee_series + half_series + slip_series)
     active = sig != 0
     hit = float(np.mean((sig[active] * r[active]) > 0)) if np.any(active) else 0.0
     if np.std(sig) < 1e-12 or np.std(r) < 1e-12:
@@ -93,6 +101,15 @@ def sequential_pnl(
         "turnover": round(float(np.mean(turnover)), 4),
         "n_active": int(np.sum(active)),
         "equity": equity,
+        "fee": fee_series,
+        "half_spread": half_series,
+        "slippage": slip_series,
+        "fee_total": float(np.sum(fee_series)),
+        "half_spread_total": float(np.sum(half_series)),
+        "slippage_total": float(np.sum(slip_series)),
+        "half_spread_source": "estimate",
+        "slippage_source": "estimate",
+        "flagged_estimate": True,
     }
 
 
