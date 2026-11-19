@@ -1,20 +1,40 @@
 """Hyperliquid broker link. Testnet-first; mainnet writes stay blocked unless
-armed via env AND an explicit live=True call argument. Never logs keys."""
+armed via env AND an explicit live=True call argument. Never logs keys.
+
+GET routes stay authenticated (the protected router). POST /order and
+POST /cancel also require an admin or operator role.
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import Field
+from functools import partial
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from pydantic import Field, field_validator
+
+from app.core.client_mode import is_operator_role
 from app.core.limiter import limiter
+from app.core.security import get_current_user
+from app.db.database import get_user_by_username
 from app.models.derivatives_planner import StrictModel
 from app.services import hyperliquid_trading as hl
 
 router = APIRouter()
 
 
-class OrderRequest(StrictModel):
-    coin: str = Field(min_length=1, max_length=12)
+class _CoinBody(StrictModel):
+    coin: str
+
+    @field_validator("coin", mode="before")
+    @classmethod
+    def _coin(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        return hl.normalize_coin(value)
+
+
+class OrderRequest(_CoinBody):
     side: str = Field(pattern="^(buy|sell)$")
     size: float = Field(gt=0)
     price: float | None = Field(default=None, gt=0)
@@ -22,16 +42,47 @@ class OrderRequest(StrictModel):
     live: bool = False
 
 
-class CancelRequest(StrictModel):
-    coin: str = Field(min_length=1, max_length=12)
+class CancelRequest(_CoinBody):
     oid: int = Field(ge=0)
+    live: bool = False
 
 
-def _cfg_or_503():
+def _cfg_or_503() -> hl.HLConfig:
     cfg = hl.load_config()
-    if hl._SDK_MISSING is not None:
-        raise HTTPException(503, f"SDK Hyperliquid ausente: {hl._SDK_MISSING}")
+    missing = hl.sdk_missing()
+    if missing is not None:
+        raise HTTPException(503, f"SDK Hyperliquid ausente: {missing}")
     return cfg
+
+
+def _public_error(cfg: hl.HLConfig, exc: BaseException) -> str:
+    text = str(exc)
+    secret = cfg.api_wallet_key
+    if secret and secret in text:
+        return "erro interno ao falar com a exchange"
+    return text[:300]
+
+
+def _scrub(cfg: hl.HLConfig, message: str) -> str:
+    secret = cfg.api_wallet_key
+    if secret:
+        return message.replace(secret, "[redacted]")
+    return message
+
+
+def _raise_if_rejected(cfg: hl.HLConfig, payload: object) -> None:
+    found = hl.sdk_rejection(payload)
+    if found is None:
+        return
+    code, message = found
+    raise HTTPException(code, _scrub(cfg, message))
+
+
+async def _require_operator(username: str) -> None:
+    """Same lookup as the admin user list, extended to the operator role."""
+    me = await get_user_by_username(username)
+    if not me or not is_operator_role(me.get("role")):
+        raise HTTPException(status_code=403, detail="Admin or operator access required.")
 
 
 @router.get("/status")
@@ -46,11 +97,9 @@ async def markets(request: Request):
     cfg = _cfg_or_503()
     what_broke = list(cfg.what_broke)
     try:
-        client = hl.info_client(cfg)
-        mids = client.all_mids()
-        meta = hl.meta_map(client)
+        mids, meta = await run_in_threadpool(hl.fetch_markets, cfg)
     except Exception as exc:
-        raise HTTPException(502, f"Falha ao ler /info: {exc}") from exc
+        raise HTTPException(502, f"Falha ao ler /info: {_public_error(cfg, exc)}") from exc
     return {"network": cfg.network, "mids": mids, "meta": meta, "what_broke": what_broke}
 
 
@@ -62,25 +111,26 @@ async def account(request: Request):
         raise HTTPException(422, "HYPERLIQUID_ACCOUNT_ADDRESS ausente.")
     what_broke = list(cfg.what_broke)
     try:
-        client = hl.info_client(cfg)
-        state = client.user_state(cfg.account_address)
-        orders = client.open_orders(cfg.account_address)
+        state, orders = await run_in_threadpool(hl.fetch_account, cfg)
     except Exception as exc:
-        raise HTTPException(502, f"Falha ao ler conta: {exc}") from exc
+        raise HTTPException(502, f"Falha ao ler conta: {_public_error(cfg, exc)}") from exc
     return {"network": cfg.network, "state": state, "open_orders": orders, "what_broke": what_broke}
 
 
 @router.post("/order")
 @limiter.limit("10/minute")
-async def place_order(request: Request, req: OrderRequest):
+async def place_order(
+    request: Request,
+    req: OrderRequest,
+    username: str = Depends(get_current_user),
+):
+    await _require_operator(username)
     cfg = _cfg_or_503()
-    coin = req.coin.strip().upper()
+    coin = req.coin
     try:
-        client = hl.info_client(cfg)
-        mids = client.all_mids()
-        meta = hl.meta_map(client)
+        mids, meta = await run_in_threadpool(hl.fetch_markets, cfg)
     except Exception as exc:
-        raise HTTPException(502, f"Falha ao ler /info: {exc}") from exc
+        raise HTTPException(502, f"Falha ao ler /info: {_public_error(cfg, exc)}") from exc
     spec = meta.get(coin)
     if spec is None:
         raise HTTPException(422, f"Ativo desconhecido: {coin}.")
@@ -91,23 +141,29 @@ async def place_order(request: Request, req: OrderRequest):
     size = hl.round_to_lot(req.size, spec["sz_decimals"])
     if size <= 0:
         raise HTTPException(422, "Tamanho zerou após arredondar no lote mínimo.")
-    notional = size * px
+    if req.price is None:
+        notional = hl.market_notional(size, ref_px, req.side, cfg.market_slippage)
+    else:
+        notional = size * px
     blockers = hl.guard_write(cfg, live=req.live, notional_usd=notional)
     if blockers:
         raise HTTPException(403, {"detail": "Ordem bloqueada.", "blockers": blockers})
     try:
-        ex = hl.exchange_client(cfg)
-        if req.price is None:
-            resp = ex.market_open(coin, req.side == "buy", size)
-        else:
-            from hyperliquid.utils.signing import OrderType
-
-            resp = ex.order(
-                coin, req.side == "buy", size, px, OrderType({"limit": {"tif": "Gtc"}}),
+        resp = await run_in_threadpool(
+            partial(
+                hl.submit_order,
+                cfg,
+                coin=coin,
+                is_buy=req.side == "buy",
+                size=size,
+                limit_px=req.price,
+                mid=ref_px,
                 reduce_only=req.reduce_only,
             )
+        )
     except Exception as exc:
-        raise HTTPException(502, f"Falha ao enviar ordem: {exc}") from exc
+        raise HTTPException(502, f"Falha ao enviar ordem: {_public_error(cfg, exc)}") from exc
+    _raise_if_rejected(cfg, resp)
     return {
         "network": cfg.network,
         "coin": coin,
@@ -115,6 +171,7 @@ async def place_order(request: Request, req: OrderRequest):
         "size": size,
         "price": px,
         "notional_usd": notional,
+        "slippage": None if req.price is not None else cfg.market_slippage,
         "reduce_only": req.reduce_only,
         "response": resp,
         "what_broke": list(cfg.what_broke),
@@ -123,16 +180,19 @@ async def place_order(request: Request, req: OrderRequest):
 
 @router.post("/cancel")
 @limiter.limit("10/minute")
-async def cancel_order(request: Request, req: CancelRequest):
+async def cancel_order(
+    request: Request,
+    req: CancelRequest,
+    username: str = Depends(get_current_user),
+):
+    await _require_operator(username)
     cfg = _cfg_or_503()
+    blockers = hl.guard_cancel(cfg, live=req.live)
+    if blockers:
+        raise HTTPException(403, {"detail": "Cancelamento bloqueado.", "blockers": blockers})
     try:
-        ex = hl.exchange_client(cfg)
+        resp = await run_in_threadpool(hl.submit_cancel, cfg, req.coin, req.oid)
     except Exception as exc:
-        raise HTTPException(422, f"Cliente de escrita indisponível: {exc}") from exc
-    if not cfg.testnet and not (cfg.live_trading):
-        raise HTTPException(403, {"detail": "Cancelamento bloqueado.", "blockers": list(cfg.what_broke)})
-    try:
-        resp = ex.cancel(req.coin.strip().upper(), req.oid)
-    except Exception as exc:
-        raise HTTPException(502, f"Falha ao cancelar: {exc}") from exc
+        raise HTTPException(502, f"Falha ao cancelar: {_public_error(cfg, exc)}") from exc
+    _raise_if_rejected(cfg, resp)
     return {"network": cfg.network, "response": resp, "what_broke": list(cfg.what_broke)}

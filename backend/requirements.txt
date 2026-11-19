@@ -18,8 +18,10 @@ yfinance>=0.2.58
 requests>=2.33.0,<3
 defusedxml>=0.7.1  # entity-expansion-safe SEC XML parsing (edgar.py)
 
-# Brokers — Hyperliquid signed trading (testnet-first, mainnet blocked by default)
+# Brokers — Hyperliquid signed trading (testnet-first, mainnet blocked by default).
+# eth-account is imported directly to sign with an API wallet.
 hyperliquid-python-sdk>=0.24,<1
+eth-account>=0.10,<0.14
 
 # Machine Learning
 scikit-learn~=1.5.2

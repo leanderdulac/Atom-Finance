@@ -4,6 +4,8 @@
 
 > **Produto atual: ATOM Research — piloto local.** A jornada principal é hipótese → avaliação temporal → diário → decisão de pesquisa. Veja [escopo, limites e critérios do piloto](docs/PRODUCT-PILOT.md). Descrições legadas abaixo não representam validação institucional nem autorização de negociação.
 
+> **Pesquisa vs corretora.** O modo pesquisa (labs, paper, Laboratório Quant) continua só paper. O conector Hyperliquid é opt-in, testnet por padrão; mainnet exige confirmação dupla e teto por ordem. Ver [docs/HYPERLIQUID-TRADING.md](docs/HYPERLIQUID-TRADING.md).
+
 # ATOM - Advanced Trading & Options Modeler
 
 [![ATOM CI](https://github.com/leanderdulac/Atom-Finance/actions/workflows/ci.yml/badge.svg)](https://github.com/leanderdulac/Atom-Finance/actions/workflows/ci.yml)
