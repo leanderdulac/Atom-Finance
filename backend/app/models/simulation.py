@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from app.models.trading_costs import entry_allowed
+
 
 def simulate_levels(
     S0: float,
@@ -23,6 +25,13 @@ def simulate_levels(
     seed: int = 0,
     size: float = 1.0,
     cost_total: float = 0.0,
+    *,
+    order_style: str = "market",
+    limit_timeout: int | None = None,
+    entry_cost_k: float = 2.0,
+    fee: float | None = None,
+    half_spread: float | None = None,
+    slippage: float | None = None,
 ) -> dict:
     """Simulate a stop/target plan. First touch decides each path.
 
@@ -48,6 +57,16 @@ def simulate_levels(
         raise ValueError("size must be positive")
     if cost_total < 0:
         raise ValueError("cost_total cannot be negative")
+    style = (order_style or "market").lower()
+    if style not in ("market", "limit"):
+        raise ValueError("order_style must be market or limit")
+    components_known = fee is not None or half_spread is not None or slippage is not None
+    fee_c = float(fee or 0.0)
+    half_c = float(half_spread or 0.0)
+    slip_c = float(slippage or 0.0)
+    if min(fee_c, half_c, slip_c) < 0:
+        raise ValueError("fee, half_spread and slippage cannot be negative")
+    cost_used = (fee_c + half_c + slip_c) if components_known else float(cost_total)
 
     rng = np.random.default_rng(seed)
     dt = 1.0 / 252.0
@@ -69,6 +88,29 @@ def simulate_levels(
         touched = log_paths <= log_entry
         entered = touched.any(axis=1)
         entry_day = np.where(entered, touched.argmax(axis=1), -1)
+
+    timeout = horizon_days - 1 if limit_timeout is None else int(limit_timeout)
+    n_expired = 0
+    if style == "limit":
+        # A limit fills only when the path crosses the level. Resting exactly
+        # on the level (S0 == entry) is not a fill. Timeout is inclusive.
+        px = np.exp(log_paths)
+        prev = np.concatenate([np.full((n_paths, 1), S0), px[:, :-1]], axis=1)
+        crossed = ((prev < entry) & (px >= entry)) | ((prev > entry) & (px <= entry))
+        if timeout < horizon_days - 1:
+            crossed[:, timeout + 1 :] = False
+        entered = crossed.any(axis=1)
+        entry_day = np.where(entered, crossed.argmax(axis=1), -1)
+        n_expired = int((~entered).sum()) if timeout < horizon_days - 1 else 0
+    n_unfilled = int((~entered).sum()) - n_expired
+
+    expected_gain = abs(target - entry) * size
+    entry_blocked = not entry_allowed(expected_gain, cost_used, entry_cost_k)
+    if entry_blocked:
+        entered[:] = False
+        entry_day[:] = -1
+        n_expired = 0
+        n_unfilled = n_paths
 
     pnl = np.zeros(n_paths)
     outcome = np.full(n_paths, "no_entry", dtype=object)
@@ -92,7 +134,7 @@ def simulate_levels(
         else:
             exit_px, outcome[i], hold = float(np.exp(tail[-1])), "expiry", len(tail) - 1
         holding[i] = hold
-        pnl[i] = sign * (exit_px - entry) * size - cost_total
+        pnl[i] = sign * (exit_px - entry) * size - cost_used
 
     entered_n = int(entered.sum())
     won = pnl > 0
@@ -116,6 +158,20 @@ def simulate_levels(
         "pnl_mean": round(float(pnl.mean()), 4),
         "expected_shortfall_95": round(expected_shortfall, 4),
         "median_holding_days": int(np.median(holding[entered])) if entered_n else 0,
+        "order_style": style,
+        "n_orders": n_paths,
+        "n_filled": entered_n,
+        "n_expired": n_expired,
+        "n_unfilled": n_unfilled,
+        "fill_rate": round(entered_n / n_paths, 6),
+        "entry_blocked": entry_blocked,
+        "costs": {
+            "fee": round(fee_c, 6) if components_known else None,
+            "half_spread": round(half_c, 6) if components_known else None,
+            "slippage": round(slip_c, 6) if components_known else None,
+            "total": round(cost_used, 6),
+            "flagged_estimate": (not components_known) and cost_used > 0,
+        },
         "model": "gbm_constant_vol",
         "assumptions": {
             "S0": S0, "direction": direction, "entry": entry, "stop": stop,

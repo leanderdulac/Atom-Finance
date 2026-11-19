@@ -153,6 +153,11 @@ def pairs_backtest(
     commission: float = 0.0005,
     slippage: float = 0.0002,
     initial_capital: float = 100_000.0,
+    *,
+    entry_cost_k: float = 2.0,
+    max_spread_bps: float = 25.0,
+    min_volume: float = 0.0,
+    volume: np.ndarray | None = None,
 ) -> dict:
     """
     Dollar-neutral pairs: long the cheap leg / short the rich leg when |z| > entry,
@@ -182,15 +187,26 @@ def pairs_backtest(
     _, beta, spread = _expanding_hedge(y, x, min_est)
     spread_window: list[float] = []  # causal residuals accumulated for the expanding z
 
+    from app.models.trading_costs import check_liquidity, four_leg_fraction, pairs_entry_allowed
+
     position = 0  # +1 long spread (long y, short β x)
     equity = initial_capital
+    gross_equity = initial_capital
     curve = [equity]
     trades = 0
     costs_paid = 0.0
+    fee_paid = 0.0
+    half_paid = 0.0
     wins = 0
     closed = 0
     beta0 = 0.0
-    one_way = commission + slippage  # both legs, as a fraction of gross notional
+    # commission = taker fee; slippage = half-spread estimate (no book on this clock).
+    fee_bps = commission * 10_000.0
+    half_bps = slippage * 10_000.0
+    one_way = four_leg_fraction(fee_bps, half_bps, 0.0) / 2.0  # open both legs, fraction of gross
+    round_trip = four_leg_fraction(fee_bps, half_bps, 0.0)
+    skipped: list[dict] = []
+    estimated_spread_bps = 2.0 * half_bps
 
     for t in range(warmup, n - 1):
         st = spread[t]
@@ -213,10 +229,42 @@ def pairs_backtest(
 
         fill = t + 1
         b_sig = beta[t] if np.isfinite(beta[t]) else float(stats["beta"])
+        if position == 0 and target != 0:
+            y_t = float(y[t])
+            x_t = float(x[t])
+            gross_n = abs(y_t) + abs(float(b_sig)) * abs(x_t)
+            expected = (
+                max(abs(z) - exit_z, 0.0) * (sd / gross_n) if gross_n > 0 else float("nan")
+            )
+            vol_t = None if volume is None or t >= len(volume) else float(volume[t])
+            liq = check_liquidity(
+                spread_bps_value=estimated_spread_bps,
+                volume=vol_t,
+                max_spread_bps=max_spread_bps,
+                min_volume=min_volume,
+            )
+            reason = None if liq.ok else liq.reason
+            if reason is None and not pairs_entry_allowed(expected, fee_bps, half_bps, 0.0, entry_cost_k):
+                reason = "expected_gain"
+            if reason is not None:
+                skipped.append({
+                    "t": int(t),
+                    "reason": reason,
+                    "expected_gain": None if not np.isfinite(expected) else round(float(expected), 8),
+                    "round_trip_cost": round_trip,
+                    "k": entry_cost_k,
+                    "legs": 4,
+                    "spread_bps": liq.spread_bps,
+                })
+                target = 0
         if target != position:
             turnover = abs(target - position)
             cost = turnover * one_way
-            costs_paid += cost * equity
+            drag = cost * equity
+            costs_paid += drag
+            rate_sum = fee_bps + half_bps
+            fee_paid += drag * (fee_bps / rate_sum) if rate_sum > 0 else 0.0
+            half_paid += drag * (half_bps / rate_sum) if rate_sum > 0 else 0.0
             equity *= 1.0 - cost
             if position != 0:
                 closed += 1
@@ -231,6 +279,7 @@ def pairs_backtest(
                 beta0,
             )
             equity *= 1.0 + pnl
+            gross_equity *= 1.0 + pnl
         curve.append(equity)
 
     rets = np.diff(curve) / np.array(curve[:-1])
@@ -248,6 +297,27 @@ def pairs_backtest(
         "warmup": warmup,
         "trades": trades,
         "costs_paid": round(float(costs_paid), 4),
+        "fee": round(float(fee_paid), 4),
+        "half_spread": round(float(half_paid), 4),
+        "slippage": 0.0,
+        "cost_components": {
+            "fee_bps": fee_bps,
+            "half_spread_bps": half_bps,
+            "slippage_bps": 0.0,
+            "half_spread_source": "estimate",
+            "slippage_source": "estimate",
+            "flagged_estimate": True,
+            "four_leg_fraction": round_trip,
+            "entry_cost_k": entry_cost_k,
+            "legs": 4,
+        },
+        "gross_return_pct": round((gross_equity / initial_capital - 1.0) * 100, 4),
+        "n_skipped": len(skipped),
+        "skipped_by_reason": {
+            reason: sum(1 for row in skipped if row.get("reason") == reason)
+            for reason in ("expected_gain", "spread", "volume", "volume_unavailable")
+        },
+        "skipped_signals": skipped[:40],
         "total_return_pct": round(total * 100, 4),
         "sharpe": round(sharpe, 4),
         "max_drawdown_pct": round(mdd * 100, 4),
@@ -255,8 +325,10 @@ def pairs_backtest(
         "final_equity": round(float(curve[-1]), 2),
         "win_day_pct": round(100.0 * wins / max(len(rets), 1), 2),
         "costs_drag_note": (
-            "One-way cost (c+s) of gross two-leg notional at each unit of turnover; "
-            "round-trip is 2×(c+s). β frozen at entry."
+            "Fee + half-spread estimate (no bid/ask on this clock, flagged) of gross "
+            "two-leg notional at each unit of turnover. Four legs (open and close, "
+            "both names) = 2×(fee+half-spread). Entry only if expected reversion "
+            "covers k times that round trip. β frozen at entry."
         ),
         "pnl_unit": "gross_two_leg_notional",
         "hedge": "expanding_ols_frozen_at_entry",

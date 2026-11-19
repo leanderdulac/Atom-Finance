@@ -56,6 +56,13 @@ class EthSolPaperRequest(BaseModel):
     max_position: float = Field(1.0, gt=0, le=5)
     half_spread_bps: float = Field(2.0, ge=0, le=50)
     taker_fee_bps: float = Field(4.0, ge=0, le=50)
+    execution: str = Field("taker", pattern="^(taker|maker)$")
+    entry_cost_k: float = Field(2.0, ge=0, le=20)
+    max_spread_bps: float = Field(25.0, ge=0, le=500)
+    min_volume: float = Field(0.0, ge=0)
+    impact_bps: float = Field(10.0, ge=0, le=500)
+    fallback_slippage_bps: float = Field(0.0, ge=0, le=100)
+    limit_timeout_bars: int = Field(5, ge=1, le=50)
     unit_qty: float = Field(1.0, gt=0, le=100)
     initial_cash: float = Field(100_000.0, gt=0)
     n: int = Field(400, ge=80, le=2000)
@@ -78,6 +85,13 @@ def _cfg(req: EthSolPaperRequest) -> dict:
         "max_position": req.max_position,
         "half_spread_bps": req.half_spread_bps,
         "taker_fee_bps": req.taker_fee_bps,
+        "execution": req.execution,
+        "entry_cost_k": req.entry_cost_k,
+        "max_spread_bps": req.max_spread_bps,
+        "min_volume": req.min_volume,
+        "impact_bps": req.impact_bps,
+        "fallback_slippage_bps": req.fallback_slippage_bps,
+        "limit_timeout_bars": req.limit_timeout_bars,
         "unit_qty": req.unit_qty,
         "initial_cash": req.initial_cash,
         "expected_interval_ms": req.expected_interval_ms,

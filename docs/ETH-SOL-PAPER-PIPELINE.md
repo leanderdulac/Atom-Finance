@@ -12,10 +12,12 @@ Par padrão: perpétuos `ETHUSDT` (y) e `SOLUSDT` (x), nomenclatura Binance USDM
 | 2. Sinal | Engle–Granger (ADF / MacKinnon), β de hedge, half-life OU no residual, z rolante causal | p ≤ 0,05; half-life ≤ 48 barras; janela z = 60 |
 | 3. Decisão | Entra se \|z\| > entry; sai se \|z\| < exit. +1 = long spread (long y / short x) | entry 2,0; exit 0,5 |
 | 4. Risco | Teto de posição, teto de drawdown, kill switch que **achata o livro paper antes de qualquer fill seguinte** | \|pos\| ≤ 1; DD ≤ 15% |
-| 5. Execução paper | Compra no ask, venda no bid; taxa taker; funding acumulado por perna; inventário; reconciliação | 4 bps taker; sem OMS |
+| 5. Execução paper | Compra no ask, venda no bid (ou limite maker); taxa, meia-spread e slippage separados; funding por perna | taker 4 bps; ver [TRADING-COSTS.md](TRADING-COSTS.md) |
 | 6. Monitoração | PnL líquido, **pnl_price** vs **pnl_funding**, inventário, drawdown, flags de gap/latência, motivo do kill | curva amostrada |
 
 O sinal no fecho `t` usa só informação ≤ `t`. O fill paper é o bid/ask da barra `t+1`. Um furo entre `t` e `t+1` é flag, não um mid inventado; não se abre posição através do buraco.
+
+A entrada só abre quando o ganho esperado (reversão de \|z\| até o exit, nas duas pernas) cobre `k` vezes o custo das 4 pernas (abrir e fechar y e x). Default `k = 2`. Spread acima de `max_spread_bps` ou volume abaixo de `min_volume` pula o sinal e regista o motivo. Limite maker só preenche quando o mid cruza o nível antes do timeout. Detalhe em [TRADING-COSTS.md](TRADING-COSTS.md).
 
 A porteira Engle–Granger + half-life corre só no prefixo de warmup (`gate_n = max(60, min(warmup, n/2))`, default 200), antes de qualquer fill. O hedge e o z **dentro** do loop são expansivos / rolantes — sem olhar o futuro da barra. Símbolos fora de `{ETHUSDT, SOLUSDT}` são recusados (não viram proxy Binance). ADF em 60 barras quase não tem poder — daí o default 200, ainda sem ver a metade que se transaciona.
 

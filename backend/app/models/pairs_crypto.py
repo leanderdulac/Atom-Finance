@@ -34,6 +34,7 @@ from app.models.pairs_real import (
     default_report_dir,
 )
 from app.models.regime import classify
+from app.models.trading_costs import costs_included_flag
 from app.models.winners_curse import DEFAULT_PERIODS
 
 FAMILY_ID = "pairs_eth_sol_audit"
@@ -563,8 +564,12 @@ def run_crypto_audit(
         def _gate(result: dict[str, Any], *, primary: bool = False) -> dict[str, Any]:
             key = "bar_primary" if primary else "bar_filtered"
             rets = result.get(key) or [0.0, 0.0, 0.0]
+            net = costs_included_flag(
+                round_trip_cost=float(result.get("round_trip_cost") or 0.0),
+                model_applied=True,
+            )
             return gate(
-                costs_included=True,
+                costs_included=net,
                 returns=rets,
                 n_trials=float(n_trials),
                 trial_sharpes=None if use_neff else (trial_sharpes if len(trial_sharpes) >= 2 else None),
@@ -579,6 +584,7 @@ def run_crypto_audit(
         audit = {
             "beta_p10_p50_p90": [round(float(v), 4) for v in np.nanpercentile(state["beta"][np.isfinite(state["beta"])], [10, 50, 90])],
             "n_events": int(len(events)),
+            "n_skipped": int(np.asarray(state.get("n_skipped", [0]))[0]) if "n_skipped" in state else 0,
             "n_overlapping": candles.get("n_overlapping"),
             "pnl_unit": "gross_two_leg_notional",
             "hedge": "expanding_ols_frozen_at_entry",

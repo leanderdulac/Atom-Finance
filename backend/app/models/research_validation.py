@@ -182,8 +182,10 @@ def evaluate_experiment(prices, dates, *, model, hypothesis, data_source,
     names = ['ridge', 'zero', 'momentum'] + (['random_forest'] if model == 'random_forest' else [])
     for name in names:
         pred = predictions[name][oos]
-        # A conservative fixed hurdle for entering, not a claim of known costs.
-        weights = (pred > 2 * cost / 10000) * sizing
+        # Round trip is 2× the one-way (commission + slippage) fraction.
+        # Enter only when the forecast covers k=2 times that round trip.
+        round_trip = 2.0 * cost / 10000.0
+        weights = (pred >= 2.0 * round_trip) * sizing
         perf = portfolio_metrics(labels[oos], weights, cost, max_drawdown)
         perf['mse_oos'] = float(np.mean((pred - labels[oos]) ** 2))
         perf['direction_accuracy_pct'] = float(np.mean((pred > 0) == (labels[oos] > 0)) * 100)

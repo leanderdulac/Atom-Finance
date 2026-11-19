@@ -152,7 +152,12 @@ class TestKillSwitch:
         bars = _coint_bars(n=500, seed=0, half_life=8.0, resid_vol=4.0)
         out = run_paper_pipeline(
             bars,
-            PipelineConfig(entry_z=1.25, exit_z=0.3, max_drawdown=0.0005, taker_fee_bps=8.0),
+            PipelineConfig(
+                entry_z=1.25, exit_z=0.3, max_drawdown=0.0005, taker_fee_bps=8.0,
+                # This test is the flatten, not the cost gate. Default k=2
+                # skips these synthetic entries; see test_trading_costs.
+                entry_cost_k=0.0,
+            ),
             source="synthetic",
         )
         assert out["eligible_for_live_trading"] is False
@@ -237,7 +242,8 @@ class TestDataHygiene:
 
 class TestDemoAndRoute:
     def test_evaluate_demo_stays_paper(self):
-        out = evaluate(demo=True, n=400, seed=2, entry_z=1.5)
+        # k=0 keeps the fill path. Default k=2 removes these synthetic entries.
+        out = evaluate(demo=True, n=400, seed=2, entry_z=1.5, entry_cost_k=0.0)
         assert out["accepted"] is True
         assert out["eligible_for_live_trading"] is False
         assert out["mode"] == "paper_only"

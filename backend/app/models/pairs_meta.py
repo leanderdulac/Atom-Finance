@@ -27,6 +27,13 @@ from app.models.afml.gate import gate_trial
 from app.models.afml.labeling import triple_barrier_on_pnl
 from app.models.afml.trials import TrialRegistry
 from app.models.cointegration import _expanding_hedge, _half_life, engle_granger, johansen
+from app.models.trading_costs import (
+    DEFAULT_ENTRY_K,
+    DEFAULT_MAX_SPREAD_BPS,
+    check_liquidity,
+    costs_included_flag,
+    pairs_entry_allowed,
+)
 from app.models.winners_curse import DEFAULT_PERIODS
 
 FAMILY_ID = "pairs_gatev_avellaneda"
@@ -56,11 +63,16 @@ _WHAT_BROKE = [
 
 
 def round_trip_cost(commission: float = COMMISSION, slippage: float = SLIPPAGE) -> float:
-    """Open+close, both legs, as a fraction of gross two-leg notional.
+    """Four-leg cost as a fraction of gross two-leg notional.
 
-    Each fill costs ``commission+slippage`` of that leg. Two legs, twice
-    (open and close) ⇒ 2×(c+s) × (|y|+|β||x|).
+    ``commission`` is the taker fee fraction. ``slippage`` is the half-spread
+    estimate used when the series has no bid/ask (flagged upstream). Impact
+    beyond that touch is 0 unless a book depth is supplied to ``quote_fill``.
+    Open and close on both legs = ``2 * (fee + half_spread)``.
     """
+    # Same expression as four_leg_fraction(fee_bps, half_bps, 0). Multiplying the
+    # fractions by 1e4 and dividing again changes the last bits, so the clock
+    # keeps 2×(fee + half-spread) on the fractions it was given.
     return 2.0 * (commission + slippage)
 
 
@@ -201,17 +213,27 @@ def build_event_table(
     x: np.ndarray,
     *,
     entry_z: float = ENTRY_Z,
+    exit_z: float = EXIT_Z,
     warmup: int = WARMUP,
     commission: float = COMMISSION,
     slippage: float = SLIPPAGE,
     pt: float = PT_MULT,
     sl: float = SL_MULT,
     min_events: int = MIN_EVENTS,
-) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-    """Primary entries → three-barrier labels net of round-trip costs."""
+    entry_cost_k: float = DEFAULT_ENTRY_K,
+    max_spread_bps: float = DEFAULT_MAX_SPREAD_BPS,
+    min_volume: float = 0.0,
+    volume: np.ndarray | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Primary entries → three-barrier labels net of the four-leg cost."""
     state = causal_pairs_state(y, x, warmup=warmup)
     entries = primary_entry_indices(state["z"], entry_z=entry_z, warmup=warmup)
     cost = round_trip_cost(commission, slippage)
+    fee_bps = commission * 10_000.0
+    half_bps = slippage * 10_000.0
+    # No touch on a close series: the quoted spread is twice the half-spread estimate.
+    estimated_spread_bps = 2.0 * half_bps
+    skipped: list[dict[str, Any]] = []
     sides, widths, horizons, hls, z5 = [], [], [], [], []
     keep = []
     chunks: list[pd.DataFrame] = []
@@ -227,6 +249,30 @@ def build_event_table(
             continue
         sd = state["resid_std"][t0]
         g = gross_notional(float(y[t0]), float(x[t0]), b0)
+        vol_t = None if volume is None or int(t0) >= len(volume) else float(volume[int(t0)])
+        liq = check_liquidity(
+            spread_bps_value=estimated_spread_bps,
+            volume=vol_t,
+            max_spread_bps=max_spread_bps,
+            min_volume=min_volume,
+        )
+        if not liq.ok:
+            skipped.append({"t0": int(t0), "reason": liq.reason, "spread_bps": liq.spread_bps, "volume": liq.volume})
+            continue
+        # Distance from this print to the exit band, as a return on gross notional.
+        expected = (
+            float(max(abs(z0) - exit_z, 0.0) * (sd / g)) if np.isfinite(sd) and g > 0 else float("nan")
+        )
+        if not pairs_entry_allowed(expected, fee_bps, half_bps, 0.0, entry_cost_k):
+            skipped.append({
+                "t0": int(t0),
+                "reason": "expected_gain",
+                "expected_gain": None if not np.isfinite(expected) else round(expected, 8),
+                "round_trip_cost": cost,
+                "k": entry_cost_k,
+                "legs": 4,
+            })
+            continue
         width = float(sd / g) if np.isfinite(sd) and g > 0 else 0.0
         width = max(width, 0.003)
         hl = _event_half_life(state["spread"], int(t0))
@@ -246,6 +292,9 @@ def build_event_table(
         "t0", "t1", "side", "touch", "ret", "ret_net", "bin",
         "z_delta_5", "half_life", "horizon",
     ]
+    state["n_raw_entries"] = np.array([len(entries)])
+    state["n_skipped"] = np.array([len(skipped)])
+    state["skipped_log"] = skipped  # type: ignore[assignment]
     if not chunks or len(keep) < min_events:
         if min_events > 0:
             raise ValueError(
@@ -422,13 +471,36 @@ def _oos_slice(n: int, oos_frac: float) -> int:
     return min(max(cut, 60), n - 60) if n >= 120 else n // 2
 
 
+def _signal_summary(events: pd.DataFrame, state: dict[str, Any], cost: float) -> dict[str, Any]:
+    raw = int(np.asarray(state.get("n_raw_entries", [0]))[0]) if "n_raw_entries" in state else 0
+    log = state.get("skipped_log") or []
+    reasons = ("expected_gain", "spread", "volume", "volume_unavailable")
+    gross = float(events["ret"].sum()) if not events.empty and "ret" in events else 0.0
+    net = float(events["ret_net"].sum()) if not events.empty and "ret_net" in events else 0.0
+    return {
+        "raw_crosses": raw,
+        "labeled": int(len(events)),
+        "n_skipped": int(len(log)),
+        "skipped_by_reason": {reason: sum(1 for row in log if row.get("reason") == reason) for reason in reasons},
+        "skipped_sample": list(log)[:20],
+        "gross_total": round(gross, 8),
+        "net_total": round(net, 8),
+        "round_trip_cost": cost,
+    }
+
+
 def evaluate_pairs_meta(
     y: np.ndarray,
     x: np.ndarray,
     *,
     entry_z: float = ENTRY_Z,
+    exit_z: float = EXIT_Z,
     commission: float = COMMISSION,
     slippage: float = SLIPPAGE,
+    entry_cost_k: float = DEFAULT_ENTRY_K,
+    max_spread_bps: float = DEFAULT_MAX_SPREAD_BPS,
+    min_volume: float = 0.0,
+    volume: np.ndarray | None = None,
     threshold: float = META_THRESHOLD,
     warmup: int = WARMUP,
     registry: TrialRegistry | None = None,
@@ -456,8 +528,9 @@ def evaluate_pairs_meta(
     x = np.asarray(x, dtype=np.float64)
     cost = round_trip_cost(commission, slippage)
     events, state = build_event_table(
-        y, x, entry_z=entry_z, warmup=warmup, commission=commission, slippage=slippage,
-        min_events=min_events,
+        y, x, entry_z=entry_z, exit_z=exit_z, warmup=warmup, commission=commission, slippage=slippage,
+        min_events=min_events, entry_cost_k=entry_cost_k, max_spread_bps=max_spread_bps,
+        min_volume=min_volume, volume=volume,
     )
     if not events.empty:
         idx = events["t0"].to_numpy(dtype=int)
@@ -544,14 +617,15 @@ def evaluate_pairs_meta(
     params_common["pnl_unit"] = "gross_two_leg_notional"
     params_common["hedge"] = "expanding_ols_frozen_at_entry"
     meta_trial = None
+    net_of_costs = costs_included_flag(round_trip_cost=cost, model_applied=True)
     if register_primary:
         registry.register(
             family_id,
             {**params_common, "variant": "primary_triple_barrier"},
             returns=bar_primary[warmup:].tolist(),
-            costs_included=True,
+            costs_included=net_of_costs,
             periods_per_year=periods_per_year,
-            notes="Todas as entradas Gatev/EG, barreiras triplas, custo nas duas pernas, PnL/nocional bruto.",
+            notes="Todas as entradas Gatev/EG, barreiras triplas, custo das 4 pernas, PnL/nocional bruto.",
         )
     meta_trial = registry.register(
         family_id,
@@ -563,13 +637,13 @@ def evaluate_pairs_meta(
             "feature_set": ",".join(used_cols),
         },
         returns=bar_filtered[warmup:].tolist(),
-        costs_included=True,
+        costs_included=net_of_costs,
         periods_per_year=periods_per_year,
         notes="Mesmo primário; só opera se P(sucesso) OOF ≥ limiar; tamanho ∝ probabilidade.",
     )
     verdict = None
     if apply_gate:
-        verdict = gate_trial(registry, family_id, costs_included=True, trial_id=meta_trial.id)
+        verdict = gate_trial(registry, family_id, costs_included=net_of_costs, trial_id=meta_trial.id)
     n_trials = registry.count(family_id)
     if close_reg:
         registry.close()
@@ -635,6 +709,18 @@ def evaluate_pairs_meta(
         "entry_z": entry_z,
         "threshold": threshold,
         "round_trip_cost": cost,
+        "cost_model": {
+            "fee_bps": commission * 10_000.0,
+            "half_spread_bps": slippage * 10_000.0,
+            "slippage_bps": 0.0,
+            "half_spread_source": "estimate",
+            "slippage_source": "estimate",
+            "flagged_estimate": True,
+            "four_leg_fraction": cost,
+            "entry_cost_k": entry_cost_k,
+            "legs": 4,
+        },
+        "signals": _signal_summary(events, state, cost),
         "periods_per_year": float(periods_per_year),
         "engle_granger": {
             "cointegrated": eg["cointegrated"],
