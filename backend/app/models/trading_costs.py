@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, TypeGuard
 
 
 # Taker bps match the desk schedules already used by the perp scanner
@@ -122,7 +122,7 @@ def venue_fees(venue: str | None, override: VenueFees | None = None) -> VenueFee
     return VENUE_FEES.get(key, VENUE_FEES["default"])
 
 
-def _finite_positive(value: float | None) -> bool:
+def _finite_positive(value: float | None) -> TypeGuard[float]:
     return value is not None and math.isfinite(value) and value > 0
 
 
@@ -160,20 +160,21 @@ def quote_fill(
 
     abs_qty = abs(float(qty))
     book = book or BookTop()
-    ref_mid = float(book.mid) if _finite_positive(book.mid) else float(mid)
-    use_touch = (
-        _finite_positive(book.bid)
-        and book.ask is not None
-        and math.isfinite(book.ask)
-        and book.ask >= book.bid
-    )
+    book_mid = book.mid
+    ref_mid = float(book_mid) if _finite_positive(book_mid) else float(mid)
+    bid = book.bid
+    ask = book.ask
+    bid_px = float(bid) if _finite_positive(bid) else None
+    ask_px = float(ask) if ask is not None and math.isfinite(ask) else None
     flagged_spread = False
-    if use_touch:
-        touch = float(book.ask) if side_n == "buy" else float(book.bid)
+    if bid_px is not None and ask_px is not None and ask_px >= bid_px:
+        use_touch = True
+        touch = ask_px if side_n == "buy" else bid_px
         half_paid = (touch - ref_mid) if side_n == "buy" else (ref_mid - touch)
         spread_source = "estimate" if book.estimated else "book"
         flagged_spread = bool(book.estimated)
     else:
+        use_touch = False
         half_paid = ref_mid * float(fallback_half_spread_bps) / 10_000.0
         touch = ref_mid + half_paid if side_n == "buy" else ref_mid - half_paid
         spread_source = "estimate"
@@ -181,12 +182,13 @@ def quote_fill(
 
     capture = 0.0
     if liq == "maker":
-        if limit_px is None:
-            if use_touch and not book.estimated:
-                limit_px = float(book.bid) if side_n == "buy" else float(book.ask)
+        chosen = limit_px
+        if chosen is None:
+            if use_touch and not book.estimated and bid_px is not None and ask_px is not None:
+                chosen = bid_px if side_n == "buy" else ask_px
             else:
-                limit_px = ref_mid
-        fill_px = float(limit_px)
+                chosen = ref_mid
+        fill_px = float(chosen)
         if not math.isfinite(fill_px) or fill_px <= 0:
             raise ValueError("maker limit must be a positive price")
         half_spread = 0.0
@@ -197,9 +199,9 @@ def quote_fill(
         capture = abs_qty * max(favorable, 0.0)
         half_bps = 0.0
     else:
-        depth = book.ask_size if side_n == "buy" else book.bid_size
-        if _finite_positive(depth):
-            slip_bps = float(impact_bps) * (abs_qty / float(depth))
+        raw_depth = book.ask_size if side_n == "buy" else book.bid_size
+        if _finite_positive(raw_depth):
+            slip_bps = float(impact_bps) * (abs_qty / raw_depth)
             slippage_source = "depth"
         else:
             slip_bps = float(fallback_slippage_bps)

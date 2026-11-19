@@ -260,16 +260,18 @@ def bars_from_arrays(
 
     bars: list[PairBar] = []
     for i in range(len(ts)):
-        y_est = yb is None or ya is None
-        x_est = xb is None or xa is None
-        if y_est:
+        if yb is None or ya is None:
             y_b, y_a = _quotes_from_mid(float(y[i]), half_spread_bps)
+            y_est = True
         else:
             y_b, y_a = float(yb[i]), float(ya[i])
-        if x_est:
+            y_est = False
+        if xb is None or xa is None:
             x_b, x_a = _quotes_from_mid(float(x[i]), half_spread_bps)
+            x_est = True
         else:
             x_b, x_a = float(xb[i]), float(xa[i])
+            x_est = False
         if y_b <= 0 or x_b <= 0 or y_a < y_b or x_a < x_b:
             raise ValueError(f"Invalid book at index {i}")
 
@@ -605,22 +607,19 @@ def apply_spread_target(
     want_x = -target * beta * unit_qty
     dy = want_y - book.y_qty
     dx = want_x - book.x_qty
-    common = dict(
-        impact_bps=impact_bps,
-        fallback_slippage_bps=fallback_slippage_bps,
-        liquidity=liquidity,
-        venue=venue,
-        fallback_half_spread_bps=fallback_half_spread_bps,
-    )
     cash_y, cost_y, px_y = fill_leg_cost(
         dy, bar.y_bid, bar.y_ask, fee_bps, mid=bar.y_mid,
         depth=bar.y_ask_sz if dy > 0 else bar.y_bid_sz,
-        book_estimated=bar.y_book_estimated, limit_px=y_limit, **common,
+        book_estimated=bar.y_book_estimated, limit_px=y_limit,
+        impact_bps=impact_bps, fallback_slippage_bps=fallback_slippage_bps,
+        liquidity=liquidity, venue=venue, fallback_half_spread_bps=fallback_half_spread_bps,
     )
     cash_x, cost_x, px_x = fill_leg_cost(
         dx, bar.x_bid, bar.x_ask, fee_bps, mid=bar.x_mid,
         depth=bar.x_ask_sz if dx > 0 else bar.x_bid_sz,
-        book_estimated=bar.x_book_estimated, limit_px=x_limit, **common,
+        book_estimated=bar.x_book_estimated, limit_px=x_limit,
+        impact_bps=impact_bps, fallback_slippage_bps=fallback_slippage_bps,
+        liquidity=liquidity, venue=venue, fallback_half_spread_bps=fallback_half_spread_bps,
     )
     parts = _component_sum([cost_y, cost_x])
     mid_cash = -dy * bar.y_mid - dx * bar.x_mid
@@ -1154,16 +1153,20 @@ def evaluate(
                 parsed.append(b)
                 continue
             y_mid_b, x_mid_b = float(b["y_mid"]), float(b["x_mid"])
-            y_bid_b = b.get("y_bid")
-            y_ask_b = b.get("y_ask")
-            x_bid_b = b.get("x_bid")
-            x_ask_b = b.get("x_ask")
-            y_est = y_bid_b is None or y_ask_b is None
-            x_est = x_bid_b is None or x_ask_b is None
-            if y_est:
+            raw_y_bid, raw_y_ask = b.get("y_bid"), b.get("y_ask")
+            raw_x_bid, raw_x_ask = b.get("x_bid"), b.get("x_ask")
+            if raw_y_bid is None or raw_y_ask is None:
                 y_bid_b, y_ask_b = _quotes_from_mid(y_mid_b, cfg.half_spread_bps)
-            if x_est:
+                y_est = True
+            else:
+                y_bid_b, y_ask_b = float(raw_y_bid), float(raw_y_ask)
+                y_est = False
+            if raw_x_bid is None or raw_x_ask is None:
                 x_bid_b, x_ask_b = _quotes_from_mid(x_mid_b, cfg.half_spread_bps)
+                x_est = True
+            else:
+                x_bid_b, x_ask_b = float(raw_x_bid), float(raw_x_ask)
+                x_est = False
 
             def _opt_num(raw: Any) -> float | None:
                 return None if raw is None else float(raw)
@@ -1172,10 +1175,10 @@ def evaluate(
                 ts_ms=int(b["ts_ms"]),
                 y_mid=y_mid_b,
                 x_mid=x_mid_b,
-                y_bid=float(y_bid_b),
-                y_ask=float(y_ask_b),
-                x_bid=float(x_bid_b),
-                x_ask=float(x_ask_b),
+                y_bid=y_bid_b,
+                y_ask=y_ask_b,
+                x_bid=x_bid_b,
+                x_ask=x_ask_b,
                 y_funding=float(b.get("y_funding") or 0.0),
                 x_funding=float(b.get("x_funding") or 0.0),
                 y_bid_sz=_opt_num(b.get("y_bid_sz")),
