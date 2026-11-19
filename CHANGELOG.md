@@ -14,7 +14,7 @@ All notable changes to this project are documented here. Format loosely follows 
 - Chamadas síncronas do SDK saem do event loop (`run_in_threadpool`).
 - Ativo normalizado com `upper()` e restrito a `[A-Z0-9]{1,12}`.
 - Resposta do SDK com `statuses[].error` volta 422; status diferente de `ok` volta 502. A mensagem não devolve a chave.
-- `requirements.lock` inclui `hyperliquid-python-sdk` e `eth-account`. O wheel de torch no lock é o CPU (`2.14.0+cpu`), para o pip não instalar CUDA.
+- `requirements.lock` inclui `hyperliquid-python-sdk` e `eth-account`. O wheel de torch no lock é o CPU (`2.14.0+cpu`), para o pip não instalar CUDA. O `pip-audit --strict` reetiqueta esse wheel como `2.14.0` (a release upstream no PyPI) antes de auditar: `+cpu` não é uma release do índice e o modo estrito trataria o 404 como falha.
 
 ## [Unreleased] — round 37: staleness por modo (fresco vs atrasado)
 

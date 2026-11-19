@@ -92,6 +92,29 @@ jobs:
       - name: Audit Python dependencies
         run: |
           pip install pip-audit==2.9.0
+          # The lock pins the CPU wheel (torch==2.14.0+cpu) so pip does not
+          # pull the CUDA stack. That local version is not a PyPI release, and
+          # `pip-audit --strict` treats the 404 as a failure. Relabel the
+          # installed dist-info to the upstream release and audit that.
+          python - <<'PY'
+          import pathlib, re, sys
+          site = pathlib.Path(sys.prefix) / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+          for dist in list(site.glob("torch-*+cpu.dist-info")):
+              meta_path = dist / "METADATA"
+              text = meta_path.read_text()
+              match = re.search(r"^Version: (\S+)\+cpu\s*$", text, re.M)
+              if match is None:
+                  continue
+              public = match.group(1)
+              meta_path.write_text(
+                  re.sub(r"^Version: \S+\+cpu\s*$", f"Version: {public}", text, count=1, flags=re.M)
+              )
+              renamed = site / f"torch-{public}.dist-info"
+              record = dist / "RECORD"
+              record.write_text(record.read_text().replace(dist.name, renamed.name))
+              dist.rename(renamed)
+              print(f"auditing {dist.name} as {renamed.name}")
+          PY
           pip-audit --strict
 
   # ── Frontend: TypeScript check + build ───────────────────────────────────────
