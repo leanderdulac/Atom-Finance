@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — Hyperliquid broker link (testnet-first)
+
+### Added
+- Conector opt-in `/api/broker/hyperliquid`: leitura pública `/info` e escrita assinada por API wallet (sem saque). Testnet por padrão. O modo pesquisa continua só paper.
+- Mainnet, para ordem e cancelamento, exige `HYPERLIQUID_LIVE_TRADING=true` e `live=true` no corpo, papel admin ou operador, e teto `HYPERLIQUID_MAX_NOTIONAL_USD` (padrão 100).
+- `HYPERLIQUID_MARKET_SLIPPAGE` (padrão 0,01), passado explícito ao SDK. O nocional da ordem a mercado usa o pior preço: mid × (1 + slippage) na compra e mid × (1 − slippage) na venda.
+
+### Fixed
+- `POST /order` e `POST /cancel` recusam usuário autenticado que não é admin nem operador. GETs seguem só autenticados.
+- Chamadas síncronas do SDK saem do event loop (`run_in_threadpool`).
+- Ativo normalizado com `upper()` e restrito a `[A-Z0-9]{1,12}`.
+- Resposta do SDK com `statuses[].error` volta 422; status diferente de `ok` volta 502. A mensagem não devolve a chave.
+- `requirements.lock` inclui `hyperliquid-python-sdk` e `eth-account`. O wheel de torch no lock é o CPU (`2.14.0+cpu`), para o pip não instalar CUDA. O `pip-audit --strict` reetiqueta esse wheel como `2.14.0` (a release upstream no PyPI) antes de auditar: `+cpu` não é uma release do índice e o modo estrito trataria o 404 como falha.
+
 ## [Unreleased] — round 37: staleness por modo (fresco vs atrasado)
 
 ### Fixed

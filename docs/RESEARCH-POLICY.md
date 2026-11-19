@@ -21,6 +21,10 @@ O Laboratório Quant (`/ml`, `POST /api/ml/evaluate`) avalia hipóteses com vali
 - Não trata ajuste de preços ou qualidade da fonte como auditados: isso é declaração do solicitante.
 - Não corrige seleção após olhar o fora da amostra (múltiplos testes).
 
+## Conector Hyperliquid (opt-in, fora deste protocolo)
+
+O modo pesquisa acima continua só paper: labs, diário e `POST /api/ml/evaluate` não enviam ordem. O conector `/api/broker/hyperliquid` é um caminho separado e desligado por padrão (testnet, sem chave). Escrita (ordem e cancelamento) exige papel admin ou operador. Mainnet só escreve com `HYPERLIQUID_LIVE_TRADING=true` e `live=true` no corpo, e cada ordem respeita um teto de nocional. Isso não muda `eligible_for_live_trading`. Detalhes em [HYPERLIQUID-TRADING.md](HYPERLIQUID-TRADING.md).
+
 ## Avaliação
 
 | Situação | `assessment` | `eligible_for_live_trading` |
