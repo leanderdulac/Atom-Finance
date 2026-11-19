@@ -18,6 +18,9 @@ yfinance>=0.2.58
 requests>=2.33.0,<3
 defusedxml>=0.7.1  # entity-expansion-safe SEC XML parsing (edgar.py)
 
+# Brokers — Hyperliquid signed trading (testnet-first, mainnet blocked by default)
+hyperliquid-python-sdk>=0.24,<1
+
 # Machine Learning
 scikit-learn~=1.5.2
 torch>=2.13.0,<3
