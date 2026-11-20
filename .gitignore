@@ -33,3 +33,7 @@ Downloads/
 *.db-shm
 *.db-wal
 node_modules
+
+# Point-in-time B3 cache (CVM, COTAHIST, CDI, cash distributions). Rebuilt by the fetch scripts.
+data/net-net/
+data/equal-weight/
