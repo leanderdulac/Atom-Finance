@@ -64,6 +64,7 @@ class TestDeskRoutes:
         from app.api.desk import router
         from app.core.limiter import limiter
         from app.core.security import get_current_user
+        from app.models.rejected_net_net import rejected_ledger_count
 
         app = FastAPI()
         app.state.limiter = limiter
@@ -98,5 +99,5 @@ class TestDeskRoutes:
         assert meta.status_code == 200, meta.text
         body = meta.json()
         assert body["eligible_for_live_trading"] is False
-        assert body["gate"]["n_trials"] == 2
+        assert body["gate"]["n_trials"] == 2 + rejected_ledger_count()
         assert body["primary"]["n_trades"] >= body["filtered"]["n_trades"]
