@@ -33,3 +33,6 @@ Downloads/
 *.db-shm
 *.db-wal
 node_modules
+
+# Point-in-time B3 cache (CVM, COTAHIST, CDI). Rebuilt by scripts/fetch_net_net_b3.py.
+data/net-net/
