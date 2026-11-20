@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this file starts tracking from the cleanup below rather than reconstructing prior history from commits.
 
+## [Unreleased] — net-net B3 descartado (registro negativo)
+
+### Added
+- As 32 variações do net-net de Graham na B3 entram no `TrialRegistry` (família `b3_graham_net_net`, status `rejected`) com Sharpe, PSR, DSR, MinTRL, CAGR bruto/líquido e datas da amostra. Evidência em `docs/NET-NET-B3.md` e `docs/reports/net-net-b3.json`. O `gate_trial` de outra família soma essas 32 ao N quando o DSR usa a contagem bruta. `eligible_for_live_trading` permanece false. O código do backtest fica no branch `cursor/b3-net-net-graham-a7b2`.
+
 ## [Unreleased] — round 37: staleness por modo (fresco vs atrasado)
 
 ### Fixed

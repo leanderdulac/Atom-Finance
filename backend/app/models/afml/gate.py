@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from app.models.rejected_net_net import FAMILY_ID as REJECTED_NET_NET_FAMILY
 from app.models.winners_curse import (
     DEFAULT_DSR_THRESHOLD,
     DEFAULT_PERIODS,
@@ -212,7 +213,12 @@ def gate_trial(
     threshold: float = DEFAULT_DSR_THRESHOLD,
     cluster_corr: float = 0.5,
 ) -> GateResult:
-    """Evaluate one registered trial against the family's full search history."""
+    """Evaluate one registered trial against the family's history plus rejected searches.
+
+    N is the family's own rows plus the recorded rejected net-net trials when
+    this family is not that block. N_eff, when used, is still estimated from
+    this family's return series only.
+    """
     rows = registry.trials(family_id)
     if not rows:
         return GateResult(
@@ -235,6 +241,10 @@ def gate_trial(
         trial = match[0]
 
     n_trials = float(registry.count(family_id))
+    # The discarded B3 net-net search stays in the raw N of every later gate.
+    # N_eff, when the family has return series, still describes only this family.
+    if family_id != REJECTED_NET_NET_FAMILY:
+        n_trials += float(registry.count(REJECTED_NET_NET_FAMILY))
     n_eff = None
     trial_sharpes = [t.sharpe for t in rows if t.sharpe is not None]
     try:

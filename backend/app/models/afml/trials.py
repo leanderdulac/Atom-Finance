@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS trials (
     periods_per_year REAL NOT NULL DEFAULT 252,
     costs_included INTEGER NOT NULL DEFAULT 0,
     returns_json TEXT,
-    notes TEXT
+    notes TEXT,
+    status TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_trials_family ON trials(family_id);
 """
@@ -142,6 +143,7 @@ class Trial:
     costs_included: bool
     returns: list[float] | None
     notes: str | None = None
+    status: str | None = None
 
 
 class TrialRegistry:
@@ -155,7 +157,13 @@ class TrialRegistry:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(SCHEMA)
+        self._ensure_status_column()
         self._conn.commit()
+        # Every ledger includes the discarded B3 net-net search so a later
+        # DSR count cannot drop those 32 negative trials.
+        from app.models.rejected_net_net import record_rejected_net_nets
+
+        record_rejected_net_nets(self)
 
     def close(self) -> None:
         self._conn.close()
@@ -179,6 +187,7 @@ class TrialRegistry:
         costs_included: bool = False,
         periods_per_year: float = DEFAULT_PERIODS,
         notes: str | None = None,
+        status: str | None = None,
         timestamp: str | None = None,
     ) -> Trial:
         """Append one trial. If `returns` is given, Sharpe / T / moments are computed from it."""
@@ -207,8 +216,8 @@ class TrialRegistry:
             """INSERT INTO trials(
                     family_id, params_hash, params_json, ts_utc, sharpe, n_obs,
                     skew, excess_kurtosis, periods_per_year, costs_included,
-                    returns_json, notes
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    returns_json, notes, status
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 family_id,
                 ph,
@@ -222,6 +231,7 @@ class TrialRegistry:
                 1 if costs_included else 0,
                 None if returns_list is None else json.dumps(returns_list),
                 notes,
+                status,
             ),
         )
         self._conn.commit()
@@ -239,6 +249,7 @@ class TrialRegistry:
             costs_included=bool(costs_included),
             returns=returns_list,
             notes=notes,
+            status=status,
         )
 
     def count(self, family_id: str | None = None) -> int:
@@ -277,10 +288,16 @@ class TrialRegistry:
         out["n_registered"] = self.count(family_id)
         return out
 
+    def _ensure_status_column(self) -> None:
+        cols = [row[1] for row in self._conn.execute("PRAGMA table_info(trials)")]
+        if "status" not in cols:
+            self._conn.execute("ALTER TABLE trials ADD COLUMN status TEXT")
+
     def _row(self, r: tuple) -> Trial:
         (
             tid, family_id, params_hash, params_json, ts_utc, sharpe, n_obs,
             skew, excess_kurtosis, periods_per_year, costs_included, returns_json, notes,
+            status,
         ) = r
         params = json.loads(params_json) if params_json else params_hash
         returns = json.loads(returns_json) if returns_json else None
@@ -298,4 +315,5 @@ class TrialRegistry:
             costs_included=bool(costs_included),
             returns=returns,
             notes=notes,
+            status=None if status is None else str(status),
         )

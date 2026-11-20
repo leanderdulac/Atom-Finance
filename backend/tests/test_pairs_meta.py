@@ -15,6 +15,7 @@ from app.models.pairs_meta import (
     synthetic_coint_pair,
     write_report,
 )
+from app.models.rejected_net_net import rejected_ledger_count
 
 
 def test_synthetic_pair_is_cointegrated_and_paper_only():
@@ -102,7 +103,7 @@ def test_evaluate_pairs_meta_oos_and_gate(tmp_path):
         assert 0 <= out["filtered"]["hit_rate"] <= 1
     gate = out["gate"]
     assert gate["costs_included"] is True
-    assert gate["n_trials"] == 2
+    assert gate["n_trials"] == 2 + rejected_ledger_count()
     assert gate["dsr"] is not None
     assert "approved" in gate
     if gate["approved"]:

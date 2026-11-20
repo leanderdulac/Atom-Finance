@@ -4,6 +4,7 @@ import pytest
 
 from app.models.afml.gate import annualized_sharpe, gate_trial
 from app.models.afml.trials import TrialRegistry, effective_independent_trials, hash_params
+from app.models.rejected_net_net import rejected_ledger_count
 
 
 def test_params_hash_is_stable_and_order_invariant():
@@ -16,6 +17,7 @@ def test_params_hash_is_stable_and_order_invariant():
 def test_register_count_and_persistence(tmp_path):
     path = tmp_path / "trials.sqlite"
     with TrialRegistry(path) as reg:
+        before = reg.count()
         t1 = reg.register("pairs", {"z": 2.0}, sharpe=1.1, n_obs=252, costs_included=True)
         t2 = reg.register(
             "pairs",
@@ -24,10 +26,11 @@ def test_register_count_and_persistence(tmp_path):
             costs_included=True,
         )
         reg.register("momentum", {"lb": 20}, sharpe=0.4, n_obs=100)
-        assert t1.id == 1 and t2.id == 2
+        assert before == rejected_ledger_count()
+        assert t1.id == before + 1 and t2.id == before + 2
         assert reg.count("pairs") == 2
         assert reg.count("momentum") == 1
-        assert reg.count() == 3
+        assert reg.count() == before + 3
         assert t2.n_obs == 6 and t2.returns[0] == 0.01
         assert abs(t2.sharpe - annualized_sharpe(t2.returns)) < 1e-12
         reg.register("pairs", {"z": 2.0}, sharpe=1.2, n_obs=252)
@@ -95,7 +98,7 @@ def test_gate_trial_uses_family_count_and_stored_cost_flag(tmp_path):
             reg.register("noise", {"i": i}, returns=panel[i], costs_included=True)
         winner_id = reg.trials("noise")[winner].id
         out = gate_trial(reg, "noise", costs_included=True, trial_id=winner_id)
-        assert out.n_trials == n
+        assert out.n_trials == n + rejected_ledger_count()
         assert out.approved is False
         assert out.dsr < 0.95
         assert abs(out.observed_sharpe - srs[winner]) < 1e-6
@@ -114,6 +117,6 @@ def test_two_near_clones_do_not_get_a_negative_sr_star(tmp_path):
         reg.register("fam", {"i": 0}, returns=base, costs_included=True)
         reg.register("fam", {"i": 1}, returns=base * 1.01, costs_included=True)
         out = gate_trial(reg, "fam", costs_included=True)
-        assert out.n_trials == 2
+        assert out.n_trials == 2 + rejected_ledger_count()
         assert out.n_eff is not None and out.n_eff < 2
         assert out.sr_star is None or out.sr_star >= 0.0
