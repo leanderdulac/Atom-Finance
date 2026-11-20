@@ -1506,14 +1506,24 @@ def _screen_census(
     per_signal = []
     for ordinal, rows in sorted(table.items()):
         yld = yield_asof(dates, values, int(ordinal))
-        positive = [row for row in rows if row.lv_per_share is not None and row.lv_per_share > 0 and row.price > 0]
+        n_positive = n_plv1 = n_plv085 = 0
+        for row in rows:
+            lv = row.lv_per_share
+            if lv is None or lv <= 0 or row.price <= 0:
+                continue
+            n_positive += 1
+            plv = row.price / lv
+            if plv <= 1.0:
+                n_plv1 += 1
+            if plv <= 0.85:
+                n_plv085 += 1
         per_signal.append(
             {
                 "signal": date.fromordinal(int(ordinal)).isoformat(),
                 "n_universe": len(rows),
-                "n_positive_lv": len(positive),
-                "n_plv_le_1": sum(1 for row in positive if row.price / row.lv_per_share <= 1.0),
-                "n_plv_le_085": sum(1 for row in positive if row.price / row.lv_per_share <= 0.85),
+                "n_positive_lv": n_positive,
+                "n_plv_le_1": n_plv1,
+                "n_plv_le_085": n_plv085,
                 "n_plv1_ey": len(screen_names(rows, 1.0, "ey", yld)),
                 "n_plv085_ey": len(screen_names(rows, 0.85, "ey", yld)),
                 "n_plv1_pe5": len(screen_names(rows, 1.0, "pe5", None)),

@@ -101,7 +101,7 @@ def parse_document_header(text: str) -> dict[tuple[str, int, int], int]:
         i_ref = _idx(header, "dt_refer", "data_referencia")
         i_ver = _idx(header, "versao", "versão")
         i_rec = _idx(header, "dt_receb", "data_recebimento")
-        if None in (i_cnpj, i_ref, i_ver, i_rec):
+        if i_cnpj is None or i_ref is None or i_ver is None or i_rec is None:
             break
         if max(i_cnpj, i_ref, i_ver, i_rec) >= len(row):
             continue
@@ -129,7 +129,16 @@ def parse_capital(text: str, receipts: dict[tuple[str, int, int], int]) -> list[
         i_tot = _idx(header, "qt_acao_total_cap_integr")
         i_on_t = _idx(header, "qt_acao_ordin_tesouro")
         i_pn_t = _idx(header, "qt_acao_pref_tesouro")
-        if None in (i_cnpj, i_ref, i_ver, i_on, i_pn, i_tot, i_on_t, i_pn_t):
+        if (
+            i_cnpj is None
+            or i_ref is None
+            or i_ver is None
+            or i_on is None
+            or i_pn is None
+            or i_tot is None
+            or i_on_t is None
+            or i_pn_t is None
+        ):
             break
         needed = (i_cnpj, i_ref, i_ver, i_on, i_pn, i_tot, i_on_t, i_pn_t)
         if max(needed) >= len(row):
@@ -183,7 +192,15 @@ def parse_fre_shares(header_text: str, capital_text: str, treasury_text: str | N
         i_on = _idx(header, "quantidade_acoes_ordinarias")
         i_pn = _idx(header, "quantidade_acoes_preferenciais")
         i_tot = _idx(header, "quantidade_total_acoes")
-        if None in (i_cnpj, i_ref, i_ver, i_tipo, i_on, i_pn, i_tot):
+        if (
+            i_cnpj is None
+            or i_ref is None
+            or i_ver is None
+            or i_tipo is None
+            or i_on is None
+            or i_pn is None
+            or i_tot is None
+        ):
             break
         if max(i_cnpj, i_ref, i_ver, i_tipo, i_on, i_pn, i_tot) >= len(row):
             continue
@@ -235,7 +252,14 @@ def _fre_treasury(text: str) -> dict[tuple[str, int, int], tuple[float, float]]:
         i_kind = _idx(header, "valor_mobiliario")
         i_esp = _idx(header, "especie_acao")
         i_qty = _idx(header, "quantidade_final")
-        if None in (i_cnpj, i_ref, i_ver, i_fim, i_esp, i_qty):
+        if (
+            i_cnpj is None
+            or i_ref is None
+            or i_ver is None
+            or i_fim is None
+            or i_esp is None
+            or i_qty is None
+        ):
             break
         if max(i_cnpj, i_ref, i_ver, i_fim, i_esp, i_qty) >= len(row):
             continue
@@ -346,6 +370,8 @@ def parse_fca_tickers(text: str) -> list[tuple[str, str, int, int | None]]:
             if cached[0] is None or cached[1] is None or cached[2] is None:
                 return out
         i_cnpj, i_tic, i_val, i_mkt, i_ini, i_fim = cached
+        if i_cnpj is None or i_tic is None or i_val is None:
+            return out
         if i_tic >= len(row) or i_val >= len(row):
             continue
         kind = row[i_val].lower()
@@ -372,7 +398,7 @@ def parse_cadastro(text: str) -> list[tuple[str, str, str, str]]:
         i_denom = _idx(header, "denom_social")
         i_setor = _idx(header, "setor_ativ")
         i_sit = _idx(header, "sit")
-        if None in (i_cnpj, i_denom, i_setor, i_sit):
+        if i_cnpj is None or i_denom is None or i_setor is None or i_sit is None:
             break
         if i_sit >= len(row):
             continue
@@ -468,7 +494,7 @@ def yields_from_tesouro(text: str) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         maturity = _date_ord(row[i_mat])
         buy = _float_comma(row[i_buy])
         sell = _float_comma(row[i_sell])
-        if None in (base, maturity, buy, sell):
+        if base is None or maturity is None or buy is None or sell is None:
             continue
         mid = (buy + sell) / 2.0 / 100.0
         if mid <= 0 or maturity <= base:
