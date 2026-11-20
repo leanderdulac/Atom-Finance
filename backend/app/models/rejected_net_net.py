@@ -56,7 +56,7 @@ def catalog() -> list[dict[str, Any]]:
         seen.add(key)
         sharpe = row.get("sharpe_net")
         n_obs = row.get("n_obs_months")
-        if not isinstance(sharpe, (int, float)) or isinstance(sharpe, bool):
+        if not isinstance(sharpe, int | float) or isinstance(sharpe, bool):
             raise ValueError(f"{key} is missing sharpe_net")
         if not isinstance(n_obs, int) or isinstance(n_obs, bool):
             raise ValueError(f"{key} is missing n_obs_months")
@@ -115,7 +115,7 @@ def record_rejected_net_nets(registry: Any) -> int:
         registry.register(
             FAMILY_ID,
             params,
-            sharpe=float(sharpe) if isinstance(sharpe, (int, float)) else None,
+            sharpe=float(sharpe) if isinstance(sharpe, int | float) and not isinstance(sharpe, bool) else None,
             n_obs=int(n_obs) if isinstance(n_obs, int) and not isinstance(n_obs, bool) else None,
             costs_included=True,
             periods_per_year=12.0,
