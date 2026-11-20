@@ -1,6 +1,6 @@
 # Core Framework
 fastapi>=0.135.0,<1
-uvicorn[standard]~=0.30.6
+uvicorn[standard]~=0.54.0
 pydantic~=2.9.2
 
 # Authentication
