@@ -11,7 +11,7 @@ python-multipart~=0.0.12
 # Quantitative Finance
 numpy~=1.26.4
 scipy~=1.14.1
-pandas~=2.2.3
+pandas~=3.1.1
 
 # Data Sources
 yfinance>=0.2.58
