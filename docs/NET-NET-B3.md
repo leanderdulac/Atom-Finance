@@ -41,7 +41,7 @@ Quantidade de ações. O DFP traz `composicao_capital` a partir do arquivo de 20
 
 Parte dos emissores protocola a quantidade em milhares de ações e parte em unidades, no mesmo arquivo, sem coluna de escala. Quando `|lucro| / LPA / ações` cai entre 400 e 2.500, a quantidade é multiplicada por 1.000. Quando o lucro por ação não decide e o capital social por ação passa de R$ 2.000, a mesma correção é aplicada. Errar para cima tira o nome do filtro; errar para baixo fabricaria net-net. Neste corte, 5.798 pontos de capital foram reescalados.
 
-Preços: COTAHIST, registro 01, lote padrão (BDI 02), mercado à vista (TPMERC 010), de 2011 a 2026. Inclui papéis que deixaram de negociar. Não há ajuste contínuo de proventos. Um salto de preço só é tratado como grupamento ou desdobramento quando o fator racional bate com uma variação inversa da quantidade de ações num protocolo de capital em até 250 dias. Foram 71 pregões assim. O resto do salto permanece retorno.
+Preços: COTAHIST, registro 01, lote padrão (BDI 02), mercado à vista (TPMERC 010), de 2011 a 2026. Inclui papéis que deixaram de negociar. Não há ajuste contínuo de proventos. O código passou a usar `backend/app/models/corporate_actions.py`. A janela de 250 dias foi retirada: um protocolo posterior ao pregão não confirma o salto. Os 71 pregões ajustados e os números deste arquivo são a corrida anterior e não foram recalculados.
 
 Setores financeiros da CVM (bancos, seguradoras, arrendamento, intermediação, securitização, crédito imobiliário, bolsas, factoring e as holdings desses setores) ficam de fora. Holding de atividade real permanece.
 
@@ -94,6 +94,6 @@ Quem está no livro e para de negociar sai no último negócio, no pregão segui
 
 Dividendos não entram. Isso empurra para baixo o net-net, o small cap e, no mesmo sentido, o Ibovespa de preço. O caixa a zero entre as raras posições empurra o net-net para zero antes mesmo do custo, e é mais duro do que render CDI.
 
-O agrupamento confirmado usa um protocolo de capital que pode ser posterior ao pregão do salto (até 250 dias) como registro do evento, não como informação do sinal. 71 pregões foram ajustados. Saltos sem esse protocolo continuam no retorno.
+A corrida publicada deste arquivo ajustou 71 pregões com um protocolo de capital que podia chegar depois do salto. Esse caminho saiu do código. A regra vigente está em `corporate_actions.py` e estes números não foram refeitos.
 
 Números completos, inclusive a série mensal e o censo por sinal: `docs/reports/net-net-b3.json`. Esse arquivo é a evidência que o registro de trials relê. Não se recalcula o DSR publicado: a assimetria e a curtose da série mensal não são colunas do registro, então o PSR, o DSR e o MinTRL guardados são os deste relatório, com N = 32.

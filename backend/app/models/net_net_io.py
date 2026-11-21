@@ -18,13 +18,13 @@ from pathlib import Path
 
 import numpy as np
 
+from app.models.corporate_actions import adjust_prints, load_official_events
 from app.models.net_net import (
     BsPoint,
     Company,
     EarnRow,
     SharePoint,
     Tape,
-    confirmed_split_factors,
 )
 
 ACCOUNTS = frozenset(
@@ -849,10 +849,17 @@ def _share_factor(point: SharePoint, earnings: list[EarnRow], balance: list[BsPo
 def tapes_from_prints(
     prints: dict[str, dict[int, tuple[float, float, float, float, float]]],
     share_events: dict[str, tuple[list[int], list[float]]],
+    official: dict | None = None,
 ) -> tuple[dict[str, Tape], int]:
-    """Build tapes and return how many prints were reclassified as splits."""
+    """Build tapes and return how many prints carry a corporate-action factor.
+
+    ``share_events`` is retained for callers that still pass FRE share counts.
+    Those receipts are not ex-dates and do not set the factor.
+    """
+    del share_events
     tapes: dict[str, Tape] = {}
     n_splits = 0
+    events = {} if official is None else official
     for ticker, by_day in prints.items():
         ords = sorted(by_day)
         if len(ords) < 2:
@@ -863,13 +870,19 @@ def tapes_from_prints(
         qty = np.array([by_day[day][3] for day in ords], dtype=np.float64)
         vol = np.array([by_day[day][4] for day in ords], dtype=np.float64)
         dates = np.array(ords, dtype=np.int64)
-        events = share_events.get(ticker)
-        if events is None:
-            split = np.ones(len(dates), dtype=np.float64)
-        else:
-            split = confirmed_split_factors(dates, close, events[0], events[1])
-        n_splits += int(np.sum(np.abs(split - 1.0) > 1e-8))
-        tapes[ticker] = Tape(dates, close, bid, ask, qty, vol, split)
+        adjusted = adjust_prints(dates, close, bid, ask, qty, vol, ticker=ticker, official=events.get(ticker, []))
+        n_splits += int(np.sum(np.abs(adjusted.share_factor - 1.0) > 1e-8))
+        tapes[ticker] = Tape(
+            dates,
+            adjusted.close,
+            adjusted.bid,
+            adjusted.ask,
+            adjusted.qty,
+            adjusted.vol,
+            adjusted.share_factor,
+            adjusted.source,
+            adjusted.heuristic_cash_scale,
+        )
     return tapes, n_splits
 
 
@@ -954,7 +967,7 @@ def load_bundle(cache: Path) -> dict:
             [point.received for point in points],
             [point.on_out for point in points],
         )
-    tapes, n_splits = tapes_from_prints(prints, share_events)
+    tapes, n_splits = tapes_from_prints(prints, share_events, load_official_events(cache))
     sessions = session_calendar(tapes)
     tesouro = cache / "tesouro.csv"
     if tesouro.exists():
