@@ -254,14 +254,26 @@ def _refresh_events(cache: Path, tickers: set[str]) -> None:
             raise PaperDataError(f"cash-event feed failed for {ticker}") from exc
         rows = []
         splits = []
+        rejected: list[dict] = []
         if payload is not None:
             rows = [
                 {"ordinal": event.ordinal, "amount": event.amount, "kind": event.kind}
                 for event in parse_yahoo_events(payload, ticker)
             ]
-            splits = [{"ordinal": ordinal, "share_factor": ratio} for ordinal, ratio in parse_yahoo_splits(payload)]
+            splits = [
+                {"ordinal": ordinal, "share_factor": ratio}
+                for ordinal, ratio in parse_yahoo_splits(payload, rejected)
+            ]
         dest.write_text(
-            json.dumps({"ticker": ticker, "events": rows, "splits": splits, "error": error}),
+            json.dumps(
+                {
+                    "ticker": ticker,
+                    "events": rows,
+                    "splits": splits,
+                    "split_parse": {"accepted": len(splits), "rejected": rejected},
+                    "error": error,
+                }
+            ),
             encoding="utf-8",
         )
 

@@ -9,6 +9,9 @@ per share on the ex-date. The tax rule lives in ``equal_weight``.
 from __future__ import annotations
 
 import json
+import logging
+import math
+import re
 import zipfile
 from collections import defaultdict
 from collections.abc import Sequence
@@ -29,6 +32,11 @@ from app.models.corporate_actions import (
 )
 from app.models.net_net import Tape
 from app.models.net_net_io import _date_ord, _idx, _rows
+
+logger = logging.getLogger(__name__)
+
+# ``a:b`` is the chart feed's splitRatio text. ``a`` and ``b`` are numerator and denominator.
+_SPLIT_RATIO_TEXT = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s*:\s*(\d+(?:[.,]\d+)?)\s*$")
 
 SHARE_CLASS = {
     "ações ordinárias": "on",
@@ -187,8 +195,64 @@ def yahoo_nominal_amount(adjusted: float, ex_ordinal: int, splits: list[tuple[in
     return float(adjusted) * factor
 
 
-def parse_yahoo_splits(payload: dict[str, Any]) -> list[tuple[int, float]]:
-    """Ex-date and new/old share ratio from a chart payload. Empty when the feed has none."""
+def _positive_ratio(numerator: float, denominator: float) -> float | None:
+    if not math.isfinite(numerator) or not math.isfinite(denominator):
+        return None
+    if numerator <= 0.0 or denominator <= 0.0:
+        return None
+    return numerator / denominator
+
+
+def _factor_from_split_item(item: dict[str, Any]) -> tuple[float | None, str]:
+    """New/old shares. Numbers win. The text form ``a:b`` is ``a/b`` when they are absent.
+
+    ``1:8`` is a grupamento with factor ``1/8``. ``2:1`` is a desdobramento with factor ``2``.
+    """
+    numerator = item.get("numerator")
+    denominator = item.get("denominator")
+    if numerator is not None and denominator is not None:
+        try:
+            factor = _positive_ratio(float(numerator), float(denominator))
+        except (TypeError, ValueError):
+            return None, "unparsed_numerator_denominator"
+        if factor is None:
+            return None, "non_positive_factor"
+        return factor, ""
+    raw = item.get("splitRatio")
+    if isinstance(raw, str):
+        match = _SPLIT_RATIO_TEXT.match(raw)
+        if match is not None:
+            factor = _positive_ratio(
+                float(match.group(1).replace(",", ".")),
+                float(match.group(2).replace(",", ".")),
+            )
+            if factor is None:
+                return None, "non_positive_factor"
+            return factor, ""
+        try:
+            value = float(raw.replace(",", "."))
+        except ValueError:
+            return None, "unparsed_split_ratio"
+        if not math.isfinite(value) or value <= 0.0:
+            return None, "non_positive_factor"
+        return value, ""
+    if isinstance(raw, int | float) and not isinstance(raw, bool):
+        if not math.isfinite(float(raw)) or float(raw) <= 0.0:
+            return None, "non_positive_factor"
+        return float(raw), ""
+    return None, "unparsed_split_ratio"
+
+
+def parse_yahoo_splits(
+    payload: dict[str, Any],
+    rejected: list[dict[str, Any]] | None = None,
+) -> list[tuple[int, float]]:
+    """Ex-date and new/old share ratio from a chart payload.
+
+    A row that cannot be read is appended to ``rejected`` and logged. It does
+    not drop the rest of the payload. ``splitRatio`` arrives as text such as
+    ``1:8``; that string is not passed to ``float``.
+    """
     chart = payload.get("chart") or {}
     result = chart.get("result") or []
     if not result:
@@ -198,23 +262,37 @@ def parse_yahoo_splits(payload: dict[str, Any]) -> list[tuple[int, float]]:
     splits: list[tuple[int, float]] = []
     for item in raw_splits.values():
         if not isinstance(item, dict):
+            _reject_split(rejected, {}, "not_an_object")
+            continue
+        factor, reason = _factor_from_split_item(item)
+        if factor is None:
+            _reject_split(rejected, item, reason)
             continue
         stamp = item.get("date")
-        ratio = item.get("splitRatio")
-        if ratio is None and item.get("numerator") and item.get("denominator"):
-            try:
-                ratio = float(item["numerator"]) / float(item["denominator"])
-            except (TypeError, ValueError, ZeroDivisionError):
-                continue
-        if stamp is None or ratio is None:
+        if stamp is None:
+            _reject_split(rejected, item, "missing_date")
             continue
         try:
             ordinal = datetime.fromtimestamp(int(stamp), UTC).date().toordinal()
-            splits.append((ordinal, float(ratio)))
         except (TypeError, ValueError, OSError):
+            _reject_split(rejected, item, "bad_date")
             continue
+        splits.append((ordinal, factor))
     splits.sort()
     return splits
+
+
+def _reject_split(rejected: list[dict[str, Any]] | None, item: dict[str, Any], reason: str) -> None:
+    row = {
+        "reason": reason,
+        "date": item.get("date"),
+        "splitRatio": item.get("splitRatio"),
+        "numerator": item.get("numerator"),
+        "denominator": item.get("denominator"),
+    }
+    logger.warning("yahoo split not interpreted: %s", row)
+    if rejected is not None:
+        rejected.append(row)
 
 
 def parse_yahoo_events(payload: dict[str, Any], ticker: str) -> list[CashEvent]:

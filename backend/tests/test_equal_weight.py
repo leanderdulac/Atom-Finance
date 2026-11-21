@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import zipfile
-from datetime import date
+from datetime import UTC, date, datetime
 
 import numpy as np
 import pytest
@@ -34,6 +35,7 @@ from app.models.equal_weight_io import (
     parse_cotahist_print,
     parse_fca_equity,
     parse_yahoo_events,
+    parse_yahoo_splits,
     share_events_from_companies,
     yahoo_nominal_amount,
 )
@@ -138,6 +140,48 @@ def test_a_cash_figure_above_the_previous_close_is_not_a_dividend():
     assert "ORPH3" not in kept
     taxed = event_arrays(kept, 0.15)
     assert taxed["PDGR3"][1].tolist() == pytest.approx([0.4])
+
+
+def test_yahoo_split_text_ratio_is_read_and_a_bad_ratio_is_counted(caplog):
+    def stamp(year: int, month: int, day: int) -> int:
+        return int(datetime(year, month, day, tzinfo=UTC).timestamp())
+
+    payload = {
+        "chart": {
+            "result": [
+                {
+                    "events": {
+                        "splits": {
+                            "0": {"date": stamp(2019, 8, 12), "splitRatio": "1:8"},
+                            "1": {
+                                "date": stamp(2020, 1, 6),
+                                "numerator": 2,
+                                "denominator": 1,
+                                "splitRatio": "2:1",
+                            },
+                            "2": {"date": stamp(2021, 3, 1), "splitRatio": "nope"},
+                        }
+                    }
+                }
+            ]
+        }
+    }
+    rejected: list[dict] = []
+    with caplog.at_level(logging.WARNING):
+        splits = parse_yahoo_splits(payload, rejected)
+    assert len(splits) == 2
+    assert splits[0][0] == _ord(2019, 8, 12)
+    assert splits[0][1] == pytest.approx(1.0 / 8.0)
+    assert splits[1][0] == _ord(2020, 1, 6)
+    assert splits[1][1] == pytest.approx(2.0)
+    assert len(rejected) == 1
+    assert rejected[0]["reason"] == "unparsed_split_ratio"
+    assert rejected[0]["splitRatio"] == "nope"
+    assert any("unparsed_split_ratio" in record.message for record in caplog.records)
+    payload["chart"]["result"][0]["events"]["dividends"] = {"0": {"date": stamp(2020, 6, 1), "amount": 0.2}}
+    events = parse_yahoo_events(payload, "MGLU3")
+    assert len(events) == 1
+    assert events[0].amount == pytest.approx(0.2)
 
 
 def test_yahoo_nominal_undoes_a_later_split_only():

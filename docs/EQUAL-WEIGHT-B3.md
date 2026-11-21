@@ -154,6 +154,16 @@ O fator é ações novas / ações antigas. Grupamento de 80 para 1 aplica `1/80
 
 Cada salto de pelo menos 45% gera uma linha de auditoria: ticker, data, razão, fonte (`b3`, `cvm`, `heuristic`, `unadjusted` ou `bad_print`) e fator aplicado. Protocolo tardio fica na razão como `late_filing_ignored` e não altera o fator.
 
+O calendário do feed traz `numerator` e `denominator`. O fator é a divisão dos dois, ações novas por ações antigas. Se esses campos faltam, o texto `splitRatio` no formato `a:b` vale `a/b`: `1:8` é grupamento com fator 1/8, `2:1` é desdobramento com fator 2. Um texto que não fecha é contado e registrado; não derruba o arquivo. A leitura antiga passava esse texto para `float` e descartava o evento em silêncio, então os arquivos ficavam com `splits` vazio. `--refresh-splits` busca de novo o arquivo que não tem o registro `split_parse`.
+
+Limitações conhecidas, sem mudar a regra. A tolerância de resíduo de 25%, a folga de 7 dias, as tolerâncias da heurística e a regra de print ruim continuam as da `b3-corporate-actions-v2`. Com o fator lido, estes saltos ficam `unadjusted` porque `|razão de preço × fator − 1|` passa de 25%:
+
+- PDGR3 em 2025-02-28, razão de preço cerca de 71, feed `125:1` (fator 125).
+- PDGR3 em 2025-11-17, razão de preço cerca de 112, feed `200:1` (fator 200).
+- SEQL3, razão de preço cerca de 102. O fator do feed não entra na banda de 25%.
+
+O parser dos IPE da CVM, de 2011 a 2026, extraiu 0 eventos. Ele só emite uma linha quando o assunto traz a razão e uma data-ex explícita. Essa extração não foi alterada.
+
 A manga da decisão permanece a da v1: `small`, ADV de R$ 200 mil, trimestral, patrimônio de R$ 1 milhão. A v2 não reescolhe a manga pelo Sharpe de desenho. O critério continua DSR ≥ 0,95 e excesso líquido fora da amostra sobre o CDI > 0. `eligible_for_live_trading` permanece false. Nenhuma ordem é enviada.
 
 N do DSR da decisão na v2: trials da família `b3_equal_weight_v2` mais os 55 trials da família v1 mais os 32 trials rejeitados do net-net. N de transparência: esse N mais os 24 trials de fatores de horizonte longo. A série de retornos da v1 não é reinserida.

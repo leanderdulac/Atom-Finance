@@ -90,7 +90,10 @@ def main() -> None:
     parser.add_argument(
         "--refresh-splits",
         action="store_true",
-        help="Refetch a ticker whose file has no splits key, so the ex-date calendar is stored.",
+        help=(
+            "Refetch a ticker whose file has no splits key, or no split_parse record. "
+            "Files written while splitRatio text was discarded are fetched again."
+        ),
     )
     args = parser.parse_args()
     raw_tickers = set(_cotahist_tickers(args.cache)) | {item.ticker for item in load_listings(args.cache)}
@@ -108,32 +111,47 @@ def main() -> None:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return True
-        return "splits" not in payload
+        if "splits" not in payload or not isinstance(payload.get("split_parse"), dict):
+            return True
+        return False
 
     pending = [ticker for ticker in tickers if _pending(ticker)]
     print(f"listings {len(tickers)} pending {len(pending)}", flush=True)
     failures: dict[str, str] = {}
     written = 0
+    rejected_rows = 0
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
         futures = [pool.submit(_fetch, ticker, period1, period2) for ticker in pending]
         for done, future in enumerate(as_completed(futures), start=1):
             ticker, payload, error = future.result()
             events = []
             splits = []
+            rejected: list[dict] = []
             if payload is not None:
                 events = [
                     {"ordinal": event.ordinal, "amount": event.amount, "kind": event.kind}
                     for event in parse_yahoo_events(payload, ticker)
                 ]
                 splits = [
-                    {"ordinal": ordinal, "share_factor": ratio} for ordinal, ratio in parse_yahoo_splits(payload)
+                    {"ordinal": ordinal, "share_factor": ratio}
+                    for ordinal, ratio in parse_yahoo_splits(payload, rejected)
                 ]
+                rejected_rows += len(rejected)
             elif error:
                 failures[ticker] = error
                 if not error.startswith("http 404") and not error.startswith("http 400"):
                     continue
             (args.out / f"{ticker}.json").write_text(
-                json.dumps({"ticker": ticker, "events": events, "splits": splits, "error": error}, ensure_ascii=False),
+                json.dumps(
+                    {
+                        "ticker": ticker,
+                        "events": events,
+                        "splits": splits,
+                        "split_parse": {"accepted": len(splits), "rejected": rejected},
+                        "error": error,
+                    },
+                    ensure_ascii=False,
+                ),
                 encoding="utf-8",
             )
             written += 1
@@ -144,6 +162,7 @@ def main() -> None:
         "period1": period1,
         "tickers": len(tickers),
         "files_written_this_run": written,
+        "split_rows_rejected": rejected_rows,
         "failures": failures,
         "note": (
             "Amounts are gross reais per share on the ex-date. The feed does not label "
@@ -152,7 +171,7 @@ def main() -> None:
         ),
     }
     (args.out / "_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"wrote {args.out.resolve()} failures {len(failures)}", flush=True)
+    print(f"wrote {args.out.resolve()} failures {len(failures)} split_rows_rejected {rejected_rows}", flush=True)
 
 
 if __name__ == "__main__":
