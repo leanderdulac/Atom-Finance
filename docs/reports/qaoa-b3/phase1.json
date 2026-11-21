@@ -1,0 +1,107 @@
+{
+  "schema_version": "qaoa-b3-phase1-1",
+  "family_id": "b3_qaoa_portfolio",
+  "eligible_for_live_trading": false,
+  "verdict": "inconclusivo",
+  "market_sample": false,
+  "criterion_met": false,
+  "paper_only": true,
+  "reason": "The COTAHIST cache is not available, so no 2012–2026 path was scored. Classical baselines are implemented. qaoa_aer selections were not scored.",
+  "baselines_implemented": [
+    "equal_weight37",
+    "equal_weight_k",
+    "random_K",
+    "milp_exact",
+    "sa"
+  ],
+  "awaiting_solver": [
+    "qaoa_aer"
+  ],
+  "paper_books": "unchanged",
+  "contract": {
+    "schema_version_snapshot": "qaoa-b3-snapshot-1",
+    "schema_version_holdout": "qaoa-b3-holdout-1",
+    "schema_version_selection": "qaoa-b3-selection-1",
+    "family_id": "b3_qaoa_portfolio",
+    "universe_rule": "small; bottom 30 percent point-in-time market cap; financial issuers excluded; trailing 60-session median BRL volume at least 200000; at least 20 prints and a print within 5 sessions; one ticker per issuer, the highest ADV; quarterly signal on the last market session of March, June, September and December, fill on the next session; fewer than 15 names and the book is cash; first signal on or after 2012-05-02; no earlier rebalance",
+    "adv_floor_brl": 200000.0,
+    "first_signal_on_or_after": "2012-05-02",
+    "design_end": "2018-12-31",
+    "eval_start": "2019-01-01",
+    "k_grid": [
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "lambda_grid": [
+      0.5,
+      1.0,
+      2.0,
+      5.0
+    ],
+    "embargo_sessions": 5,
+    "mu_window_sessions": 252,
+    "mu_min_obs": 60,
+    "holding_sessions": 63,
+    "selection_aum_brl": 1000000.0,
+    "loose_aum_brl": 100000.0,
+    "solver_aliases": {
+      "equal_weight37": "equal_weight37",
+      "equal_weight_universe": "equal_weight37",
+      "equal_weight_k": "equal_weight_k",
+      "random_K": "random_K",
+      "random_k": "random_K",
+      "milp_exact": "milp_exact",
+      "sa": "sa",
+      "simulated_annealing": "sa",
+      "qaoa_aer": "qaoa_aer"
+    },
+    "generated_solvers": [
+      "equal_weight37",
+      "equal_weight_k",
+      "random_K",
+      "milp_exact",
+      "sa"
+    ],
+    "qaoa_aer": "selection slot only; this study does not run it",
+    "random_seeds": [
+      7,
+      11
+    ],
+    "sa_seed": 7,
+    "sa_steps": 400,
+    "sa_t0": 0.02,
+    "sa_cool": 0.995,
+    "eligible_for_live_trading": false,
+    "definitions": {
+      "return": "r_t = f_t * (P_t + d_t) / P_{t-1} - 1 on a market session where the name prints on both t and the previous market session",
+      "split": "f_t is the confirmed split factor on t, else 1. An unconfirmed price gap stays in P.",
+      "cash": "d_t is after-tax reais per current share. Labeled dividends are exempt. Labeled JCP is withheld at 15 percent. Unlabeled events are withheld at 15 percent. An amount above the previous close is dropped. Same-day confirmed split scales the cash because the share count changes before the cash is credited.",
+      "gap": "A name that skips a market session contributes no daily return for that pair. The gap move is not spread into a one-day return.",
+      "embargo": "estimation_end is the market session 5 sessions before the signal. in_mu_window is the last 252 sessions on or before estimation_end. Rows after estimation_end and through the signal stay in the file and are excluded from mu and Sigma.",
+      "mu": "Arithmetic mean of in_mu_window adjusted returns. estimable requires at least 60 such returns.",
+      "sigma": "Ledoit-Wolf linear shrinkage toward constant correlation, Sigma_LW = alpha* F + (1 - alpha*) S, S the 1/T sample covariance of complete cases in the mu window. If fewer than 8 complete sessions remain, Sigma is diagonal (each name's own MLE variance, covariance 0). Order is ticker ascending among estimable names.",
+      "objective": "score(x) = (H/K) x·mu - lambda (H/K^2) x' Sigma x - (1/K) x·c, H = 63, sum(x) = K, x binary, only estimable names. c_i is the round-trip cost as a fraction of notional at AUM 1000000 and breadth K, from quote_cost. The parquet bps columns are the same model at breadth = n_universe for AUM 100000 and 1000000. They are not the K-subset penalty.",
+      "costs": "price_fill on the B3 taker schedule: fee, half-spread, participation slippage, cap 5000 bps.",
+      "holdout": "holdout/YYYY-MM-DD_fwd.parquet is realized returns after the signal. It is not a selection input.",
+      "eligible_for_live_trading": false
+    }
+  },
+  "priors": {
+    "family": 0,
+    "rejected_net_net": 32,
+    "equal_weight": 55,
+    "equal_weight_source": "published_report",
+    "factor_trials": 0,
+    "factor_source": "not_accessible",
+    "factor_accessible": false,
+    "published_factor_trials_not_in_registry": 24,
+    "n_decision": 87,
+    "n_transparency_if_factor_block_added": 111,
+    "dsr_uses": "n_decision"
+  },
+  "n_trials_decision_before_new_trials": 87
+}
