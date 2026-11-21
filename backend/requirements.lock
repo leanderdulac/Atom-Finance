@@ -165,6 +165,8 @@ pyasn1-modules==0.4.2
     # via google-auth
 pycparser==3.0
     # via cffi
+pyarrow==22.0.0
+    # via -r requirements.txt
 pydantic==2.9.2
     # via
     #   -r requirements.txt

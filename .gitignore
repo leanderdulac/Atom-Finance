@@ -37,3 +37,9 @@ node_modules
 # Point-in-time B3 cache (CVM, COTAHIST, CDI, cash distributions). Rebuilt by the fetch scripts.
 data/net-net/
 data/equal-weight/
+data/qaoa-b3/
+
+# Full-sample QAOA panels. Rebuild with scripts/export_qaoa_b3_snapshots.py.
+# The schema fixture under docs/reports/qaoa-b3/fixtures/ stays versioned.
+docs/reports/qaoa-b3/snapshots/**
+!docs/reports/qaoa-b3/snapshots/INDEX.md

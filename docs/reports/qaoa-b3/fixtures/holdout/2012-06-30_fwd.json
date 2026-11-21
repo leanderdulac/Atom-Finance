@@ -1,0 +1,9 @@
+{
+  "holdout_hash": "791bd89d76993e899fa9c1f8e7ba475ec69d9069bac3f52f09da202540dca3f4",
+  "selection_snapshot_hash": "008033861794e47380901dc3a7b76ce4bfe65ef522f7d66be169d26a80346c85",
+  "purpose": "not_for_selection",
+  "eligible_for_live_trading": false,
+  "rebalance_date": "2012-06-30",
+  "next_rebalance_date": "2012-09-30",
+  "n_rows": 2208
+}
