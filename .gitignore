@@ -37,3 +37,8 @@ node_modules
 # Point-in-time B3 cache (CVM, COTAHIST, CDI, cash distributions). Rebuilt by the fetch scripts.
 data/net-net/
 data/equal-weight/
+# Download cache for the forward paper job. The ledger and reports under
+# docs/reports/b3_paper are versioned on purpose. The lock file is only held
+# while a mark is being appended.
+data/b3-paper-cache/
+docs/reports/b3_paper/ledger.lock

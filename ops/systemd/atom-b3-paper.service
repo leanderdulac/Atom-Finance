@@ -1,0 +1,14 @@
+[Unit]
+Description=ATOM B3 paper forward mark and monthly report
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=atom
+Group=atom
+WorkingDirectory=/var/lib/atom/Atom-Finance
+Environment=PYTHONPATH=/var/lib/atom/Atom-Finance/backend
+ExecStart=/var/lib/atom/Atom-Finance/.venv/bin/python scripts/run_b3_paper_forward.py --mark-to-market
+ExecStart=/var/lib/atom/Atom-Finance/.venv/bin/python scripts/run_b3_paper_forward.py --monthly-report
+Nice=10
