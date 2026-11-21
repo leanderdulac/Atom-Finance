@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the ATOM B3 paper forward job on weekdays at 19:00 Brasília (22:00 UTC)
+
+[Timer]
+# 22:00 UTC is 19:00 in America/Sao_Paulo. Brazil does not use daylight saving,
+# so the UTC schedule does not depend on the timezone configured for the service.
+OnCalendar=Mon..Fri 22:00:00 UTC
+Persistent=true
+Unit=atom-b3-paper.service
+
+[Install]
+WantedBy=timers.target
