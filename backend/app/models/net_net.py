@@ -423,6 +423,11 @@ class Tape:
     qty: np.ndarray
     vol: np.ndarray
     split: np.ndarray
+    # Per-print label from corporate_actions.adjust_prints. None means the
+    # factor was supplied by a test or an older builder and is not a heuristic.
+    split_source: np.ndarray | None = None
+    # Cumulative reais-per-share multiplier for heuristic factors through each print.
+    heuristic_cash_scale: np.ndarray | None = None
 
     def index_on_or_before(self, ordinal: int) -> int | None:
         if len(self.dates) == 0:
@@ -434,12 +439,23 @@ class Tape:
 
 
 def trailing_adv(tape: Tape, idx: int, window: int = ADV_WINDOW) -> tuple[float, float]:
-    """Median BRL volume and share volume over the prior ``window`` prints, excluding ``idx``."""
+    """Median BRL volume and share volume over the prior ``window`` prints, excluding ``idx``.
+
+    Share volume is restated in the share unit of ``idx``. A print is multiplied
+    by the product of split factors strictly after it and through ``idx``, so a
+    grupamento does not leave the old share count inside the depth estimate.
+    BRL volume is the notional that traded and is not rescaled.
+    """
     start = max(0, idx - window)
     if idx - start < 1:
         return 0.0, 0.0
-    vol = tape.vol[start:idx]
-    qty = tape.qty[start:idx]
+    vol = np.asarray(tape.vol[start:idx], dtype=np.float64)
+    qty = np.asarray(tape.qty[start:idx], dtype=np.float64)
+    span = np.asarray(tape.split[start : idx + 1], dtype=np.float64)
+    positive = np.where(np.isfinite(span) & (span > 0.0), span, 1.0)
+    if len(span) > 1:
+        rev = np.cumprod(positive[::-1])[::-1]
+        qty = qty * rev[1 : 1 + len(qty)]
     vol = vol[np.isfinite(vol)]
     qty = qty[np.isfinite(qty)]
     if len(vol) == 0:
@@ -650,52 +666,37 @@ def confirmed_split_factors(
     share_ords: Sequence[int],
     share_counts: Sequence[float],
     confirm_days: int = 250,
+    qty: np.ndarray | None = None,
+    official: Sequence[Any] | None = None,
 ) -> np.ndarray:
-    """Multiplier applied to a position at the start of each print.
+    """Share multiplier applied to a position at the start of each print.
 
-    A round price gap is treated as a split or grupamento only when a capital
-    filing within ``confirm_days`` shows the inverse change in common shares.
-    The filing is the delayed record of an ex-date the market already traded
-    through; valuation share counts still update only at the receipt date.
-    Unconfirmed gaps stay real returns.
+    The 250-day look-ahead is gone. ``confirm_days``, ``share_ords`` and
+    ``share_counts`` are accepted so older callers still import, and they are
+    not used: a capital filing received after the print is not an ex-date.
+    Pass ``qty`` and official events to get the point-in-time factor. The
+    cleaned price series lives on ``corporate_actions.adjust_prints``.
     """
-    factors = np.ones(len(dates), dtype=np.float64)
-    if len(dates) < 2 or len(share_ords) < 2:
-        return factors
-    ords = np.asarray(share_ords, dtype=np.int64)
-    counts = np.asarray(share_counts, dtype=np.float64)
-    order = np.argsort(ords)
-    ords = ords[order]
-    counts = counts[order]
-    for i in range(1, len(dates)):
-        prev = float(close[i - 1])
-        px = float(close[i])
-        if prev <= 0 or px <= 0:
-            continue
-        ratio = px / prev
-        if 1 / 1.45 < ratio < 1.45:
-            continue
-        expected = match_share_multiplier(ratio)
-        if expected is None:
-            continue
-        gap = int(dates[i])
-        before = int(np.searchsorted(ords, gap, side="left") - 1)
-        after = int(np.searchsorted(ords, gap, side="left"))
-        if before < 0 or after >= len(ords):
-            continue
-        if int(ords[after]) - gap > confirm_days:
-            continue
-        c0 = float(counts[before])
-        c1 = float(counts[after])
-        if c0 <= 0 or c1 <= 0:
-            continue
-        observed = c1 / c0
-        if abs(observed - expected) / abs(expected) > 0.12:
-            continue
-        if 1 / 1.45 < observed < 1.45:
-            continue
-        factors[i] = observed
-    return factors
+    del confirm_days, share_ords, share_counts
+    from app.models.corporate_actions import adjust_prints
+
+    n = len(dates)
+    if qty is None:
+        qty_arr = np.ones(n, dtype=np.float64)
+    else:
+        qty_arr = np.asarray(qty, dtype=np.float64)
+    close_arr = np.asarray(close, dtype=np.float64)
+    adj = adjust_prints(
+        np.asarray(dates, dtype=np.int64),
+        close_arr,
+        close_arr,
+        close_arr,
+        qty_arr,
+        np.ones(n, dtype=np.float64),
+        ticker="",
+        official=() if official is None else official,
+    )
+    return adj.share_factor
 
 
 def month_ends(session_ords: Sequence[int]) -> list[int]:

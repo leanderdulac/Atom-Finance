@@ -4,7 +4,7 @@ Pesquisa. Nenhum caminho envia ordem. `eligible_for_live_trading` permanece `fal
 
 Pergunta: uma carteira de peso igual, com o universo, o piso de liquidez e o calendário escolhidos só na janela de desenho, sobrevive a custo, a provento com a regra fiscal travada, ao deflacionamento por todas as variações e a um excesso líquido sobre o CDI fora da amostra?
 
-Resposta deste estudo: **reprovado**. A manga escolhida na janela de desenho foi `small` com piso de ADV de R$ 200 mil, rebalanceamento quarterly, patrimônio de R$ 1 milhão. Fora da amostra o DSR é 0,30 (o corte é 0,95, com N = 87) e o excesso de CAGR líquido sobre o CDI é 14,0%.
+Resposta do estudo v1, com a janela antiga de confirmação: **reprovado**. A manga escolhida na janela de desenho foi `small` com piso de ADV de R$ 200 mil, rebalanceamento quarterly, patrimônio de R$ 1 milhão. Fora da amostra o DSR é 0,30 (o corte é 0,95, com N = 87) e o excesso de CAGR líquido sobre o CDI é 14,0%. As tabelas abaixo são esse registro v1. A regra vigente e o lugar da v2 estão na seção de ajuste.
 
 O critério é DSR ≥ 0,95 e excesso líquido sobre o CDI > 0 no período fora da amostra. Passar ainda seria paper. Não autoriza capital.
 
@@ -23,7 +23,7 @@ Um papel por emissor, o de maior ADV. Classes ordinária, preferencial e unit. S
 
 O caixa do provento entra para quem tinha o papel no fechamento anterior. Dividendo com rótulo não paga imposto. JCP com rótulo retém 15%. O feed público não separa os dois, então o evento sem rótulo retém 15% na manga escolhida. Uma sensibilidade registrada não retém nada no evento sem rótulo. Valor por ação maior que o fechamento anterior é descartado.
 
-Salto de preço de pelo menos 45% com razão redonda só muda a quantidade quando um protocolo de capital posterior confirma a variação inversa das ações.
+No estudo v1, um salto de preço de pelo menos 45% com razão redonda só mudava a quantidade quando um protocolo de capital posterior confirmava a variação inversa das ações. Essa confirmação posterior saiu do código. A regra vigente está na seção de ajuste.
 
 Papel sem negócio por 10 pregões é vendido no último preço no caminho base. Uma sensibilidade registrada marca essa saída como perda total.
 
@@ -89,7 +89,7 @@ Giro de mão única da manga escolhida: 0,72 ao ano. Capacidade típica a 10% do
 
 Anos com retorno líquido negativo: 2011, 2013, 2014, 2021, 2022, 2026.
 
-Um mês acima de 100% num livro de cerca de 37 nomes tem o tamanho de um grupamento não confirmado por protocolo de capital. Em 29/05/2025, AMOB3 foi de R$ 0,24 para R$ 13,42, e o ADV mediano dos 60 pregões anteriores era R$ 2,2 milhões, acima do piso da manga escolhida. Esse salto fica no retorno enquanto o protocolo não confirma a quantidade. O excesso fora da amostra convive com saltos dessa classe.
+Leitura da corrida v1: um mês acima de 100% num livro de cerca de 37 nomes tem o tamanho de um grupamento que a regra antiga deixava no retorno. Em 29/05/2025, AMOB3 foi de R$ 0,24 para R$ 13,42, e o ADV mediano dos 60 pregões anteriores era R$ 2,2 milhões, acima do piso da manga escolhida. Esse parágrafo descreve a v1. A regra vigente classifica o salto antes de ele entrar no retorno.
 
 ## Benchmarks
 
@@ -113,7 +113,7 @@ O simulador publicado, só preço, imprime CAGR bruto 32,8% e líquido 17,5%. Ma
 
 Vender e recomprar quem ficou no livro muda o líquido para 6,6% e o bruto para 19,6%. A correção de resize é o caminho base. O bug não é a origem do 17,5% líquido: esse número já é o caminho corrigido.
 
-Sem o ajuste de desdobramento confirmado por protocolo de capital, o líquido vai a 20,1% e o bruto a 34,6%. Saltos confirmados como split: 40. Saltos de pelo menos 45% sem confirmação: 864, dos quais 826 têm razão redonda de grupamento ou desdobramento. Salto sem protocolo continua no retorno.
+Na corrida v1, sem o ajuste de desdobramento confirmado por protocolo de capital, o líquido vai a 20,1% e o bruto a 34,6%. Saltos confirmados como split nessa corrida: 40. Saltos de pelo menos 45% sem confirmação: 864, dos quais 826 têm razão redonda de grupamento ou desdobramento. Esses contadores são da regra antiga e não foram refeitos.
 
 Com provento tributado na regra travada, o líquido vai a 18,5% e o caixa de provento somado é R$ 2,0 mi.
 
@@ -135,6 +135,57 @@ Maiores saltos sem confirmação de capital, preço final sobre preço anterior:
 - VIVR3 em 2016-05-02: razão 80,00
 
 Leitura: o 17,5% líquido e o 32,8% bruto publicados são o par preço-apenas depois da correção de não vender quem continua na carteira. Esta corrida mede 32,8% bruto e 17,5% líquido nesse desenho. A distância entre bruto e líquido é custo, e o slippage no teto é a maior peça quando o ADV do nome é pequeno diante da fatia igual do patrimônio. Desdobramento não confirmado e saída no último negócio empurram o bruto para cima se o salto ou o último negócio não são econômicos. Os números das variantes acima são o tamanho desse efeito, não um segundo estudo para escolher regra.
+
+## Ajuste de grupamento e desdobramento (v2)
+
+A janela de 250 dias foi retirada. Um documento protocolado depois do salto não justifica o salto. O fator aplicado é o da data-ex já conhecida naquele pregão. A regra está em `backend/app/models/corporate_actions.py` (`b3-corporate-actions-v2`) e foi escrita antes de reler o resultado. A v2 desta carteira não foi executada neste checkout: o cache de COTAHIST não está no repositório. Os números v1 abaixo permanecem o registro histórico.
+
+Fonte primária: evento oficial da B3 ou documento da CVM com fator e data-ex. O calendário de data-ex que já vem no mesmo arquivo dos proventos entra como fonte `b3`, tipo `chart_ex_date`, com conhecimento igual à data-ex. Arquivo ou CSV no mesmo ticker e na mesma data-ex prevalece sobre esse calendário. Um FRE de quantidade de ações não é data-ex.
+
+Sem evento oficial utilizável, o fallback pré-registrado é heurístico, no mesmo pregão:
+
+- Salto a partir da razão `1,45` (45% inclusive).
+- Razão de preço perto de um inteiro `n` ou de `1/n`, com `n` de `2 a 100` e tolerância relativa de `3%`.
+- Volume em ações no mesmo sentido e na mesma proporção, tolerância log-relativa `0,40`, mínimo de 100 ações nos dois pregões.
+- Print que reverte em `5 pregões`, com o produto das duas razões a até `8%` de 1 e o fechamento de volta a até `8%` do fechamento anterior ao primeiro salto, é dado ruim. O preço é carregado do pregão anterior e a quantidade sai do ADV. Um evento oficial no mesmo pregão não é tratado como print ruim.
+- Evento oficial só é aplicado se o conhecimento é anterior ou igual à data-ex e o fator explica o preço do pregão com resíduo de até `25%`. O fator cai no primeiro pregão na data-ex ou até `7 dias` depois.
+
+O fator é ações novas / ações antigas. Grupamento de 80 para 1 aplica `1/80` na quantidade, no retorno e, quando a fonte é a heurística, no provento por ação. Provento com fator oficial permanece no valor por ação já cotado depois do evento. O preço do negócio continua o print, salvo o print ruim. O valor de mercado usa o preço cru vezes os fatores cuja data está depois do protocolo de capital já recebido e até a data do sinal. O ADV em reais não é reescalado. O ADV em ações volta à unidade da data do sinal.
+
+Cada salto de pelo menos 45% gera uma linha de auditoria: ticker, data, razão, fonte (`b3`, `cvm`, `heuristic`, `unadjusted` ou `bad_print`) e fator aplicado. Protocolo tardio fica na razão como `late_filing_ignored` e não altera o fator.
+
+A manga da decisão permanece a da v1: `small`, ADV de R$ 200 mil, trimestral, patrimônio de R$ 1 milhão. A v2 não reescolhe a manga pelo Sharpe de desenho. O critério continua DSR ≥ 0,95 e excesso líquido fora da amostra sobre o CDI > 0. `eligible_for_live_trading` permanece false. Nenhuma ordem é enviada.
+
+N do DSR da decisão na v2: trials da família `b3_equal_weight_v2` mais os 55 trials da família v1 mais os 32 trials rejeitados do net-net. N de transparência: esse N mais os 24 trials de fatores de horizonte longo. A série de retornos da v1 não é reinserida.
+
+| Medida, manga travada, OOS 2019–2026, R$ 1 milhão | v1 (janela antiga, publicada) | v2 (esta regra) |
+|---|---:|---:|
+| CAGR líquido | 23,5% | não calculado |
+| Excesso sobre o CDI | 14,0% | não calculado |
+| Excesso sobre o Ibovespa TR | 15,6 p.p. | não calculado |
+| Sharpe fora da amostra | 0,56 | não calculado |
+| Sharpe de desenho | 0,66 | não calculado |
+| DSR fora da amostra | 0,30 | não calculado |
+| PSR fora da amostra | 0,98 | não calculado |
+| MinTRL fora da amostra | infinito | não calculado |
+| Max DD fora da amostra | −64,2% | não calculado |
+| Giro de mão única | 0,72 | não calculado |
+| Capacidade tênue | R$ 807 mil | não calculado |
+| CAGR líquido OOS a R$ 100 mil / R$ 1 mi / R$ 10 mi | 44,6% / 23,5% / 12,1% | não calculado |
+| N da família / decisão / transparência | 55 / 87 / 111 | família v2 + 55 + 32, transparência + 24 |
+| Veredito | reprovado | sem número até a corrida abaixo |
+
+Saltos classificados por fonte na fita real: não calculado. Sem o cache não há contagem.
+
+Comando da corrida v2, com o cache já preenchido pelas fontes públicas que os scripts já usam:
+
+```
+python scripts/fetch_net_net_b3.py --cache data/net-net
+python scripts/fetch_equal_weight_dividends.py --cache data/net-net --out data/equal-weight/yahoo --refresh-splits
+python scripts/run_equal_weight_b3.py --cache data/net-net --events data/equal-weight/yahoo
+```
+
+A carteira paper B não tem o pré-registro nem o ledger reescritos. O efeito no mark-to-market está em `docs/B3-PAPER-FORWARD.md`.
 
 ## Limites
 

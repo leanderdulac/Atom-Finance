@@ -19,7 +19,15 @@ from typing import Any
 
 import numpy as np
 
-from app.models.net_net import Tape, confirmed_split_factors
+from app.models.corporate_actions import (
+    Adjustment,
+    OfficialEvent,
+    adjust_prints,
+    load_chart_splits,
+    load_official_events,
+    merge_official,
+)
+from app.models.net_net import Tape
 from app.models.net_net_io import _date_ord, _idx, _rows
 
 SHARE_CLASS = {
@@ -179,8 +187,8 @@ def yahoo_nominal_amount(adjusted: float, ex_ordinal: int, splits: list[tuple[in
     return float(adjusted) * factor
 
 
-def parse_yahoo_events(payload: dict[str, Any], ticker: str) -> list[CashEvent]:
-    """Chart-event dividends. The feed does not label JCP, so the kind is ``unknown``."""
+def parse_yahoo_splits(payload: dict[str, Any]) -> list[tuple[int, float]]:
+    """Ex-date and new/old share ratio from a chart payload. Empty when the feed has none."""
     chart = payload.get("chart") or {}
     result = chart.get("result") or []
     if not result:
@@ -194,7 +202,10 @@ def parse_yahoo_events(payload: dict[str, Any], ticker: str) -> list[CashEvent]:
         stamp = item.get("date")
         ratio = item.get("splitRatio")
         if ratio is None and item.get("numerator") and item.get("denominator"):
-            ratio = float(item["numerator"]) / float(item["denominator"])
+            try:
+                ratio = float(item["numerator"]) / float(item["denominator"])
+            except (TypeError, ValueError, ZeroDivisionError):
+                continue
         if stamp is None or ratio is None:
             continue
         try:
@@ -202,6 +213,18 @@ def parse_yahoo_events(payload: dict[str, Any], ticker: str) -> list[CashEvent]:
             splits.append((ordinal, float(ratio)))
         except (TypeError, ValueError, OSError):
             continue
+    splits.sort()
+    return splits
+
+
+def parse_yahoo_events(payload: dict[str, Any], ticker: str) -> list[CashEvent]:
+    """Chart-event dividends. The feed does not label JCP, so the kind is ``unknown``."""
+    chart = payload.get("chart") or {}
+    result = chart.get("result") or []
+    if not result:
+        return []
+    events = result[0].get("events") or {}
+    splits = parse_yahoo_splits(payload)
     out: list[CashEvent] = []
     for item in (events.get("dividends") or {}).values():
         if not isinstance(item, dict):
@@ -313,13 +336,17 @@ def load_strategy_tapes(
     cache: Path,
     listings: list[Listing] | None,
     share_events: dict[str, tuple[list[int], list[float]]],
+    chart_dir: Path | None = None,
+    audit_out: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Tape], dict[str, np.ndarray], int]:
     """COTAHIST tapes for the listing set, plus a trade-count array aligned to each tape.
 
-    ``share_events`` maps a ticker to ``(receipt ordinals, common shares)``. A
-    round price gap is a split only when that series confirms it. The trade
-    count is COTAHIST's TOTNEG and is not on the shared ``Tape`` type.
+    ``share_events`` is the FRE share-count series. It is not an ex-date: a
+    receipt after the print does not change the factor. Factors come from
+    ``corporate_actions.adjust_prints``. The trade count is COTAHIST's TOTNEG
+    and is not on the shared ``Tape`` type.
     """
+    del share_events
     wanted = None if listings is None else {item.ticker for item in listings}
     prints: dict[str, dict[int, tuple[float, float, float, float, float, float]]] = defaultdict(dict)
     folder = Path(cache) / "cotahist"
@@ -346,6 +373,9 @@ def load_strategy_tapes(
     tapes: dict[str, Tape] = {}
     trades: dict[str, np.ndarray] = {}
     n_splits = 0
+    official = load_official_events(cache)
+    if chart_dir is not None:
+        official = merge_official(official, load_chart_splits(chart_dir))
     for ticker, by_day in prints.items():
         ords = sorted(by_day)
         if len(ords) < 2:
@@ -357,12 +387,33 @@ def load_strategy_tapes(
         vol = np.array([by_day[day][4] for day in ords], dtype=np.float64)
         trade = np.array([by_day[day][5] for day in ords], dtype=np.float64)
         dates = np.array(ords, dtype=np.int64)
-        events = share_events.get(ticker)
-        if events is None:
-            split = np.ones(len(dates), dtype=np.float64)
-        else:
-            split = confirmed_split_factors(dates, close, events[0], events[1])
-        n_splits += int(np.sum(np.abs(split - 1.0) > 1e-8))
-        tapes[ticker] = Tape(dates, close, bid, ask, qty, vol, split)
+        adjusted = _adjusted_tape(ticker, dates, close, bid, ask, qty, vol, official.get(ticker, []))
+        n_splits += int(np.sum(np.abs(adjusted.share_factor - 1.0) > 1e-8))
+        tapes[ticker] = Tape(
+            dates,
+            adjusted.close,
+            adjusted.bid,
+            adjusted.ask,
+            adjusted.qty,
+            adjusted.vol,
+            adjusted.share_factor,
+            adjusted.source,
+            adjusted.heuristic_cash_scale,
+        )
         trades[ticker] = trade
+        if audit_out is not None:
+            audit_out.extend(adjusted.audit)
     return tapes, trades, n_splits
+
+
+def _adjusted_tape(
+    ticker: str,
+    dates: np.ndarray,
+    close: np.ndarray,
+    bid: np.ndarray,
+    ask: np.ndarray,
+    qty: np.ndarray,
+    vol: np.ndarray,
+    official: list[OfficialEvent],
+) -> Adjustment:
+    return adjust_prints(dates, close, bid, ask, qty, vol, ticker=ticker, official=official)

@@ -25,7 +25,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from app.models.equal_weight_io import load_listings, parse_cotahist_print, parse_yahoo_events  # noqa: E402
+from app.models.equal_weight_io import (  # noqa: E402
+    load_listings,
+    parse_cotahist_print,
+    parse_yahoo_events,
+    parse_yahoo_splits,
+)
 
 CHART = (
     "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}.SA"
@@ -82,13 +87,30 @@ def main() -> None:
     parser.add_argument("--cache", type=Path, default=Path("data/net-net"))
     parser.add_argument("--out", type=Path, default=Path("data/equal-weight/yahoo"))
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument(
+        "--refresh-splits",
+        action="store_true",
+        help="Refetch a ticker whose file has no splits key, so the ex-date calendar is stored.",
+    )
     args = parser.parse_args()
     raw_tickers = set(_cotahist_tickers(args.cache)) | {item.ticker for item in load_listings(args.cache)}
     tickers = sorted(ticker for ticker in raw_tickers if re.fullmatch(r"[A-Z0-9]{4,12}", ticker))
     args.out.mkdir(parents=True, exist_ok=True)
     period1 = int(datetime(2009, 1, 1, tzinfo=UTC).timestamp())
     period2 = int(datetime.now(UTC).timestamp()) + 86400
-    pending = [ticker for ticker in tickers if not (args.out / f"{ticker}.json").exists()]
+    def _pending(ticker: str) -> bool:
+        path = args.out / f"{ticker}.json"
+        if not path.exists():
+            return True
+        if not args.refresh_splits:
+            return False
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return True
+        return "splits" not in payload
+
+    pending = [ticker for ticker in tickers if _pending(ticker)]
     print(f"listings {len(tickers)} pending {len(pending)}", flush=True)
     failures: dict[str, str] = {}
     written = 0
@@ -97,17 +119,21 @@ def main() -> None:
         for done, future in enumerate(as_completed(futures), start=1):
             ticker, payload, error = future.result()
             events = []
+            splits = []
             if payload is not None:
                 events = [
                     {"ordinal": event.ordinal, "amount": event.amount, "kind": event.kind}
                     for event in parse_yahoo_events(payload, ticker)
+                ]
+                splits = [
+                    {"ordinal": ordinal, "share_factor": ratio} for ordinal, ratio in parse_yahoo_splits(payload)
                 ]
             elif error:
                 failures[ticker] = error
                 if not error.startswith("http 404") and not error.startswith("http 400"):
                     continue
             (args.out / f"{ticker}.json").write_text(
-                json.dumps({"ticker": ticker, "events": events, "error": error}, ensure_ascii=False),
+                json.dumps({"ticker": ticker, "events": events, "splits": splits, "error": error}, ensure_ascii=False),
                 encoding="utf-8",
             )
             written += 1

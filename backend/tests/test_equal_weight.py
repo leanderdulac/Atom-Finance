@@ -298,7 +298,7 @@ def test_parsers_keep_preferred_shares_and_the_trade_count():
     assert parsed["trades"] == 226
 
 
-def _cotahist_line(day: str, ticker: str, close_cents: int) -> str:
+def _cotahist_line(day: str, ticker: str, close_cents: int, qty: int = 1000) -> str:
     raw = [" "] * 245
 
     def put(start: int, value: str) -> None:
@@ -314,8 +314,8 @@ def _cotahist_line(day: str, ticker: str, close_cents: int) -> str:
     put(121, f"{close_cents:013d}")
     put(134, f"{close_cents:013d}")
     put(147, f"{3:05d}")
-    put(152, f"{1000:018d}")
-    put(170, f"{close_cents * 1000:018d}")
+    put(152, f"{qty:018d}")
+    put(170, f"{close_cents * qty:018d}")
     return "".join(raw)
 
 
@@ -336,7 +336,14 @@ def test_cache_readers_gross_up_events_and_confirm_a_split(tmp_path):
     assert events["ABC3"][1] == [100.0, 200.0]
     cota = tmp_path / "cotahist"
     cota.mkdir()
-    body = _cotahist_line("20180601", "ABC3", 2000) + "\n" + _cotahist_line("20180604", "ABC3", 1000) + "\n"
+    # Price halves and share volume doubles. The FRE receipt on 2018-06-10 is
+    # after the print, so it is not the confirmation. The heuristic is.
+    body = (
+        _cotahist_line("20180601", "ABC3", 2000, qty=1000)
+        + "\n"
+        + _cotahist_line("20180604", "ABC3", 1000, qty=2000)
+        + "\n"
+    )
     with zipfile.ZipFile(cota / "COTAHIST_A2018.ZIP", "w") as archive:
         archive.writestr("COTAHIST_A2018.TXT", body)
     tapes, trades, n_splits = load_strategy_tapes(tmp_path, listings, events)

@@ -24698,5 +24698,17 @@
     "unit": "daily percent converted to a decimal, compounded on (start, end]",
     "cagr_full_sample": 0.099392,
     "note": "CDI is the opportunity cost. The book does not earn it on idle cash."
+  },
+  "corporate_action_rule_v2": {
+    "rule": "b3-corporate-actions-v2",
+    "status": "not_run",
+    "history": "v1",
+    "note": "Every number above this key is the published v1 study. That study confirmed a round price jump only when a capital filing arrived after the print. v2 removes that window and was not executed in this change because the COTAHIST cache is not in the checkout.",
+    "command": "python scripts/fetch_net_net_b3.py --cache data/net-net && python scripts/fetch_equal_weight_dividends.py --cache data/net-net --out data/equal-weight/yahoo --refresh-splits && python scripts/run_equal_weight_b3.py --cache data/net-net --events data/equal-weight/yahoo",
+    "decision_sleeve": {"universe": "small", "adv_floor": 200000, "frequency": "quarterly", "aum_brl": 1000000},
+    "dsr_n": "v2_family_plus_55_v1_family_trials_plus_32_rejected_net_net",
+    "transparency_n": "decision_n_plus_24_long_horizon_factor_trials",
+    "jumps_by_source": null,
+    "eligible_for_live_trading": false
   }
 }

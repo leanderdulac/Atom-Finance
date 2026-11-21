@@ -18,6 +18,7 @@ import numpy as np
 
 from app.models.afml.gate import gate
 from app.models.afml.trials import TrialRegistry
+from app.models.corporate_actions import cash_scale_at, filing_price_multiplier
 from app.models.equal_weight_io import CashEvent, Listing
 from app.models.net_net import (
     DELIST_STALE_SESSIONS,
@@ -47,6 +48,12 @@ from app.models.rejected_net_net import rejected_ledger_count
 from app.models.trading_costs import cash_delta
 
 FAMILY_ID = "b3_equal_weight"
+FAMILY_ID_V2 = "b3_equal_weight_v2"
+# The merged v1 study registered 55 trials. Decision N was 87 with the 32
+# rejected net-net trials. Transparency N was 111 with 24 long-horizon trials.
+# v2 adds its own family on top of those counts. It does not replace them.
+V1_FAMILY_TRIALS = 55
+LOCKED_SLEEVE = {"universe": "small", "adv_floor": 200_000.0, "frequency": "quarterly"}
 ELIGIBLE_FOR_LIVE_TRADING = False
 PERIODS_PER_YEAR = 12.0
 DESIGN_END = date(2018, 12, 31)
@@ -215,6 +222,8 @@ def build_signal_book(
                 continue
             class_best: dict[str, tuple[float, float]] = {}
             priced: list[tuple[float, float, Listing, float]] = []
+            filed = None if company is None else shares_asof(company.shares, int(ordinal))
+            filed_on = None if filed is None else int(filed.received)
             for item in group:
                 if ordinal < item.start or (item.end is not None and ordinal > item.end):
                     continue
@@ -228,9 +237,12 @@ def build_signal_book(
                 if adv_brl < adv_floor:
                     continue
                 priced.append((adv_brl, adv_sh, item, px))
+                econ_px = px
+                if filed_on is not None:
+                    econ_px = px * filing_price_multiplier(tape.dates, tape.split, filed_on, int(ordinal))
                 prev = class_best.get(item.share_class)
                 if prev is None or adv_brl > prev[0]:
-                    class_best[item.share_class] = (adv_brl, px)
+                    class_best[item.share_class] = (adv_brl, econ_px)
             if not priced:
                 continue
             priced.sort(key=lambda item: (-item[0], item[2].ticker))
@@ -273,8 +285,13 @@ def _credit(
     events: dict[str, tuple[np.ndarray, np.ndarray]] | None,
     prev: int | None,
     ordinal: int,
+    tapes: dict[str, Tape] | None = None,
 ) -> tuple[float, int]:
-    """Cash to holders of the previous close. Buying today does not collect today's distribution."""
+    """Cash to holders of the previous close. Buying today does not collect today's distribution.
+
+    Heuristic share factors scale the reais per share. Official factors are
+    left in the amount, which is already quoted in the post-event share.
+    """
     if prev is None or not events:
         return 0.0, 0
     cash = 0.0
@@ -288,7 +305,12 @@ def _credit(
         hi = int(np.searchsorted(dates, ordinal, side="right"))
         if hi <= lo:
             continue
-        paid = float(np.sum(amounts[lo:hi])) * pos.shares
+        tape = None if tapes is None else tapes.get(pos.ticker)
+        per_share = 0.0
+        for cursor in range(lo, hi):
+            scale = 1.0 if tape is None else cash_scale_at(tape, int(dates[cursor]))
+            per_share += float(amounts[cursor]) * scale
+        paid = per_share * pos.shares
         if paid == 0:
             continue
         cash += paid
@@ -544,7 +566,7 @@ def simulate_book(
     for ordinal in ordered:
         _apply_splits(net, tapes, ordinal, apply_splits)
         _apply_splits(gross, tapes, ordinal, apply_splits)
-        paid, n_paid = _credit(net, gross, events, prev, ordinal)
+        paid, n_paid = _credit(net, gross, events, prev, ordinal, tapes)
         dividend_cash += paid
         dividend_events += n_paid
         if exit_when_stale:
@@ -839,12 +861,17 @@ def jump_census(tapes: dict[str, Tape], tickers: Sequence[str]) -> dict[str, Any
     confirmed = 0
     unconfirmed = 0
     round_unconfirmed = 0
+    bad_prints = 0
     worst: list[tuple[float, str, str, float]] = []
     for ticker in sorted(set(tickers)):
         tape = tapes.get(ticker)
         if tape is None or len(tape.close) < 2:
             continue
+        labels = tape.split_source
         for i in range(1, len(tape.close)):
+            if labels is not None and str(labels[i]) == "bad_print":
+                bad_prints += 1
+                continue
             prev = float(tape.close[i - 1])
             px = float(tape.close[i])
             if prev <= 0 or px <= 0:
@@ -864,6 +891,7 @@ def jump_census(tapes: dict[str, Tape], tickers: Sequence[str]) -> dict[str, Any
         "confirmed_split_prints": confirmed,
         "unconfirmed_gaps": unconfirmed,
         "unconfirmed_round_gaps": round_unconfirmed,
+        "bad_prints": bad_prints,
         "largest_unconfirmed": [
             {"ticker": ticker, "date": day, "price_ratio": round(ratio, 4)}
             for _score, ticker, day, ratio in worst[:15]
@@ -1112,6 +1140,9 @@ def run_study(
     trades: dict[str, np.ndarray] | None = None,
     min_names: int | None = None,
     audit_sessions: Sequence[int] | None = None,
+    family_id: str = FAMILY_ID,
+    prior_family_trials: int = 0,
+    locked_spec: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the locked grid, register every variation, then score the held-out window.
 
@@ -1231,7 +1262,7 @@ def run_study(
             )
             m_ords, monthly = monthly_simple_returns(run["ords"], run["net"])
             params = {
-                "family": FAMILY_ID,
+                "family": family_id,
                 "role": job["role"],
                 "universe": job["universe"],
                 "adv_floor": job["adv_floor"],
@@ -1247,7 +1278,7 @@ def run_study(
             }
             if len(monthly) >= 3:
                 registry.register(
-                    FAMILY_ID,
+                    family_id,
                     params,
                     returns=monthly,
                     costs_included=True,
@@ -1260,9 +1291,9 @@ def run_study(
             if len(monthly) < 3:
                 continue
             registry.register(
-                FAMILY_ID,
+                family_id,
                 {
-                    "family": FAMILY_ID,
+                    "family": family_id,
                     "role": role,
                     "universe": "published_small",
                     "adv_floor": 0.0,
@@ -1277,14 +1308,14 @@ def run_study(
                 notes=role,
                 status="audit",
             )
-        n_family = registry.count(FAMILY_ID)
+        n_family = registry.count(family_id)
         try:
-            eff = registry.effective_n_trials(FAMILY_ID)
+            eff = registry.effective_n_trials(family_id)
         except ValueError:
             eff = {"n_eff": None, "mean_corr": None, "n": 0}
 
     n_rejected = rejected_ledger_count()
-    n_decision = float(n_family + n_rejected)
+    n_decision = float(n_family + n_rejected + max(0, int(prior_family_trials)))
     n_with_factors = n_decision + LONG_HORIZON_TRIALS
     per_cache: dict[tuple[Any, ...], float] = {}
     public: list[dict[str, Any]] = []
@@ -1382,6 +1413,25 @@ def run_study(
             ):
                 chosen_row = row
                 break
+    design_choice = None if chosen_row is None else {
+        "universe": chosen_row["universe"],
+        "adv_floor": chosen_row["adv_floor"],
+        "frequency": chosen_row["frequency"],
+        "design_sharpe": chosen_row["design_sharpe"],
+    }
+    if locked_spec is not None:
+        locked_rows = [
+            row
+            for row in public
+            if row["role"] == "grid"
+            and row["selection_candidate"]
+            and row["universe"] == locked_spec["universe"]
+            and row["frequency"] == locked_spec["frequency"]
+            and float(row["adv_floor"]) == float(locked_spec["adv_floor"])
+            and float(row["aum_brl"]) == SELECTION_AUM
+        ]
+        if locked_rows:
+            chosen_row = locked_rows[0]
     criterion = False
     if chosen_row is not None:
         dsr = chosen_row.get("oos_dsr")
@@ -1416,18 +1466,19 @@ def run_study(
     oos_sessions = [int(day) for day in sessions if int(day) >= eval_start]
     ibov_oos = _ibov_stats(ibov_ords, ibov_close, oos_sessions) if oos_sessions else {"available": False}
     return {
-        "family_id": FAMILY_ID,
+        "family_id": family_id,
         "eligible_for_live_trading": ELIGIBLE_FOR_LIVE_TRADING,
         "verdict": "aprovado" if criterion else "reprovado",
         "n_trials": n_family,
+        "n_prior_family_trials": int(prior_family_trials),
         "n_rejected_net_net": n_rejected,
         "n_trials_decision": n_decision,
         "n_long_horizon_factor_trials": LONG_HORIZON_TRIALS,
         "n_trials_with_factor_trials": n_with_factors,
         "n_eff": None if eff.get("n_eff") is None else round(float(eff["n_eff"]), 4),
         "mean_pairwise_corr": None if eff.get("mean_corr") is None else round(float(eff["mean_corr"]), 4),
-        "dsr_n": "family_plus_rejected_net_net",
-        "dsr_n_transparency": "family_plus_rejected_net_net_plus_24_long_horizon_factor_trials",
+        "dsr_n": "family_plus_prior_family_plus_rejected_net_net",
+        "dsr_n_transparency": "decision_n_plus_24_long_horizon_factor_trials",
         "periods_per_year": PERIODS_PER_YEAR,
         "sample": {
             "first_session": date.fromordinal(int(sessions[0])).isoformat(),
@@ -1453,7 +1504,13 @@ def run_study(
                 "are withheld at 15% on the selection path. A registered sensitivity withholds nothing on unlabeled events. "
                 "An amount larger than the previous close is dropped. The feed is not a per-share dividend at that size."
             ),
-            "splits": "A round gap of at least 45% changes the share count only when a later capital filing confirms the inverse change",
+            "splits": (
+                "Point-in-time corporate actions in corporate_actions.py. "
+                "Official B3 or CVM factor only when the knowledge date is on or before the ex-date. "
+                "The 250-day look-ahead window was removed. "
+                "Otherwise a same-session integer price ratio with a matching share-volume move, "
+                "or a reversing print carried forward as bad data."
+            ),
             "delist": "A name with no print for 10 sessions is sold at the last trade on the base path. A registered sensitivity marks that exit worthless",
             "survivorship": (
                 "The cadastral form names a ticker only from the 2018 vintage onward, and that row can carry an earlier start date. "
@@ -1475,6 +1532,8 @@ def run_study(
                 "variants are registered and counted in N, and cannot be chosen. The path is "
                 "not flattened at the split."
             ),
+            "design_chooser": design_choice,
+            "selection_locked": locked_spec is not None,
             "selected": None
             if chosen_row is None
             else {
@@ -1486,7 +1545,11 @@ def run_study(
                 "design_cagr": chosen_row["design_cagr"],
                 "n_design": chosen_row["n_design"],
             },
-            "criterion": "DSR >= 0.95 on the out-of-sample net monthly returns, N = this family plus the 32 rejected net-net trials, AND out-of-sample net CAGR minus CDI CAGR > 0",
+            "criterion": (
+                "DSR >= 0.95 on the out-of-sample net monthly returns, "
+                "N = this family plus prior-family trials plus the 32 rejected net-net trials, "
+                "AND out-of-sample net CAGR minus CDI CAGR > 0"
+            ),
             "criterion_met": criterion,
             "verdict": "aprovado" if criterion else "reprovado",
             "eligible_for_live_trading": ELIGIBLE_FOR_LIVE_TRADING,
@@ -1614,7 +1677,9 @@ def render_report(report: dict[str, Any]) -> str:
     )
     lines.append("")
     lines.append(
-        "Salto de preço de pelo menos 45% com razão redonda só muda a quantidade quando um protocolo de capital posterior confirma a variação inversa das ações."
+        "A regra vigente está em corporate_actions.py. Um evento oficial da B3 ou da CVM entra só quando a data de conhecimento é anterior ou igual à data-ex. "
+        "A janela de 250 dias depois do salto foi retirada. Sem evento oficial, a heurística pede razão de preço perto de um inteiro ou de 1/n e volume em ações na mesma proporção, no mesmo pregão. "
+        "Um par de saltos que se desfaz em até 5 pregões é dado ruim e sai do retorno."
     )
     lines.append("")
     lines.append(
