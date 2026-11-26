@@ -1,16 +1,23 @@
 """
 Engle & Granger (1987) residual-based cointegration and a lagged pairs backtest.
 
-Hedge ratio is OLS of y on x. Stationarity of the residual is tested with ADF(1)
-against MacKinnon (2010) residual-based critical values for the bivariate case.
-The trading loop uses an expanding z-score after a warm-up so the entry threshold
-does not see the future. This is still a toy: it is not Johansen, not a Kalman
-hedge, and not a production execution model.
+The cointegration test is OLS of y on x plus an ADF(1) of the residual against
+MacKinnon (2010) bivariate critical values. The trading hedge defaults to a
+Kalman beta: δ and the observation variance are chosen on an in-sample prefix
+and then frozen. Expanding OLS remains available. The loop trades an expanding
+z-score after a warm-up, signal at t and fill at t+1. Still a toy: not a
+production execution model, and ``eligible_for_live_trading`` stays false.
 """
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
 import numpy as np
+
+from app.models.kalman import kalman_regression, select_kalman_hyperparams
+
+HedgeMethod = Literal["kalman", "expanding_ols"]
 
 # MacKinnon (2010) residual-based cointegration tau critical values,
 # constant, no trend, N=1 extra regressor (bivariate), T=∞.
@@ -94,7 +101,7 @@ def engle_granger(y: np.ndarray, x: np.ndarray, significance: float = 0.05) -> d
             "if the ADF t-stat is below the MacKinnon critical value."
         ),
         "what_broke": [
-            "OLS hedge ratio is estimated on the full sample; a live book needs a rolling/Kalman beta.",
+            "The Engle–Granger beta is full-sample OLS. The paper hedge is a separate Kalman (or expanding OLS) path.",
             "ADF has low power in short samples and is sensitive to lag choice.",
             "Bivariate EG ignores a possible third common factor — run johansen() on the panel.",
             "Cointegration can vanish after a corporate action the price series did not adjust.",
@@ -133,6 +140,75 @@ def _expanding_hedge(
     return alpha, beta, res
 
 
+def dynamic_hedge(
+    y: np.ndarray,
+    x: np.ndarray,
+    *,
+    method: HedgeMethod = "kalman",
+    min_est: int = 20,
+    delta: float | None = None,
+    obs_var: float | None = None,
+    insample_end: int | None = None,
+) -> dict[str, Any]:
+    """Causal hedge path.
+
+    ``expanding_ols`` is OLS of ``y[:t+1]`` on ``x[:t+1]``. ``kalman`` publishes
+    the posterior β after bar t and the innovation against the prior. When
+    ``delta`` and ``obs_var`` are omitted they are chosen by innovation
+    likelihood on ``y[:insample_end]`` only (default: the first half, at least
+    60 bars) and frozen for the rest of the series.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    x = np.asarray(x, dtype=np.float64)
+    if y.shape != x.shape or y.ndim != 1:
+        raise ValueError("y and x must be aligned 1-D series")
+    if method == "expanding_ols":
+        alpha, beta, spread = _expanding_hedge(y, x, min_est)
+        return {
+            "method": method,
+            "alpha": alpha,
+            "beta": beta,
+            "spread": spread,
+            "beta_prior": None,
+            "zscore": None,
+            "delta": None,
+            "obs_var": None,
+            "insample_end": None,
+            "hedge": "expanding_ols_frozen_at_entry",
+        }
+    if method != "kalman":
+        raise ValueError("hedge must be 'kalman' or 'expanding_ols'")
+    n = len(y)
+    if (delta is None) ^ (obs_var is None):
+        raise ValueError("pass both delta and obs_var, or neither")
+    cut = insample_end
+    if delta is None:
+        if cut is None:
+            cut = max(60, n // 2)
+        if cut < 40 or cut > n:
+            raise ValueError("insample_end must cover at least 40 bars and not exceed the sample")
+        chosen = select_kalman_hyperparams(y[:cut], x[:cut])
+        delta = chosen.delta
+        obs_var = chosen.obs_var
+    elif cut is None:
+        cut = n
+    if cut is None or delta is None or obs_var is None:
+        raise RuntimeError("Kalman hedge is missing hyperparameters")
+    fit = kalman_regression(y, x, delta=float(delta), obs_var=float(obs_var))
+    return {
+        "method": "kalman",
+        "alpha": fit.alpha,
+        "beta": fit.beta,
+        "spread": fit.spread,
+        "beta_prior": fit.beta_prior,
+        "zscore": fit.zscore,
+        "delta": float(delta),
+        "obs_var": float(obs_var),
+        "insample_end": int(cut),
+        "hedge": "kalman_posterior_frozen_at_entry",
+    }
+
+
 def frozen_spread_return(y0: float, x0: float, y1: float, x1: float, beta0: float) -> float:
     """One-bar return of +1 y vs β0 x on the entry gross notional.
 
@@ -158,6 +234,10 @@ def pairs_backtest(
     max_spread_bps: float = 25.0,
     min_volume: float = 0.0,
     volume: np.ndarray | None = None,
+    hedge: HedgeMethod = "kalman",
+    kalman_delta: float | None = None,
+    kalman_obs_var: float | None = None,
+    insample_end: int | None = None,
 ) -> dict:
     """
     Dollar-neutral pairs: long the cheap leg / short the rich leg when |z| > entry,
@@ -167,9 +247,11 @@ def pairs_backtest(
     r = (Δy − β0 Δx) / (|y| + |β0||x|), with β frozen at entry. Applying a
     share-count OLS β to percent returns (r_y − β r_x) inflates ETH/SOL-like books.
 
-    The hedge ratio that *defines the z-score* is expanding: (α_t, β_t) on
-    data[:t+1]. `engle_granger` is still run on the full sample as the
-    (legitimate) cointegration hypothesis test and reported as diagnostics.
+    The hedge that *defines the z-score* is causal. The default is a Kalman
+    posterior β and its innovation, with δ and obs_var chosen on the in-sample
+    prefix only. ``hedge='expanding_ols'`` keeps OLS on data[:t+1]. Either way
+    β is frozen at entry. ``engle_granger`` is still the full-sample hypothesis
+    test and is reported as a diagnostic.
     """
     y = np.asarray(y, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
@@ -184,7 +266,11 @@ def pairs_backtest(
     n = len(y)
     min_est = 20
     warmup = max(min_est, min(warmup, n // 3))
-    _, beta, spread = _expanding_hedge(y, x, min_est)
+    path = dynamic_hedge(
+        y, x, method=hedge, min_est=min_est, delta=kalman_delta, obs_var=kalman_obs_var, insample_end=insample_end,
+    )
+    beta = path["beta"]
+    spread = path["spread"]
     spread_window: list[float] = []  # causal residuals accumulated for the expanding z
 
     from app.models.trading_costs import check_liquidity, four_leg_fraction, pairs_entry_allowed
@@ -331,12 +417,15 @@ def pairs_backtest(
             "covers k times that round trip. β frozen at entry."
         ),
         "pnl_unit": "gross_two_leg_notional",
-        "hedge": "expanding_ols_frozen_at_entry",
+        "hedge": path["hedge"],
+        "kalman_delta": path["delta"],
+        "kalman_obs_var": path["obs_var"],
+        "kalman_insample_end": path["insample_end"],
         "out_of_sample": False,
         "eligible_for_live_trading": False,
         "equity_curve_sample": [round(v, 2) for v in curve[:: max(1, len(curve) // 80)]],
         "what_broke": stats["what_broke"] + [
-            "Expanding hedge ratio is a toy OLS; a live book needs rolling/Kalman beta with a rebalance rule.",
+            "β is frozen at entry. Kalman δ and obs_var, when estimated, use only the in-sample prefix.",
             "β shares of x vs 1 share of y ignores lot size, borrow, and dividend timing.",
             "PnL is (Δy − β0 Δx)/(|y|+|β0||x|); r_y − β r_x with share-count β inflates the book.",
             "No capacity, no halt on residual-variance jumps, no corporate-action calendar.",

@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -26,7 +26,8 @@ from app.models.afml.cv import PurgedKFold
 from app.models.afml.gate import gate_trial
 from app.models.afml.labeling import triple_barrier_on_pnl
 from app.models.afml.trials import TrialRegistry
-from app.models.cointegration import _expanding_hedge, _half_life, engle_granger, johansen
+from app.models.cointegration import HedgeMethod, _half_life, dynamic_hedge, engle_granger, johansen
+from app.models.stationarity import mean_reversion_prefilter
 from app.models.trading_costs import (
     DEFAULT_ENTRY_K,
     DEFAULT_MAX_SPREAD_BPS,
@@ -52,9 +53,9 @@ DEMO_N = 2200
 DEMO_SEED = 11
 
 _WHAT_BROKE = [
-    "Sinal primário é o z expanding do resíduo EG (Gatev / Avellaneda–Lee), não um Kalman.",
+    "Sinal primário padrão é o z expanding do resíduo OLS (Gatev / Avellaneda–Lee).",
     "PnL é retorno sobre o nocional bruto das duas pernas (|y|+|β||x|), hedge congelado na entrada.",
-    "β expanding é OLS em nível, congelado na entrada; ainda não é Kalman.",
+    "Com hedge='kalman', δ e a variância de observação saem só do prefixo in-sample e ficam congelados.",
     "Lote, aluguel e funding de perpétuo ficam de fora do PnL à vista.",
     "Meta-rótulo é um RF raso com purga/embargo — não é um modelo de produção.",
     "DSR ≥ 0,95 autoriza só considerar paper. eligible_for_live_trading permanece false.",
@@ -115,18 +116,39 @@ def _vol20(prices: np.ndarray) -> np.ndarray:
     return pd.Series(r).rolling(20, min_periods=10).std().to_numpy()
 
 
-def causal_pairs_state(y: np.ndarray, x: np.ndarray, warmup: int = WARMUP) -> dict[str, np.ndarray]:
-    """Expanding hedge, residual z and 20-bar leg vol. Information at t uses ≤ t.
+def causal_pairs_state(
+    y: np.ndarray,
+    x: np.ndarray,
+    warmup: int = WARMUP,
+    *,
+    hedge: str = "expanding_ols",
+    kalman_delta: float | None = None,
+    kalman_obs_var: float | None = None,
+    insample_end: int | None = None,
+) -> dict[str, Any]:
+    """Hedge, residual z and 20-bar leg vol. Information at t uses ≤ t.
 
-    β_t is OLS on data[:t+1] (Gatev residual). The fill is the next bar, so
-    today's print is not in the trade PnL. During the hold, β is frozen at
-    entry — see ``frozen_gross_path``.
+    The default β_t is OLS on data[:t+1] (Gatev residual). ``hedge='kalman'``
+    uses the posterior beta and the innovation, with δ / obs_var taken from
+    the caller or chosen on ``y[:insample_end]`` only. The fill is the next
+    bar. During the hold, β is frozen at entry — see ``frozen_gross_path``.
     """
     y = np.asarray(y, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     if y.shape != x.shape or len(y) < warmup + 20:
         raise ValueError("Need two aligned series longer than the warmup")
-    alpha, beta, spread = _expanding_hedge(y, x, 20)
+    if hedge not in ("expanding_ols", "kalman"):
+        raise ValueError("hedge must be 'expanding_ols' or 'kalman'")
+    path = dynamic_hedge(
+        y,
+        x,
+        method=cast(HedgeMethod, hedge),
+        min_est=20,
+        delta=kalman_delta,
+        obs_var=kalman_obs_var,
+        insample_end=insample_end,
+    )
+    alpha, beta, spread = path["alpha"], path["beta"], path["spread"]
     z, mu, sd = _expanding_z(spread, 20)
     return {
         "alpha": alpha,
@@ -137,6 +159,10 @@ def causal_pairs_state(y: np.ndarray, x: np.ndarray, warmup: int = WARMUP) -> di
         "resid_std": sd,
         "y_vol20": _vol20(y),
         "x_vol20": _vol20(x),
+        "hedge": path["hedge"],
+        "kalman_delta": path["delta"],
+        "kalman_obs_var": path["obs_var"],
+        "insample_end": path["insample_end"],
     }
 
 
@@ -224,9 +250,21 @@ def build_event_table(
     max_spread_bps: float = DEFAULT_MAX_SPREAD_BPS,
     min_volume: float = 0.0,
     volume: np.ndarray | None = None,
+    hedge: str = "expanding_ols",
+    kalman_delta: float | None = None,
+    kalman_obs_var: float | None = None,
+    insample_end: int | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Primary entries → three-barrier labels net of the four-leg cost."""
-    state = causal_pairs_state(y, x, warmup=warmup)
+    state = causal_pairs_state(
+        y,
+        x,
+        warmup=warmup,
+        hedge=hedge,
+        kalman_delta=kalman_delta,
+        kalman_obs_var=kalman_obs_var,
+        insample_end=insample_end,
+    )
     entries = primary_entry_indices(state["z"], entry_z=entry_z, warmup=warmup)
     cost = round_trip_cost(commission, slippage)
     fee_bps = commission * 10_000.0
@@ -518,6 +556,10 @@ def evaluate_pairs_meta(
     regime_veto: bool = False,
     register_primary: bool = True,
     meta_variant: str = "meta_filtered",
+    hedge: str = "expanding_ols",
+    kalman_delta: float | None = None,
+    kalman_obs_var: float | None = None,
+    insample_end: int | None = None,
 ) -> dict[str, Any]:
     """Run primary pairs → triple barrier → meta-label OOF → DSR gate.
 
@@ -530,7 +572,8 @@ def evaluate_pairs_meta(
     events, state = build_event_table(
         y, x, entry_z=entry_z, exit_z=exit_z, warmup=warmup, commission=commission, slippage=slippage,
         min_events=min_events, entry_cost_k=entry_cost_k, max_spread_bps=max_spread_bps,
-        min_volume=min_volume, volume=volume,
+        min_volume=min_volume, volume=volume, hedge=hedge, kalman_delta=kalman_delta,
+        kalman_obs_var=kalman_obs_var, insample_end=insample_end,
     )
     if not events.empty:
         idx = events["t0"].to_numpy(dtype=int)
@@ -615,7 +658,11 @@ def evaluate_pairs_meta(
     if pair_id:
         params_common["pair_id"] = pair_id
     params_common["pnl_unit"] = "gross_two_leg_notional"
-    params_common["hedge"] = "expanding_ols_frozen_at_entry"
+    params_common["hedge"] = state.get("hedge", "expanding_ols_frozen_at_entry")
+    if state.get("kalman_delta") is not None:
+        params_common["kalman_delta"] = state["kalman_delta"]
+        params_common["kalman_obs_var"] = state["kalman_obs_var"]
+        params_common["kalman_insample_end"] = state["insample_end"]
     meta_trial = None
     net_of_costs = costs_included_flag(round_trip_cost=cost, model_applied=True)
     if register_primary:
@@ -660,6 +707,18 @@ def evaluate_pairs_meta(
     )
     eg = engle_granger(y, x)
     cut = _oos_slice(len(y), oos_frac)
+    stationarity_insample = None
+    if hedge == "kalman":
+        end = state.get("insample_end") or cut
+        try:
+            stationarity_insample = mean_reversion_prefilter(np.asarray(state["spread"])[: int(end)])
+        except ValueError:
+            stationarity_insample = {
+                "verdict": None,
+                "candidate": False,
+                "eligible_for_live_trading": False,
+                "use": "prefilter_only",
+            }
     try:
         eg_oos = engle_granger(y[cut:], x[cut:])
         eg_oos_payload = {
@@ -741,12 +800,26 @@ def evaluate_pairs_meta(
         "eligible_for_live_trading": False,
         "out_of_sample": True,
         "pnl_unit": "gross_two_leg_notional",
+        "hedge": state.get("hedge"),
+        "kalman": None if state.get("kalman_delta") is None else {
+            "delta": state["kalman_delta"],
+            "obs_var": state["kalman_obs_var"],
+            "insample_end": state["insample_end"],
+        },
+        "stationarity_insample": stationarity_insample,
         "n_overlapping": 0 if events.empty else _count_overlaps(events),
         "meta_variant": meta_variant,
         "feature_cols": used_cols,
         "regime_veto": regime_veto,
         "math": (
+            (
+                "Primário: z do spread de inovação do Kalman; β a posteriori, δ e obs_var "
+                "escolhidos só no prefixo in-sample e congelados. Fill em t+1, β congelado na entrada. "
+            )
+            if hedge == "kalman"
+            else
             "Primário: z expanding do resíduo y−(α_t+β_t x) (OLS em data[:t+1]; fill em t+1). "
+        ) + (
             "Rótulo: primeira barreira no PnL com β congelado na entrada, retorno sobre |y|+|β||x|, líquido de 2×(taxa+spread). "
             "Meta: RF com PurgedKFold + embargo; P(bin=1) OOF. "
             "Gate: DSR de Bailey & López de Prado ≥ 0,95 com N registrado, assimetria, curtose e MinTRL."

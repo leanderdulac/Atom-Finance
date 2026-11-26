@@ -369,7 +369,15 @@ class TestFundingPnl:
         funded = [replace(b, y_funding=0.0001, x_funding=0.00005) for b in bars]
         out = run_paper_pipeline(
             funded,
-            PipelineConfig(entry_z=1.5, exit_z=0.4, taker_fee_bps=4.0, half_spread_bps=2.0),
+            # Locks funding vs price PnL on the residual book. The default
+            # hedge is Kalman; its causal freeze is covered in test_arsenal.
+            PipelineConfig(
+                hedge="expanding_ols",
+                entry_z=1.5,
+                exit_z=0.4,
+                taker_fee_bps=4.0,
+                half_spread_bps=2.0,
+            ),
             source="synthetic",
         )
         assert out["eligible_for_live_trading"] is False

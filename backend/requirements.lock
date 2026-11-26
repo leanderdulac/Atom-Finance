@@ -132,8 +132,10 @@ numpy==1.26.4
     # via
     #   -r requirements.txt
     #   pandas
+    #   patsy
     #   scikit-learn
     #   scipy
+    #   statsmodels
     #   torchsde
     #   yfinance
 openai==3.12.0
@@ -144,11 +146,16 @@ packaging==26.3
     # via
     #   huggingface-hub
     #   limits
+    #   patsy
     #   pytest
+    #   statsmodels
 pandas==2.2.3
     # via
     #   -r requirements.txt
+    #   statsmodels
     #   yfinance
+patsy==1.0.3
+    # via statsmodels
 peewee==4.5.1
     # via yfinance
 platformdirs==4.11.8
@@ -217,6 +224,7 @@ scipy==1.14.1
     # via
     #   -r requirements.txt
     #   scikit-learn
+    #   statsmodels
     #   torchsde
 sentry-sdk==2.19.2
     # via -r requirements.txt
@@ -239,6 +247,8 @@ starlette==1.6.0
     # via
     #   -r requirements.txt
     #   fastapi
+statsmodels==0.14.6
+    # via -r requirements.txt
 sympy==1.14.0
     # via torch
 threadpoolctl==3.6.0
