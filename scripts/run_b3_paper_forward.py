@@ -40,15 +40,22 @@ from app.models.b3_paper_forward import (  # noqa: E402
     write_monthly_report,
     write_preregistration,
 )
+from app.models.corporate_actions import (  # noqa: E402
+    adjust_prints,
+    load_chart_splits,
+    load_official_events,
+    merge_official,
+)
 from app.models.equal_weight_io import (  # noqa: E402
     Listing,
     load_cash_events,
     load_listings,
     parse_cotahist_print,
     parse_yahoo_events,
+    parse_yahoo_splits,
     share_events_from_companies,
 )
-from app.models.net_net import Tape, confirmed_split_factors  # noqa: E402
+from app.models.net_net import Tape  # noqa: E402
 from app.models.net_net_io import load_bundle, parse_sgs_cdi, parse_yahoo_chart  # noqa: E402
 
 CVM = "https://dados.cvm.gov.br/dados/CIA_ABERTA"
@@ -158,7 +165,16 @@ def _prints(cache: Path, wanted: set[str] | None) -> dict[str, dict[int, tuple[f
 def _tapes_from_prints(
     prints: dict[str, dict[int, tuple[float, float, float, float, float]]],
     share_events: dict[str, tuple[list[int], list[float]]] | None,
+    official: dict | None = None,
 ) -> dict[str, Tape]:
+    """Build tapes with the point-in-time corporate-action rule.
+
+    ``share_events`` is unused. A FRE receipt is not an ex-date, and a filing
+    after the print does not rewrite the mark. Factors apply on the session
+    being marked, which is the prospective path of an already opened book.
+    """
+    del share_events
+    events = {} if official is None else official
     tapes: dict[str, Tape] = {}
     for ticker, by_day in prints.items():
         ords = sorted(by_day)
@@ -170,13 +186,24 @@ def _tapes_from_prints(
         qty = np.array([by_day[day][3] for day in ords], dtype=np.float64)
         vol = np.array([by_day[day][4] for day in ords], dtype=np.float64)
         dates = np.array(ords, dtype=np.int64)
-        events = None if share_events is None else share_events.get(ticker)
-        if events is None:
-            split = np.ones(len(dates), dtype=np.float64)
-        else:
-            split = confirmed_split_factors(dates, close, events[0], events[1])
-        tapes[ticker] = Tape(dates, close, bid, ask, qty, vol, split)
+        adjusted = adjust_prints(dates, close, bid, ask, qty, vol, ticker=ticker, official=events.get(ticker, []))
+        tapes[ticker] = Tape(
+            dates,
+            adjusted.close,
+            adjusted.bid,
+            adjusted.ask,
+            adjusted.qty,
+            adjusted.vol,
+            adjusted.share_factor,
+            adjusted.source,
+            adjusted.heuristic_cash_scale,
+        )
     return tapes
+
+
+def _official_for(research: Path, cache: Path) -> dict:
+    official = load_official_events(research) if research.exists() else {}
+    return merge_official(official, load_chart_splits(cache / "events"))
 
 
 def _series_map(ords: np.ndarray, values: np.ndarray) -> dict[int, float]:
@@ -226,12 +253,29 @@ def _refresh_events(cache: Path, tickers: set[str]) -> None:
         except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise PaperDataError(f"cash-event feed failed for {ticker}") from exc
         rows = []
+        splits = []
+        rejected: list[dict] = []
         if payload is not None:
             rows = [
                 {"ordinal": event.ordinal, "amount": event.amount, "kind": event.kind}
                 for event in parse_yahoo_events(payload, ticker)
             ]
-        dest.write_text(json.dumps({"ticker": ticker, "events": rows, "error": error}), encoding="utf-8")
+            splits = [
+                {"ordinal": ordinal, "share_factor": ratio}
+                for ordinal, ratio in parse_yahoo_splits(payload, rejected)
+            ]
+        dest.write_text(
+            json.dumps(
+                {
+                    "ticker": ticker,
+                    "events": rows,
+                    "splits": splits,
+                    "split_parse": {"accepted": len(splits), "rejected": rejected},
+                    "error": error,
+                }
+            ),
+            encoding="utf-8",
+        )
 
 
 def _wanted(snapshot: dict) -> set[str]:
@@ -268,7 +312,7 @@ def _freeze(research: Path, root: Path, today: date) -> int:
         raise SystemExit(f"preregistration already frozen at {path}")
     companies, listings, _events = _load_universe(research)
     prints = _prints(research, None)
-    tapes = _tapes_from_prints(prints, None)
+    tapes = _tapes_from_prints(prints, None, _official_for(research, research))
     book = select_small_book(companies, listings, tapes, SIGNAL_SESSION)
     digest = write_preregistration(path, book, frozen_on=today.isoformat())
     print(json.dumps({"sha256": digest, "n": book["n"], "cash": book["cash"], "path": str(path)}, ensure_ascii=False))
@@ -312,7 +356,7 @@ def _mark(root: Path, cache: Path, research: Path, today: date) -> int:
         prints = _prints(cache, None)
     else:
         prints = _prints(cache, held)
-    tapes = _tapes_from_prints(prints, share_events)
+    tapes = _tapes_from_prints(prints, share_events, _official_for(research, cache))
     _refresh_events(cache, held)
     events = load_cash_events(cache / "events")
     for session in sessions:
@@ -336,7 +380,7 @@ def _mark(root: Path, cache: Path, research: Path, today: date) -> int:
         loaded = load_book(root)
         extra = _wanted(loaded["snapshot"]) - set(tapes)
         if extra and not full_universe:
-            tapes.update(_tapes_from_prints(_prints(cache, extra), None))
+            tapes.update(_tapes_from_prints(_prints(cache, extra), None, _official_for(research, cache)))
             _refresh_events(cache, extra)
             events = load_cash_events(cache / "events")
     return 0

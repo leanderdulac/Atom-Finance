@@ -113,6 +113,10 @@ def main() -> None:
         if year >= 2011:
             _get(COTAHIST.format(year=year), cache / "cotahist" / f"COTAHIST_A{year}.ZIP")
         _get(
+            f"{CVM}/DOC/IPE/DADOS/ipe_cia_aberta_{year}.zip",
+            cache / "ipe" / f"ipe_{year}.zip",
+        )
+        _get(
             f"{CVM}/DOC/FRE/DADOS/fre_cia_aberta_{year}.zip",
             cache / "fre" / f"fre_{year}.zip",
         )

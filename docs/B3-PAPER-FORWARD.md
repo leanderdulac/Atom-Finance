@@ -45,6 +45,8 @@ Patrimônio teórico de abertura: **R$ 100.000,00**. A regra é a função trava
 
 A abertura **não** é um sinal trimestral. Ela usa o livro congelado abaixo. Trimestres seguintes chamam `build_signal_book` de novo e gravam o resultado no ledger. O livro de abertura não é recalculado: um retrato posterior da CVM não reescreve a lista. Numa virada de trimestre o job baixa os arquivos públicos da CVM para `data/net-net` dentro do checkout (esse diretório não entra no git) e seleciona com as fitas cortadas no sinal. Os preços do fill continuam saindo do COTAHIST daquele pregão, no cache `data/b3-paper-cache`.
 
+A partir da regra `b3-corporate-actions-v2`, cada mark novo aplica o fator de grupamento, desdobramento ou bonificação só na sessão que está sendo marcada. O arquivo de pré-registro e o ledger não são reescritos, e nenhuma linha antiga é reaberta. A lista de abertura permanece os 47 nomes congelados. Não houve reconstituição contrafactual dessa lista: o cache de preços não está neste checkout, então não se afirma se os 47 nomes mudariam se o sinal de 2026-11-19 fosse refeito. Um trimestre seguinte usa o valor de mercado point-in-time da regra nova, e a composição a partir daí pode diferir. `eligible_for_live_trading` continua false. Nenhuma ordem é enviada.
+
 ### Composição inicial, sinal 2026-11-19, entrada 2026-11-23
 
 47 nomes, todos com ADV de pelo menos R$ 200.000, peso **1/47** cada. O fechamento da coluna é o do dia do sinal. Não é o preço do fill de 2026-11-23.

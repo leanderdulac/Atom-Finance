@@ -19,6 +19,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from app.models.corporate_actions import cash_scale_at
 from app.models.equal_weight import (
     SMALL_MIN_NAMES,
     UNKNOWN_WITHHOLDING,
@@ -209,6 +210,8 @@ def truncate_tapes(tapes: Mapping[str, Tape], ordinal: int) -> dict[str, Tape]:
         stop = idx + 1
         if int(tape.dates[stop - 1]) > int(ordinal):
             raise PaperDataError(f"{ticker} tape is not ordered")
+        source = None if tape.split_source is None else tape.split_source[:stop].copy()
+        scale = None if tape.heuristic_cash_scale is None else tape.heuristic_cash_scale[:stop].copy()
         out[ticker] = Tape(
             tape.dates[:stop].copy(),
             tape.close[:stop].copy(),
@@ -217,6 +220,8 @@ def truncate_tapes(tapes: Mapping[str, Tape], ordinal: int) -> dict[str, Tape]:
             tape.qty[:stop].copy(),
             tape.vol[:stop].copy(),
             tape.split[:stop].copy(),
+            source,
+            scale,
         )
     return out
 
@@ -742,12 +747,14 @@ def step_portfolio_b(
         for pos in net.positions.values():
             for event in kept.get(pos.ticker, []):
                 if prev_ordinal < int(event.ordinal) <= ordinal:
-                    gross_cash = float(event.amount) * float(pos.shares)
+                    tape_held = tapes.get(pos.ticker)
+                    scale = 1.0 if tape_held is None else cash_scale_at(tape_held, int(event.ordinal))
+                    gross_cash = float(event.amount) * scale * float(pos.shares)
                     rate = 0.0 if event.kind == "dividendo" else JCP_AND_UNKNOWN_RATE
                     dividend["gross"] += gross_cash
                     dividend["withheld"] += gross_cash * rate
         arrays = event_arrays(kept, UNKNOWN_WITHHOLDING)
-        net_cash, _count = _credit(net, gross, arrays, prev_ordinal, ordinal)
+        net_cash, _count = _credit(net, gross, arrays, prev_ordinal, ordinal, tapes)
         dividend["net"] = float(net_cash)
         sleeve["dividend_gross"] = float(sleeve["dividend_gross"]) + dividend["gross"]
         sleeve["dividend_withheld"] = float(sleeve["dividend_withheld"]) + dividend["withheld"]

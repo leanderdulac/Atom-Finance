@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import zipfile
-from datetime import date
+from datetime import UTC, date, datetime
 
 import numpy as np
 import pytest
@@ -34,6 +35,7 @@ from app.models.equal_weight_io import (
     parse_cotahist_print,
     parse_fca_equity,
     parse_yahoo_events,
+    parse_yahoo_splits,
     share_events_from_companies,
     yahoo_nominal_amount,
 )
@@ -138,6 +140,48 @@ def test_a_cash_figure_above_the_previous_close_is_not_a_dividend():
     assert "ORPH3" not in kept
     taxed = event_arrays(kept, 0.15)
     assert taxed["PDGR3"][1].tolist() == pytest.approx([0.4])
+
+
+def test_yahoo_split_text_ratio_is_read_and_a_bad_ratio_is_counted(caplog):
+    def stamp(year: int, month: int, day: int) -> int:
+        return int(datetime(year, month, day, tzinfo=UTC).timestamp())
+
+    payload = {
+        "chart": {
+            "result": [
+                {
+                    "events": {
+                        "splits": {
+                            "0": {"date": stamp(2019, 8, 12), "splitRatio": "1:8"},
+                            "1": {
+                                "date": stamp(2020, 1, 6),
+                                "numerator": 2,
+                                "denominator": 1,
+                                "splitRatio": "2:1",
+                            },
+                            "2": {"date": stamp(2021, 3, 1), "splitRatio": "nope"},
+                        }
+                    }
+                }
+            ]
+        }
+    }
+    rejected: list[dict] = []
+    with caplog.at_level(logging.WARNING):
+        splits = parse_yahoo_splits(payload, rejected)
+    assert len(splits) == 2
+    assert splits[0][0] == _ord(2019, 8, 12)
+    assert splits[0][1] == pytest.approx(1.0 / 8.0)
+    assert splits[1][0] == _ord(2020, 1, 6)
+    assert splits[1][1] == pytest.approx(2.0)
+    assert len(rejected) == 1
+    assert rejected[0]["reason"] == "unparsed_split_ratio"
+    assert rejected[0]["splitRatio"] == "nope"
+    assert any("unparsed_split_ratio" in record.message for record in caplog.records)
+    payload["chart"]["result"][0]["events"]["dividends"] = {"0": {"date": stamp(2020, 6, 1), "amount": 0.2}}
+    events = parse_yahoo_events(payload, "MGLU3")
+    assert len(events) == 1
+    assert events[0].amount == pytest.approx(0.2)
 
 
 def test_yahoo_nominal_undoes_a_later_split_only():
@@ -298,7 +342,7 @@ def test_parsers_keep_preferred_shares_and_the_trade_count():
     assert parsed["trades"] == 226
 
 
-def _cotahist_line(day: str, ticker: str, close_cents: int) -> str:
+def _cotahist_line(day: str, ticker: str, close_cents: int, qty: int = 1000) -> str:
     raw = [" "] * 245
 
     def put(start: int, value: str) -> None:
@@ -314,8 +358,8 @@ def _cotahist_line(day: str, ticker: str, close_cents: int) -> str:
     put(121, f"{close_cents:013d}")
     put(134, f"{close_cents:013d}")
     put(147, f"{3:05d}")
-    put(152, f"{1000:018d}")
-    put(170, f"{close_cents * 1000:018d}")
+    put(152, f"{qty:018d}")
+    put(170, f"{close_cents * qty:018d}")
     return "".join(raw)
 
 
@@ -336,7 +380,14 @@ def test_cache_readers_gross_up_events_and_confirm_a_split(tmp_path):
     assert events["ABC3"][1] == [100.0, 200.0]
     cota = tmp_path / "cotahist"
     cota.mkdir()
-    body = _cotahist_line("20180601", "ABC3", 2000) + "\n" + _cotahist_line("20180604", "ABC3", 1000) + "\n"
+    # Price halves and share volume doubles. The FRE receipt on 2018-06-10 is
+    # after the print, so it is not the confirmation. The heuristic is.
+    body = (
+        _cotahist_line("20180601", "ABC3", 2000, qty=1000)
+        + "\n"
+        + _cotahist_line("20180604", "ABC3", 1000, qty=2000)
+        + "\n"
+    )
     with zipfile.ZipFile(cota / "COTAHIST_A2018.ZIP", "w") as archive:
         archive.writestr("COTAHIST_A2018.TXT", body)
     tapes, trades, n_splits = load_strategy_tapes(tmp_path, listings, events)

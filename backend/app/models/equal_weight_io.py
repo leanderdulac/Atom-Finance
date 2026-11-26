@@ -9,6 +9,9 @@ per share on the ex-date. The tax rule lives in ``equal_weight``.
 from __future__ import annotations
 
 import json
+import logging
+import math
+import re
 import zipfile
 from collections import defaultdict
 from collections.abc import Sequence
@@ -19,8 +22,21 @@ from typing import Any
 
 import numpy as np
 
-from app.models.net_net import Tape, confirmed_split_factors
+from app.models.corporate_actions import (
+    Adjustment,
+    OfficialEvent,
+    adjust_prints,
+    load_chart_splits,
+    load_official_events,
+    merge_official,
+)
+from app.models.net_net import Tape
 from app.models.net_net_io import _date_ord, _idx, _rows
+
+logger = logging.getLogger(__name__)
+
+# ``a:b`` is the chart feed's splitRatio text. ``a`` and ``b`` are numerator and denominator.
+_SPLIT_RATIO_TEXT = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s*:\s*(\d+(?:[.,]\d+)?)\s*$")
 
 SHARE_CLASS = {
     "ações ordinárias": "on",
@@ -179,8 +195,64 @@ def yahoo_nominal_amount(adjusted: float, ex_ordinal: int, splits: list[tuple[in
     return float(adjusted) * factor
 
 
-def parse_yahoo_events(payload: dict[str, Any], ticker: str) -> list[CashEvent]:
-    """Chart-event dividends. The feed does not label JCP, so the kind is ``unknown``."""
+def _positive_ratio(numerator: float, denominator: float) -> float | None:
+    if not math.isfinite(numerator) or not math.isfinite(denominator):
+        return None
+    if numerator <= 0.0 or denominator <= 0.0:
+        return None
+    return numerator / denominator
+
+
+def _factor_from_split_item(item: dict[str, Any]) -> tuple[float | None, str]:
+    """New/old shares. Numbers win. The text form ``a:b`` is ``a/b`` when they are absent.
+
+    ``1:8`` is a grupamento with factor ``1/8``. ``2:1`` is a desdobramento with factor ``2``.
+    """
+    numerator = item.get("numerator")
+    denominator = item.get("denominator")
+    if numerator is not None and denominator is not None:
+        try:
+            factor = _positive_ratio(float(numerator), float(denominator))
+        except (TypeError, ValueError):
+            return None, "unparsed_numerator_denominator"
+        if factor is None:
+            return None, "non_positive_factor"
+        return factor, ""
+    raw = item.get("splitRatio")
+    if isinstance(raw, str):
+        match = _SPLIT_RATIO_TEXT.match(raw)
+        if match is not None:
+            factor = _positive_ratio(
+                float(match.group(1).replace(",", ".")),
+                float(match.group(2).replace(",", ".")),
+            )
+            if factor is None:
+                return None, "non_positive_factor"
+            return factor, ""
+        try:
+            value = float(raw.replace(",", "."))
+        except ValueError:
+            return None, "unparsed_split_ratio"
+        if not math.isfinite(value) or value <= 0.0:
+            return None, "non_positive_factor"
+        return value, ""
+    if isinstance(raw, int | float) and not isinstance(raw, bool):
+        if not math.isfinite(float(raw)) or float(raw) <= 0.0:
+            return None, "non_positive_factor"
+        return float(raw), ""
+    return None, "unparsed_split_ratio"
+
+
+def parse_yahoo_splits(
+    payload: dict[str, Any],
+    rejected: list[dict[str, Any]] | None = None,
+) -> list[tuple[int, float]]:
+    """Ex-date and new/old share ratio from a chart payload.
+
+    A row that cannot be read is appended to ``rejected`` and logged. It does
+    not drop the rest of the payload. ``splitRatio`` arrives as text such as
+    ``1:8``; that string is not passed to ``float``.
+    """
     chart = payload.get("chart") or {}
     result = chart.get("result") or []
     if not result:
@@ -190,18 +262,47 @@ def parse_yahoo_events(payload: dict[str, Any], ticker: str) -> list[CashEvent]:
     splits: list[tuple[int, float]] = []
     for item in raw_splits.values():
         if not isinstance(item, dict):
+            _reject_split(rejected, {}, "not_an_object")
+            continue
+        factor, reason = _factor_from_split_item(item)
+        if factor is None:
+            _reject_split(rejected, item, reason)
             continue
         stamp = item.get("date")
-        ratio = item.get("splitRatio")
-        if ratio is None and item.get("numerator") and item.get("denominator"):
-            ratio = float(item["numerator"]) / float(item["denominator"])
-        if stamp is None or ratio is None:
+        if stamp is None:
+            _reject_split(rejected, item, "missing_date")
             continue
         try:
             ordinal = datetime.fromtimestamp(int(stamp), UTC).date().toordinal()
-            splits.append((ordinal, float(ratio)))
         except (TypeError, ValueError, OSError):
+            _reject_split(rejected, item, "bad_date")
             continue
+        splits.append((ordinal, factor))
+    splits.sort()
+    return splits
+
+
+def _reject_split(rejected: list[dict[str, Any]] | None, item: dict[str, Any], reason: str) -> None:
+    row = {
+        "reason": reason,
+        "date": item.get("date"),
+        "splitRatio": item.get("splitRatio"),
+        "numerator": item.get("numerator"),
+        "denominator": item.get("denominator"),
+    }
+    logger.warning("yahoo split not interpreted: %s", row)
+    if rejected is not None:
+        rejected.append(row)
+
+
+def parse_yahoo_events(payload: dict[str, Any], ticker: str) -> list[CashEvent]:
+    """Chart-event dividends. The feed does not label JCP, so the kind is ``unknown``."""
+    chart = payload.get("chart") or {}
+    result = chart.get("result") or []
+    if not result:
+        return []
+    events = result[0].get("events") or {}
+    splits = parse_yahoo_splits(payload)
     out: list[CashEvent] = []
     for item in (events.get("dividends") or {}).values():
         if not isinstance(item, dict):
@@ -313,13 +414,17 @@ def load_strategy_tapes(
     cache: Path,
     listings: list[Listing] | None,
     share_events: dict[str, tuple[list[int], list[float]]],
+    chart_dir: Path | None = None,
+    audit_out: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Tape], dict[str, np.ndarray], int]:
     """COTAHIST tapes for the listing set, plus a trade-count array aligned to each tape.
 
-    ``share_events`` maps a ticker to ``(receipt ordinals, common shares)``. A
-    round price gap is a split only when that series confirms it. The trade
-    count is COTAHIST's TOTNEG and is not on the shared ``Tape`` type.
+    ``share_events`` is the FRE share-count series. It is not an ex-date: a
+    receipt after the print does not change the factor. Factors come from
+    ``corporate_actions.adjust_prints``. The trade count is COTAHIST's TOTNEG
+    and is not on the shared ``Tape`` type.
     """
+    del share_events
     wanted = None if listings is None else {item.ticker for item in listings}
     prints: dict[str, dict[int, tuple[float, float, float, float, float, float]]] = defaultdict(dict)
     folder = Path(cache) / "cotahist"
@@ -346,6 +451,9 @@ def load_strategy_tapes(
     tapes: dict[str, Tape] = {}
     trades: dict[str, np.ndarray] = {}
     n_splits = 0
+    official = load_official_events(cache)
+    if chart_dir is not None:
+        official = merge_official(official, load_chart_splits(chart_dir))
     for ticker, by_day in prints.items():
         ords = sorted(by_day)
         if len(ords) < 2:
@@ -357,12 +465,33 @@ def load_strategy_tapes(
         vol = np.array([by_day[day][4] for day in ords], dtype=np.float64)
         trade = np.array([by_day[day][5] for day in ords], dtype=np.float64)
         dates = np.array(ords, dtype=np.int64)
-        events = share_events.get(ticker)
-        if events is None:
-            split = np.ones(len(dates), dtype=np.float64)
-        else:
-            split = confirmed_split_factors(dates, close, events[0], events[1])
-        n_splits += int(np.sum(np.abs(split - 1.0) > 1e-8))
-        tapes[ticker] = Tape(dates, close, bid, ask, qty, vol, split)
+        adjusted = _adjusted_tape(ticker, dates, close, bid, ask, qty, vol, official.get(ticker, []))
+        n_splits += int(np.sum(np.abs(adjusted.share_factor - 1.0) > 1e-8))
+        tapes[ticker] = Tape(
+            dates,
+            adjusted.close,
+            adjusted.bid,
+            adjusted.ask,
+            adjusted.qty,
+            adjusted.vol,
+            adjusted.share_factor,
+            adjusted.source,
+            adjusted.heuristic_cash_scale,
+        )
         trades[ticker] = trade
+        if audit_out is not None:
+            audit_out.extend(adjusted.audit)
     return tapes, trades, n_splits
+
+
+def _adjusted_tape(
+    ticker: str,
+    dates: np.ndarray,
+    close: np.ndarray,
+    bid: np.ndarray,
+    ask: np.ndarray,
+    qty: np.ndarray,
+    vol: np.ndarray,
+    official: list[OfficialEvent],
+) -> Adjustment:
+    return adjust_prints(dates, close, bid, ask, qty, vol, ticker=ticker, official=official)

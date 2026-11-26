@@ -236,20 +236,26 @@ def test_delisted_exit_count():
     assert run["net"][-1] > 0
 
 
-def test_split_requires_a_confirming_share_count():
+def test_a_later_capital_filing_does_not_confirm_a_jump():
     dates = np.array([_ord(2020, 1, 2), _ord(2020, 1, 3), _ord(2020, 1, 6)], dtype=np.int64)
-    # 10-for-1 grupamento: price jumps 10x.
+    # 10-for-1 price jump. The share-count receipt is after the print.
     close = np.array([1.0, 10.0, 10.0])
-    no = net_net.confirmed_split_factors(dates, close, [_ord(2019, 1, 1)], [1000.0])
-    assert np.allclose(no, 1.0)
-    yes = net_net.confirmed_split_factors(
+    late = net_net.confirmed_split_factors(
         dates,
         close,
         [_ord(2019, 6, 1), _ord(2020, 4, 1)],
         [1000.0, 100.0],
     )
-    assert yes[1] == pytest.approx(0.1)
-    # A real crash of 50% with no share change is left alone.
+    assert np.allclose(late, 1.0)
+    # Passing confirm_days does not restore the old 250-day look-ahead.
+    still = net_net.confirmed_split_factors(
+        dates,
+        close,
+        [_ord(2019, 6, 1), _ord(2020, 4, 1)],
+        [1000.0, 100.0],
+        confirm_days=400,
+    )
+    assert np.allclose(still, 1.0)
     crash = np.array([10.0, 5.0, 5.0])
     kept = net_net.confirmed_split_factors(dates, crash, [_ord(2019, 6, 1), _ord(2020, 4, 1)], [1000.0, 1000.0])
     assert np.allclose(kept, 1.0)
