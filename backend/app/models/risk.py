@@ -1,8 +1,11 @@
 """
 Risk Analysis Models
-- Value at Risk (VaR): Historical, Parametric, Monte Carlo
+- Value at Risk (VaR): Historical, Parametric, Monte Carlo (normal)
+- Stationary block bootstrap VaR/CVaR (Politis–Romano): keeps fat tails and serial dependence
 - Conditional VaR (CVaR / Expected Shortfall)
 - Stress Testing & Scenario Analysis
+
+The bootstrap is a risk band on the sample it is given. It does not send an order.
 """
 
 import numpy as np
@@ -27,6 +30,101 @@ def _tail_cvar(hp_returns: np.ndarray, var_pct: float) -> float:
     if tail.size == 0:
         return var_pct
     return float(-np.mean(tail))
+
+
+def _stationary_bootstrap_indices(
+    n: int,
+    length: int,
+    n_paths: int,
+    mean_block: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Politis–Romano indices. A new block starts with probability 1/mean_block."""
+    idx = np.empty((n_paths, length), dtype=int)
+    idx[:, 0] = rng.integers(0, n, size=n_paths)
+    new_block = rng.random((n_paths, length)) < (1.0 / mean_block)
+    jumps = rng.integers(0, n, size=(n_paths, length))
+    for h in range(1, length):
+        idx[:, h] = np.where(new_block[:, h], jumps[:, h], (idx[:, h - 1] + 1) % n)
+    return idx
+
+
+def bootstrap_horizon_returns(
+    returns: np.ndarray,
+    holding_period: int = 1,
+    n_paths: int = 5_000,
+    mean_block: float = 10.0,
+    seed: int | None = 42,
+) -> np.ndarray:
+    """Compounded horizon returns from a stationary block bootstrap of ``returns``.
+
+    The draw uses only the array it is given. Block length is geometric with
+    mean ``mean_block``, which keeps runs of serial dependence that an i.i.d.
+    normal Monte Carlo erases.
+    """
+    clean = np.asarray(returns, dtype=np.float64)
+    if clean.ndim != 1:
+        raise ValueError("returns must be 1-D")
+    clean = clean[np.isfinite(clean)]
+    if len(clean) < 2:
+        raise ValueError("need at least 2 finite returns")
+    if holding_period < 1:
+        raise ValueError("holding_period must be >= 1")
+    if mean_block < 1:
+        raise ValueError("mean_block must be >= 1")
+    if n_paths < 1:
+        raise ValueError("n_paths must be >= 1")
+    if holding_period > 1 and np.any(clean <= -1):
+        raise ValueError("Returns ≤ -100% cannot be compounded over a holding period")
+    rng = np.random.default_rng(42 if seed is None else seed)
+    idx = _stationary_bootstrap_indices(len(clean), holding_period, n_paths, mean_block, rng)
+    sampled = clean[idx]
+    if holding_period == 1:
+        return sampled[:, 0]
+    return np.expm1(np.sum(np.log1p(sampled), axis=1))
+
+
+def rolling_stationary_bootstrap_var(
+    returns: np.ndarray,
+    window: int = 60,
+    confidence: float = 0.95,
+    holding_period: int = 1,
+    n_paths: int = 200,
+    mean_block: float = 5.0,
+    seed: int = 0,
+    step: int = 1,
+) -> np.ndarray:
+    """Loss fraction at t from a block bootstrap of the window that ends at t.
+
+    Recomputed every ``step`` bars and carried forward. The seed depends on t,
+    not on any later return, so a perturbation after t leaves the prefix unchanged.
+    """
+    series = np.asarray(returns, dtype=np.float64)
+    if series.ndim != 1:
+        raise ValueError("returns must be 1-D")
+    if window < 10 or step < 1:
+        raise ValueError("window must be >= 10 and step >= 1")
+    if not 0.0 < confidence < 1.0:
+        raise ValueError("confidence must be in (0, 1)")
+    out = np.full(len(series), np.nan)
+    last = np.nan
+    need = max(10, window // 2)
+    alpha = (1.0 - confidence) * 100.0
+    for t in range(window - 1, len(series)):
+        if (t - (window - 1)) % step == 0:
+            w = series[t - window + 1 : t + 1]
+            w = w[np.isfinite(w)]
+            if len(w) < need:
+                last = np.nan
+            else:
+                try:
+                    sim = bootstrap_horizon_returns(w, holding_period, n_paths, mean_block, seed + t)
+                except ValueError:
+                    last = np.nan
+                else:
+                    last = float(-np.percentile(sim, alpha))
+        out[t] = last
+    return out
 
 
 def _estimate_student_t_df(returns: np.ndarray) -> float:
@@ -172,6 +270,43 @@ class ValueAtRisk:
                 "max": round(float(np.max(sim_pnl)), 2),
                 "percentiles": {str(p): round(float(np.percentile(sim_pnl, p)), 2) for p in [1, 5, 10, 25, 50, 75, 90, 95, 99]},
             },
+        }
+
+    @staticmethod
+    def stationary_bootstrap(returns: np.ndarray, confidence: float = 0.95,
+                             portfolio_value: float = 1_000_000, holding_period: int = 1,
+                             n_paths: int = 5_000, mean_block: float = 10.0,
+                             seed: int | None = 42) -> dict:
+        """VaR/CVaR from a Politis–Romano stationary block bootstrap.
+
+        Paths resample historical returns in geometric blocks, so the horizon
+        loss keeps the sample's fat tails and its serial dependence. The
+        normal Monte Carlo next to this method does neither.
+        """
+        returns = np.asarray(returns, dtype=np.float64)
+        if returns.ndim != 1 or len(returns) < 30:
+            raise ValueError("Need at least 30 returns")
+        if not 0.0 < confidence < 1.0:
+            raise ValueError("confidence must be in (0, 1)")
+        sim = bootstrap_horizon_returns(returns, holding_period, n_paths, mean_block, seed)
+        alpha = 1.0 - confidence
+        var_pct = float(-np.percentile(sim, alpha * 100))
+        cvar_pct = _tail_cvar(sim, var_pct)
+        return {
+            "method": "stationary_bootstrap",
+            "confidence": confidence,
+            "holding_period_days": holding_period,
+            "var_percentage": round(var_pct * 100, 4),
+            "var_absolute": round(var_pct * portfolio_value, 2),
+            "cvar_percentage": round(cvar_pct * 100, 4),
+            "cvar_absolute": round(cvar_pct * portfolio_value, 2),
+            "n_paths": n_paths,
+            "mean_block": mean_block,
+            "seed": 42 if seed is None else seed,
+            "block_scheme": "politis_romano",
+            "portfolio_value": portfolio_value,
+            "n_observations": int(np.isfinite(returns).sum()),
+            "horizon_method": "stationary_block_bootstrap",
         }
 
 

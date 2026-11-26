@@ -39,14 +39,26 @@ def test_expanding_hedge_nan_before_min_est():
 
 def test_pairs_backtest_still_runs_causally():
     y, x = _coint_pair()
-    bt = pairs_backtest(y, x)
+    bt = pairs_backtest(y, x, hedge="expanding_ols")
     assert bt["eligible_for_live_trading"] is False
     assert "what_broke" in bt
     assert bt["pnl_unit"] == "gross_two_leg_notional"
     assert bt["hedge"] == "expanding_ols_frozen_at_entry"
+    assert bt["kalman_delta"] is None
     assert bt["total_return_pct"] == pytest.approx(
         (bt["final_equity"] / 100_000.0 - 1.0) * 100, abs=5e-4  # report rounds to 4 decimals
     )
+
+
+def test_pairs_backtest_defaults_to_frozen_kalman():
+    y, x = _coint_pair()
+    bt = pairs_backtest(y, x)
+    assert bt["eligible_for_live_trading"] is False
+    assert bt["hedge"] == "kalman_posterior_frozen_at_entry"
+    assert bt["kalman_insample_end"] == max(60, len(y) // 2)
+    assert bt["kalman_delta"] > 0
+    assert bt["kalman_obs_var"] > 0
+    assert bt["final_equity"] > 1.0
 
 
 def test_frozen_spread_return_is_not_share_beta_times_percent():

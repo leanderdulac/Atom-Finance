@@ -2,9 +2,10 @@
 Paper-only statistical arbitrage loop for one perpetual pair (ETHUSDT / SOLUSDT).
 
 Six layers: data → signal → decision → risk → paper execution → monitoring.
-Reuses Engle–Granger / expanding hedge from ``cointegration`` and the OU/AR(1)
-half-life from ``mean_reversion``. Signal at bar t uses information ≤ t; the
-paper fill is the next bar's bid (sells) / ask (buys).
+Reuses Engle–Granger from ``cointegration`` and the OU/AR(1) half-life from
+``mean_reversion``. The paper hedge defaults to a Kalman beta whose δ and
+observation variance are chosen on the warmup prefix only. Signal at bar t
+uses information ≤ t; the paper fill is the next bar's bid (sells) / ask (buys).
 
 This module never talks to a broker, never signs an exchange order, and always
 returns ``eligible_for_live_trading=False``.
@@ -18,11 +19,11 @@ import math
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, replace
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
-from app.models.cointegration import _expanding_hedge, _half_life, engle_granger
+from app.models.cointegration import HedgeMethod, _half_life, dynamic_hedge, engle_granger
 from app.models.mean_reversion import _ar1_half_life
 from app.models.trading_costs import (
     DEFAULT_ENTRY_K,
@@ -61,7 +62,8 @@ _MACKINNON_P = ((-3.90, 0.01), (-3.34, 0.05), (-3.04, 0.10))
 
 _WHAT_BROKE = [
     "Engle–Granger gate runs on the warmup prefix only; it is not a rolling live rank test.",
-    "Expanding OLS beta is not a Kalman hedge; lot size and borrow are ignored. "
+    "Default hedge is a Kalman posterior frozen at entry. δ and obs_var are chosen on the warmup prefix only. "
+    "Lot size and borrow are ignored. "
     "Funding is accrued from the venue's public history when a bar carries a rate, else 0.",
     "When the caller omits a book, bid/ask are mid ± half-spread — not a firm quote.",
     "Signal at t fills at t+1; a hole between those bars is flagged, never interpolated.",
@@ -117,6 +119,9 @@ class PipelineConfig:
     fallback_slippage_bps: float = 0.0
     limit_timeout_bars: int = 5
     maker_fee_bps: float | None = None
+    hedge: str = "kalman"
+    kalman_delta: float | None = None
+    kalman_obs_var: float | None = None
 
 
 @dataclass
@@ -775,13 +780,29 @@ def run_paper_pipeline(
         "max_half_life_bars": cfg.max_half_life_bars,
         "gate": "warmup_prefix",
         "gate_bars": int(gate_n),
+        "hedge": cfg.hedge,
     }
     if not gate["ok"]:
         return _rejected(gate["reason"], cfg=cfg, data=data, signal=signal, extra={"pvalue": pvalue, "half_life_bars": signal["half_life_bars"], "gate_bars": gate_n})
 
     if cfg.execution not in ("taker", "maker"):
         raise ValueError("execution must be taker or maker")
-    _, betas, spread = _expanding_hedge(y, x, min_est)
+    if cfg.hedge not in ("kalman", "expanding_ols"):
+        raise ValueError("hedge must be kalman or expanding_ols")
+    path = dynamic_hedge(
+        y,
+        x,
+        method=cast(HedgeMethod, cfg.hedge),
+        min_est=min_est,
+        delta=cfg.kalman_delta,
+        obs_var=cfg.kalman_obs_var,
+        insample_end=gate_n,
+    )
+    betas, spread = path["beta"], path["spread"]
+    signal["hedge"] = path["hedge"]
+    signal["kalman_delta"] = path["delta"]
+    signal["kalman_obs_var"] = path["obs_var"]
+    signal["kalman_insample_end"] = path["insample_end"]
     z = rolling_zscore(spread, cfg.z_window)
     spread_sd = rolling_std(spread, cfg.z_window)
     maker_fee = cfg.maker_fee_bps if cfg.maker_fee_bps is not None else venue_fees(cfg.venue).maker_bps
@@ -1113,7 +1134,8 @@ def run_paper_pipeline(
         "out_of_sample": False,
         "math": (
             "y_t = α + β x_t + e_t (Engle–Granger). OU half-life = −ln 2 / ln φ on e_t. "
-            "Causal expanding hedge + rolling z; |z|>entry opens, |z|<exit flattens. "
+            "Causal hedge (Kalman innovation by default; expanding OLS on request) + rolling z; "
+            "|z|>entry opens, |z|<exit flattens. "
             "Taker buys the ask and sells the bid; maker limits fill only when mid crosses the level "
             "before the timeout. Cost = fee + half-spread + slippage − spread capture. "
             "Entry requires expected reversion ≥ k times the four-leg round trip. "

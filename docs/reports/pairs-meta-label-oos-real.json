@@ -50,25 +50,101 @@
       },
       "johansen_rank": 0,
       "cointegrated_oos": false,
-      "n_events": 40,
-      "n_oos_scored": 40,
+      "n_events": 52,
+      "n_oos_scored": 52,
       "skipped_meta": false,
       "skip_reason": null,
       "primary": {
-        "n_trades": 40,
-        "hit_rate": 0.65,
-        "net_per_trade": 0.00181869,
-        "total_net": 0.07274747
+        "n_trades": 52,
+        "hit_rate": 0.673077,
+        "net_per_trade": 0.00061719,
+        "total_net": 0.0320938
       },
       "filtered": {
-        "n_trades": 6,
-        "hit_rate": 0.333333,
-        "net_per_trade": -0.00362893,
-        "total_net": -0.0217736
+        "n_trades": 21,
+        "hit_rate": 0.666667,
+        "net_per_trade": 0.00043267,
+        "total_net": 0.00908615
       },
       "filter_improves_hit_or_net": false,
-      "hit_rate_delta": -0.316667,
-      "net_per_trade_delta": -0.00544762
+      "hit_rate_delta": -0.00641,
+      "net_per_trade_delta": -0.00018451,
+      "signals": {
+        "raw_crosses": 57,
+        "labeled": 52,
+        "n_skipped": 4,
+        "skipped_by_reason": {
+          "expected_gain": 4,
+          "spread": 0,
+          "volume": 0,
+          "volume_unavailable": 0
+        },
+        "skipped_sample": [
+          {
+            "t0": 1198,
+            "reason": "expected_gain",
+            "expected_gain": 0.00262945,
+            "round_trip_cost": 0.0014,
+            "k": 2.0,
+            "legs": 4
+          },
+          {
+            "t0": 1230,
+            "reason": "expected_gain",
+            "expected_gain": 0.00222331,
+            "round_trip_cost": 0.0014,
+            "k": 2.0,
+            "legs": 4
+          },
+          {
+            "t0": 1232,
+            "reason": "expected_gain",
+            "expected_gain": 0.00226628,
+            "round_trip_cost": 0.0014,
+            "k": 2.0,
+            "legs": 4
+          },
+          {
+            "t0": 1236,
+            "reason": "expected_gain",
+            "expected_gain": 0.00239123,
+            "round_trip_cost": 0.0014,
+            "k": 2.0,
+            "legs": 4
+          }
+        ],
+        "gross_total": 0.1048938,
+        "net_total": 0.0320938,
+        "round_trip_cost": 0.0014
+      },
+      "cost_model": {
+        "fee_bps": 5.0,
+        "half_spread_bps": 2.0,
+        "slippage_bps": 0.0,
+        "half_spread_source": "estimate",
+        "slippage_source": "estimate",
+        "flagged_estimate": true,
+        "four_leg_fraction": 0.0014,
+        "entry_cost_k": 2.0,
+        "legs": 4
+      },
+      "hedge": "kalman_posterior_frozen_at_entry",
+      "kalman": {
+        "delta": 1e-05,
+        "obs_var": 0.0944399437809323,
+        "insample_end": 874
+      },
+      "stationarity_insample": {
+        "verdict": "stationary",
+        "candidate": true,
+        "adf_stat": -10.100512,
+        "adf_pvalue": 0.0,
+        "kpss_stat": 0.160092,
+        "kpss_pvalue": 0.1,
+        "alpha": 0.05,
+        "eligible_for_live_trading": false,
+        "use": "prefilter_only"
+      }
     },
     {
       "pair_id": "CMIG3_CMIG4",
@@ -100,25 +176,68 @@
       },
       "johansen_rank": 0,
       "cointegrated_oos": false,
-      "n_events": 37,
-      "n_oos_scored": 37,
+      "n_events": 36,
+      "n_oos_scored": 36,
       "skipped_meta": false,
       "skip_reason": null,
       "primary": {
-        "n_trades": 37,
-        "hit_rate": 0.459459,
-        "net_per_trade": -0.00618065,
-        "total_net": -0.22868423
+        "n_trades": 36,
+        "hit_rate": 0.527778,
+        "net_per_trade": -0.00303291,
+        "total_net": -0.10918473
       },
       "filtered": {
-        "n_trades": 1,
-        "hit_rate": 0.0,
-        "net_per_trade": -0.02097925,
-        "total_net": -0.02097925
+        "n_trades": 3,
+        "hit_rate": 0.666667,
+        "net_per_trade": 0.01181155,
+        "total_net": 0.03543464
       },
       "filter_improves_hit_or_net": false,
-      "hit_rate_delta": -0.459459,
-      "net_per_trade_delta": -0.01479859
+      "hit_rate_delta": 0.138889,
+      "net_per_trade_delta": 0.01484446,
+      "signals": {
+        "raw_crosses": 36,
+        "labeled": 36,
+        "n_skipped": 0,
+        "skipped_by_reason": {
+          "expected_gain": 0,
+          "spread": 0,
+          "volume": 0,
+          "volume_unavailable": 0
+        },
+        "skipped_sample": [],
+        "gross_total": -0.05878473,
+        "net_total": -0.10918473,
+        "round_trip_cost": 0.0014
+      },
+      "cost_model": {
+        "fee_bps": 5.0,
+        "half_spread_bps": 2.0,
+        "slippage_bps": 0.0,
+        "half_spread_source": "estimate",
+        "slippage_source": "estimate",
+        "flagged_estimate": true,
+        "four_leg_fraction": 0.0014,
+        "entry_cost_k": 2.0,
+        "legs": 4
+      },
+      "hedge": "kalman_posterior_frozen_at_entry",
+      "kalman": {
+        "delta": 0.0001,
+        "obs_var": 0.1798813219692176,
+        "insample_end": 874
+      },
+      "stationarity_insample": {
+        "verdict": "stationary",
+        "candidate": true,
+        "adf_stat": -7.59389,
+        "adf_pvalue": 0.0,
+        "kpss_stat": 0.130019,
+        "kpss_pvalue": 0.1,
+        "alpha": 0.05,
+        "eligible_for_live_trading": false,
+        "use": "prefilter_only"
+      }
     },
     {
       "pair_id": "ITUB4_BBDC4",
@@ -150,15 +269,15 @@
       },
       "johansen_rank": 0,
       "cointegrated_oos": false,
-      "n_events": 16,
-      "n_oos_scored": 0,
-      "skipped_meta": true,
-      "skip_reason": "poucas previs\u00f5es OOF (0)",
+      "n_events": 27,
+      "n_oos_scored": 27,
+      "skipped_meta": false,
+      "skip_reason": null,
       "primary": {
-        "n_trades": 16,
-        "hit_rate": 0.5,
-        "net_per_trade": -0.00700547,
-        "total_net": -0.11208753
+        "n_trades": 27,
+        "hit_rate": 0.592593,
+        "net_per_trade": 0.00140848,
+        "total_net": 0.03802891
       },
       "filtered": {
         "n_trades": 0,
@@ -168,7 +287,50 @@
       },
       "filter_improves_hit_or_net": false,
       "hit_rate_delta": null,
-      "net_per_trade_delta": null
+      "net_per_trade_delta": null,
+      "signals": {
+        "raw_crosses": 27,
+        "labeled": 27,
+        "n_skipped": 0,
+        "skipped_by_reason": {
+          "expected_gain": 0,
+          "spread": 0,
+          "volume": 0,
+          "volume_unavailable": 0
+        },
+        "skipped_sample": [],
+        "gross_total": 0.07582891,
+        "net_total": 0.03802891,
+        "round_trip_cost": 0.0014
+      },
+      "cost_model": {
+        "fee_bps": 5.0,
+        "half_spread_bps": 2.0,
+        "slippage_bps": 0.0,
+        "half_spread_source": "estimate",
+        "slippage_source": "estimate",
+        "flagged_estimate": true,
+        "four_leg_fraction": 0.0014,
+        "entry_cost_k": 2.0,
+        "legs": 4
+      },
+      "hedge": "kalman_posterior_frozen_at_entry",
+      "kalman": {
+        "delta": 0.0001,
+        "obs_var": 4.64775499374922,
+        "insample_end": 874
+      },
+      "stationarity_insample": {
+        "verdict": "stationary",
+        "candidate": true,
+        "adf_stat": -6.420677,
+        "adf_pvalue": 0.0,
+        "kpss_stat": 0.23397,
+        "kpss_pvalue": 0.1,
+        "alpha": 0.05,
+        "eligible_for_live_trading": false,
+        "use": "prefilter_only"
+      }
     },
     {
       "pair_id": "GGBR4_USIM5",
@@ -200,25 +362,68 @@
       },
       "johansen_rank": 0,
       "cointegrated_oos": false,
-      "n_events": 22,
-      "n_oos_scored": 0,
-      "skipped_meta": true,
-      "skip_reason": "poucas previs\u00f5es OOF (0)",
+      "n_events": 49,
+      "n_oos_scored": 49,
+      "skipped_meta": false,
+      "skip_reason": null,
       "primary": {
-        "n_trades": 22,
-        "hit_rate": 0.454545,
-        "net_per_trade": -0.00360189,
-        "total_net": -0.07924153
+        "n_trades": 49,
+        "hit_rate": 0.367347,
+        "net_per_trade": -0.00703248,
+        "total_net": -0.34459133
       },
       "filtered": {
-        "n_trades": 0,
-        "hit_rate": null,
-        "net_per_trade": null,
-        "total_net": 0.0
+        "n_trades": 15,
+        "hit_rate": 0.4,
+        "net_per_trade": -0.00759223,
+        "total_net": -0.11388339
       },
-      "filter_improves_hit_or_net": false,
-      "hit_rate_delta": null,
-      "net_per_trade_delta": null
+      "filter_improves_hit_or_net": true,
+      "hit_rate_delta": 0.032653,
+      "net_per_trade_delta": -0.00055975,
+      "signals": {
+        "raw_crosses": 49,
+        "labeled": 49,
+        "n_skipped": 0,
+        "skipped_by_reason": {
+          "expected_gain": 0,
+          "spread": 0,
+          "volume": 0,
+          "volume_unavailable": 0
+        },
+        "skipped_sample": [],
+        "gross_total": -0.27599133,
+        "net_total": -0.34459133,
+        "round_trip_cost": 0.0014
+      },
+      "cost_model": {
+        "fee_bps": 5.0,
+        "half_spread_bps": 2.0,
+        "slippage_bps": 0.0,
+        "half_spread_source": "estimate",
+        "slippage_source": "estimate",
+        "flagged_estimate": true,
+        "four_leg_fraction": 0.0014,
+        "entry_cost_k": 2.0,
+        "legs": 4
+      },
+      "hedge": "kalman_posterior_frozen_at_entry",
+      "kalman": {
+        "delta": 0.001,
+        "obs_var": 0.6971054584559608,
+        "insample_end": 874
+      },
+      "stationarity_insample": {
+        "verdict": "stationary",
+        "candidate": true,
+        "adf_stat": -9.548689,
+        "adf_pvalue": 0.0,
+        "kpss_stat": 0.258002,
+        "kpss_pvalue": 0.1,
+        "alpha": 0.05,
+        "eligible_for_live_trading": false,
+        "use": "prefilter_only"
+      }
     },
     {
       "pair_id": "VALE3_CSNA3",
@@ -250,25 +455,68 @@
       },
       "johansen_rank": 0,
       "cointegrated_oos": false,
-      "n_events": 21,
-      "n_oos_scored": 0,
-      "skipped_meta": true,
-      "skip_reason": "poucas previs\u00f5es OOF (0)",
+      "n_events": 39,
+      "n_oos_scored": 39,
+      "skipped_meta": false,
+      "skip_reason": null,
       "primary": {
-        "n_trades": 21,
-        "hit_rate": 0.47619,
-        "net_per_trade": -0.00204893,
-        "total_net": -0.04302758
+        "n_trades": 39,
+        "hit_rate": 0.435897,
+        "net_per_trade": -0.00305882,
+        "total_net": -0.11929413
       },
       "filtered": {
-        "n_trades": 0,
-        "hit_rate": null,
-        "net_per_trade": null,
-        "total_net": 0.0
+        "n_trades": 8,
+        "hit_rate": 0.25,
+        "net_per_trade": -0.01104342,
+        "total_net": -0.08834734
       },
       "filter_improves_hit_or_net": false,
-      "hit_rate_delta": null,
-      "net_per_trade_delta": null
+      "hit_rate_delta": -0.185897,
+      "net_per_trade_delta": -0.00798459,
+      "signals": {
+        "raw_crosses": 39,
+        "labeled": 39,
+        "n_skipped": 0,
+        "skipped_by_reason": {
+          "expected_gain": 0,
+          "spread": 0,
+          "volume": 0,
+          "volume_unavailable": 0
+        },
+        "skipped_sample": [],
+        "gross_total": -0.06469413,
+        "net_total": -0.11929413,
+        "round_trip_cost": 0.0014
+      },
+      "cost_model": {
+        "fee_bps": 5.0,
+        "half_spread_bps": 2.0,
+        "slippage_bps": 0.0,
+        "half_spread_source": "estimate",
+        "slippage_source": "estimate",
+        "flagged_estimate": true,
+        "four_leg_fraction": 0.0014,
+        "entry_cost_k": 2.0,
+        "legs": 4
+      },
+      "hedge": "kalman_posterior_frozen_at_entry",
+      "kalman": {
+        "delta": 0.001,
+        "obs_var": 5.387733190086424,
+        "insample_end": 874
+      },
+      "stationarity_insample": {
+        "verdict": "stationary",
+        "candidate": true,
+        "adf_stat": -8.067839,
+        "adf_pvalue": 0.0,
+        "kpss_stat": 0.259745,
+        "kpss_pvalue": 0.1,
+        "alpha": 0.05,
+        "eligible_for_live_trading": false,
+        "use": "prefilter_only"
+      }
     },
     {
       "pair_id": "ETHUSDT_SOLUSDT",
@@ -300,70 +548,113 @@
       },
       "johansen_rank": 0,
       "cointegrated_oos": true,
-      "n_events": 35,
-      "n_oos_scored": 35,
-      "skipped_meta": false,
-      "skip_reason": null,
+      "n_events": 18,
+      "n_oos_scored": 0,
+      "skipped_meta": true,
+      "skip_reason": "poucas previs\u00f5es OOF (0)",
       "primary": {
-        "n_trades": 35,
-        "hit_rate": 0.457143,
-        "net_per_trade": -0.01365928,
-        "total_net": -0.47807476
+        "n_trades": 18,
+        "hit_rate": 0.388889,
+        "net_per_trade": -0.0265384,
+        "total_net": -0.47769116
       },
       "filtered": {
-        "n_trades": 9,
-        "hit_rate": 0.333333,
-        "net_per_trade": -0.0312974,
-        "total_net": -0.28167663
+        "n_trades": 0,
+        "hit_rate": null,
+        "net_per_trade": null,
+        "total_net": 0.0
       },
       "filter_improves_hit_or_net": false,
-      "hit_rate_delta": -0.12381,
-      "net_per_trade_delta": -0.01763813
+      "hit_rate_delta": null,
+      "net_per_trade_delta": null,
+      "signals": {
+        "raw_crosses": 18,
+        "labeled": 18,
+        "n_skipped": 0,
+        "skipped_by_reason": {
+          "expected_gain": 0,
+          "spread": 0,
+          "volume": 0,
+          "volume_unavailable": 0
+        },
+        "skipped_sample": [],
+        "gross_total": -0.43449116,
+        "net_total": -0.47769116,
+        "round_trip_cost": 0.0024000000000000002
+      },
+      "cost_model": {
+        "fee_bps": 10.0,
+        "half_spread_bps": 2.0,
+        "slippage_bps": 0.0,
+        "half_spread_source": "estimate",
+        "slippage_source": "estimate",
+        "flagged_estimate": true,
+        "four_leg_fraction": 0.0024000000000000002,
+        "entry_cost_k": 2.0,
+        "legs": 4
+      },
+      "hedge": "kalman_posterior_frozen_at_entry",
+      "kalman": {
+        "delta": 0.001,
+        "obs_var": 44871.808526460234,
+        "insample_end": 1260
+      },
+      "stationarity_insample": {
+        "verdict": "difference_or_inconclusive",
+        "candidate": false,
+        "adf_stat": -4.055182,
+        "adf_pvalue": 0.001148,
+        "kpss_stat": 2.325223,
+        "kpss_pvalue": 0.01,
+        "alpha": 0.05,
+        "eligible_for_live_trading": false,
+        "use": "prefilter_only"
+      }
     }
   ],
   "registered_trials": [
     {
-      "id": 1,
+      "id": 33,
       "pair_id": "PETR3_PETR4",
       "variant": "primary_triple_barrier",
-      "sharpe": 0.12074319772128872,
+      "sharpe": 0.12359974944427901,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 2,
+      "id": 34,
       "pair_id": "PETR3_PETR4",
       "variant": "meta_filtered",
-      "sharpe": -0.34227437504656194,
+      "sharpe": -0.018595916197262474,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 3,
+      "id": 35,
       "pair_id": "CMIG3_CMIG4",
       "variant": "primary_triple_barrier",
-      "sharpe": -0.2792069947260129,
+      "sharpe": -0.2382083336610798,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 4,
+      "id": 36,
       "pair_id": "CMIG3_CMIG4",
       "variant": "meta_filtered",
-      "sharpe": -0.3186090330580472,
+      "sharpe": 0.5782835830142041,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 5,
+      "id": 37,
       "pair_id": "ITUB4_BBDC4",
       "variant": "primary_triple_barrier",
-      "sharpe": -0.5513631344159714,
+      "sharpe": 0.2801569293361225,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 6,
+      "id": 38,
       "pair_id": "ITUB4_BBDC4",
       "variant": "meta_filtered",
       "sharpe": 0.0,
@@ -371,50 +662,50 @@
       "costs_included": true
     },
     {
-      "id": 7,
+      "id": 39,
       "pair_id": "GGBR4_USIM5",
       "variant": "primary_triple_barrier",
-      "sharpe": -0.5737107283195482,
+      "sharpe": -1.3465248537217567,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 8,
+      "id": 40,
       "pair_id": "GGBR4_USIM5",
       "variant": "meta_filtered",
-      "sharpe": 0.0,
+      "sharpe": -0.8545746317419933,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 9,
+      "id": 41,
       "pair_id": "VALE3_CSNA3",
       "variant": "primary_triple_barrier",
-      "sharpe": -0.22323380382361685,
+      "sharpe": -0.5635443242098277,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 10,
+      "id": 42,
       "pair_id": "VALE3_CSNA3",
       "variant": "meta_filtered",
-      "sharpe": 0.0,
+      "sharpe": -0.5086792863521543,
       "n_obs": 1189,
       "costs_included": true
     },
     {
-      "id": 11,
+      "id": 43,
       "pair_id": "ETHUSDT_SOLUSDT",
       "variant": "primary_triple_barrier",
-      "sharpe": -0.29379535845437277,
+      "sharpe": -0.4269540706247007,
       "n_obs": 1740,
       "costs_included": true
     },
     {
-      "id": 12,
+      "id": 44,
       "pair_id": "ETHUSDT_SOLUSDT",
       "variant": "meta_filtered",
-      "sharpe": -0.8602867307015772,
+      "sharpe": 0.0,
       "n_obs": 1740,
       "costs_included": true
     }
@@ -424,161 +715,162 @@
       "start": "2021-11-17",
       "end": "2026-11-17",
       "n_bars": 1249,
-      "total_net": -0.00022826
+      "total_net": -0.00490104
     },
     "eth_sol_meta": {
       "start": "2021-12-14",
       "end": "2026-11-17",
       "n_bars": 1800,
-      "total_net": -0.02089828
+      "total_net": 0.0
     },
     "combined_equal_weight_meta": {
       "start": "2021-11-17",
       "end": "2026-11-17",
       "n_bars": 1819,
-      "total_net": -0.00926791
+      "total_net": -0.0040842
     }
   },
   "gate_b3_meta": {
     "approved": false,
     "reasons": [
-      "DSR=0.0042 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.456, SR*=0.676, N=9.95424).",
-      "SR\u0302=-0.456 n\u00e3o supera o Sharpe esperado da busca (SR*=0.676); alongar a mesma amostra n\u00e3o resolve."
+      "DSR=0.0004 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.761, SR*=0.641, N=9.37405).",
+      "SR\u0302=-0.761 n\u00e3o supera o Sharpe esperado da busca (SR*=0.641); alongar a mesma amostra n\u00e3o resolve."
     ],
-    "observed_sharpe": -0.455848,
-    "psr": 0.14453,
-    "dsr": 0.004238,
-    "sr_star": 0.676035,
+    "observed_sharpe": -0.760992,
+    "psr": 0.033678,
+    "dsr": 0.000374,
+    "sr_star": 0.641367,
     "min_trl": null,
     "n_obs": 1249,
     "n_trials": 12.0,
-    "n_eff": 9.954241745690322,
-    "se_hat": 0.429971,
-    "skew": -3.359831,
-    "excess_kurtosis": 56.454393,
+    "n_eff": 9.374047085879997,
+    "se_hat": 0.416004,
+    "skew": -3.687999,
+    "excess_kurtosis": 56.918423,
     "costs_included": true,
     "threshold": 0.95,
     "details": {
       "psr": {
-        "observed_sharpe": -0.455848,
+        "observed_sharpe": -0.760992,
         "sr_benchmark": 0.0,
-        "psr": 0.14453,
-        "z": -1.060184,
-        "se_hat": 0.429971,
+        "psr": 0.033678,
+        "z": -1.829292,
+        "se_hat": 0.416004,
         "n_obs": 1249,
         "significant_at_95": false
       },
       "dsr": {
-        "observed_sharpe": -0.455848,
-        "sr_star": 0.676035,
-        "deflated_sharpe_prob": 0.004238,
-        "z": -2.632467,
-        "se_hat": 0.429971,
-        "n_trials": 9.954241745690322,
+        "observed_sharpe": -0.760992,
+        "sr_star": 0.641367,
+        "deflated_sharpe_prob": 0.000374,
+        "z": -3.371025,
+        "se_hat": 0.416004,
+        "n_trials": 9.374047085879997,
         "n_obs": 1249,
         "significant_at_95": false,
-        "haircut": -1.131883,
-        "expected_max_blp": 0.676035,
-        "z_blp": 1.572282
+        "haircut": -1.402359,
+        "expected_max_blp": 0.641367,
+        "z_blp": 1.541733
       }
     }
   },
   "gate_eth_sol_meta": {
     "approved": false,
     "reasons": [
-      "DSR=0.0000 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.846, SR*=0.532, N=9.95424).",
-      "SR\u0302=-0.846 n\u00e3o supera o Sharpe esperado da busca (SR*=0.532); alongar a mesma amostra n\u00e3o resolve."
+      "DSR=0.0616 est\u00e1 abaixo do limiar 0.95 (SR\u0302=0.000, SR*=0.577, N=9.37405).",
+      "SR\u0302=0.000 n\u00e3o supera o Sharpe esperado da busca (SR*=0.577); alongar a mesma amostra n\u00e3o resolve."
     ],
-    "observed_sharpe": -0.845794,
-    "psr": 0.006242,
-    "dsr": 2.3e-05,
-    "sr_star": 0.532316,
+    "observed_sharpe": 0.0,
+    "psr": 0.5,
+    "dsr": 0.061569,
+    "sr_star": 0.577024,
     "min_trl": null,
     "n_obs": 1800,
     "n_trials": 12.0,
-    "n_eff": 9.954241745690322,
-    "se_hat": 0.338563,
-    "skew": -4.857663,
-    "excess_kurtosis": 106.65367,
+    "n_eff": 9.374047085879997,
+    "se_hat": 0.37427,
+    "skew": 0.0,
+    "excess_kurtosis": 0.0,
     "costs_included": true,
     "threshold": 0.95,
     "details": {
       "psr": {
-        "observed_sharpe": -0.845794,
+        "observed_sharpe": 0.0,
         "sr_benchmark": 0.0,
-        "psr": 0.006242,
-        "z": -2.498188,
-        "se_hat": 0.338563,
+        "psr": 0.5,
+        "z": 0.0,
+        "se_hat": 0.37427,
         "n_obs": 1800,
         "significant_at_95": false
       },
       "dsr": {
-        "observed_sharpe": -0.845794,
-        "sr_star": 0.532316,
-        "deflated_sharpe_prob": 2.3e-05,
-        "z": -4.07047,
-        "se_hat": 0.338563,
-        "n_trials": 9.954241745690322,
+        "observed_sharpe": 0.0,
+        "sr_star": 0.577024,
+        "deflated_sharpe_prob": 0.061569,
+        "z": -1.541733,
+        "se_hat": 0.37427,
+        "n_trials": 9.374047085879997,
         "n_obs": 1800,
         "significant_at_95": false,
-        "haircut": -1.37811,
-        "expected_max_blp": 0.532316,
-        "z_blp": 1.572282
+        "haircut": -0.577024,
+        "expected_max_blp": 0.577024,
+        "z_blp": 1.541733
       }
     }
   },
   "gate": {
     "approved": false,
     "reasons": [
-      "DSR=0.0001 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.589, SR*=0.447, N=9.95424).",
-      "SR\u0302=-0.589 n\u00e3o supera o Sharpe esperado da busca (SR*=0.447); alongar a mesma amostra n\u00e3o resolve."
+      "DSR=0.0004 est\u00e1 abaixo do limiar 0.95 (SR\u0302=-0.630, SR*=0.531, N=9.37405).",
+      "SR\u0302=-0.630 n\u00e3o supera o Sharpe esperado da busca (SR*=0.531); alongar a mesma amostra n\u00e3o resolve."
     ],
-    "observed_sharpe": -0.589164,
-    "psr": 0.019137,
-    "dsr": 0.000134,
-    "sr_star": 0.447092,
+    "observed_sharpe": -0.630439,
+    "psr": 0.03356,
+    "dsr": 0.000372,
+    "sr_star": 0.53088,
     "min_trl": null,
     "n_obs": 1819,
     "n_trials": 12.0,
-    "n_eff": 9.954241745690322,
-    "se_hat": 0.284359,
-    "skew": -14.511928,
-    "excess_kurtosis": 352.105191,
+    "n_eff": 9.374047085879997,
+    "se_hat": 0.344339,
+    "skew": -4.498571,
+    "excess_kurtosis": 84.358464,
     "costs_included": true,
     "threshold": 0.95,
     "details": {
       "psr": {
-        "observed_sharpe": -0.589164,
+        "observed_sharpe": -0.630439,
         "sr_benchmark": 0.0,
-        "psr": 0.019137,
-        "z": -2.071907,
-        "se_hat": 0.284359,
+        "psr": 0.03356,
+        "z": -1.830865,
+        "se_hat": 0.344339,
         "n_obs": 1819,
         "significant_at_95": false
       },
       "dsr": {
-        "observed_sharpe": -0.589164,
-        "sr_star": 0.447092,
-        "deflated_sharpe_prob": 0.000134,
-        "z": -3.644189,
-        "se_hat": 0.284359,
-        "n_trials": 9.954241745690322,
+        "observed_sharpe": -0.630439,
+        "sr_star": 0.53088,
+        "deflated_sharpe_prob": 0.000372,
+        "z": -3.372598,
+        "se_hat": 0.344339,
+        "n_trials": 9.374047085879997,
         "n_obs": 1819,
         "significant_at_95": false,
-        "haircut": -1.036256,
-        "expected_max_blp": 0.447092,
-        "z_blp": 1.572282
+        "haircut": -1.161318,
+        "expected_max_blp": 0.53088,
+        "z_blp": 1.541733
       }
     }
   },
-  "primary_b3_total_net": -0.12207209,
+  "primary_b3_total_net": -0.10220727,
   "what_broke": [
     "Lista de pares foi fixada por tese econ\u00f4mica; o N inclui os que n\u00e3o cointegraram OOS.",
     "B3: Yahoo Chart (adjclose) porque brapi exige token para tudo salvo PETR4; fapi.binance.com devolveu 451, ent\u00e3o ETH/SOL veio de klines p\u00fablicos Binance.US \u00e0 vista.",
     "ELET3.SA/ELET6.SA retornam 404 no Yahoo (rebrand); o dual-class de utilidade na lista a priori passou a ser CMIG3/CMIG4, antes de qualquer Sharpe.",
     "Custo = 2\u00d7(taxa+spread) do nocional bruto das duas pernas; funding de perp\u00e9tuo fica de fora (s\u00e9rie \u00e9 spot).",
     "EG OOS usa o \u00faltimo 30% da amostra com \u03b2 reestimado nesse holdout \u2014 n\u00e3o \u00e9 um teste rolante.",
+    "O hedge do paper \u00e9 Kalman: \u03b4 e a vari\u00e2ncia de observa\u00e7\u00e3o s\u00e3o escolhidos s\u00f3 no prefixo anterior ao holdout.",
     "DSR \u2265 0,95 autoriza s\u00f3 considerar paper. eligible_for_live_trading permanece false."
   ],
-  "math": "Mesma receita do relat\u00f3rio sint\u00e9tico: z expanding Gatev/EG, barreiras triplas l\u00edquidas de custo, RF OOF com PurgedKFold+embargo, DSR Bailey & L\u00f3pez de Prado com N = todas as (par \u00d7 variante) registradas. O livro combinado \u00e9 a m\u00e9dia calend\u00e1rio dos pares pr\u00e9-escolhidos \u2014 n\u00e3o um campe\u00e3o cherry-picked."
+  "math": "Hedge Kalman (\u03b2 a posteriori, spread de inova\u00e7\u00e3o). \u03b4 e obs_var saem s\u00f3 do prefixo anterior ao holdout de 30%. Barreiras triplas l\u00edquidas de custo, RF OOF com PurgedKFold+embargo, DSR Bailey & L\u00f3pez de Prado com N = todas as (par \u00d7 variante) registradas. O livro combinado \u00e9 a m\u00e9dia calend\u00e1rio dos pares pr\u00e9-escolhidos \u2014 n\u00e3o um campe\u00e3o cherry-picked."
 }

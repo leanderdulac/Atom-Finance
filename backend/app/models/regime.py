@@ -9,6 +9,9 @@ Live public books (Yahoo + FRED HY OAS) are pulled by
 `app.services.regime_feeds`. A 4-hour asyncio job is started from
 lifespan when ATOM_REGIME_JOB=1. The kill switch flattens *paper*
 trades at last mark; it still never talks to a broker.
+
+Clustering complement, fit on the past only: ``app.models.pca_clusters.kmeans_regimes``.
+This classifier stays rule-based.
 """
 
 from __future__ import annotations

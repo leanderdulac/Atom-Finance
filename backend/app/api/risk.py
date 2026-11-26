@@ -20,7 +20,12 @@ class VaRRequest(BaseModel):
     confidence: FiniteFloat = Field(0.95, ge=0.9, le=0.999)
     portfolio_value: PositiveFloat = Field(1_000_000)
     holding_period: int = Field(1, ge=1, le=30)
-    method: str = Field("historical", pattern="^(historical|parametric|monte_carlo)$")
+    method: str = Field(
+        "historical",
+        pattern="^(historical|parametric|monte_carlo|stationary_bootstrap)$",
+    )
+    n_simulations: int = Field(5_000, ge=200, le=20_000)
+    mean_block: FiniteFloat = Field(10.0, ge=1.0, le=100.0)
     distribution: str = Field("normal", pattern="^(normal|t)$")
 
 
@@ -61,6 +66,12 @@ async def calculate_var(req: VaRRequest):
         return ValueAtRisk.parametric(
             returns, req.confidence, req.portfolio_value, req.holding_period, req.distribution,
         )
+    elif req.method == "stationary_bootstrap":
+        return await _run_in_thread(
+            ValueAtRisk.stationary_bootstrap,
+            returns, req.confidence, req.portfolio_value, req.holding_period,
+            req.n_simulations, req.mean_block,
+        )
     # Monte Carlo is CPU-intensive — run in thread pool
     return await _run_in_thread(
         ValueAtRisk.monte_carlo, returns, req.confidence, req.portfolio_value, req.holding_period
@@ -78,7 +89,17 @@ async def calculate_var_all(req: VaRRequest):
     monte_carlo = await _run_in_thread(
         ValueAtRisk.monte_carlo, returns, req.confidence, req.portfolio_value, req.holding_period
     )
-    return {"historical": historical, "parametric": parametric, "monte_carlo": monte_carlo}
+    block = await _run_in_thread(
+        ValueAtRisk.stationary_bootstrap,
+        returns, req.confidence, req.portfolio_value, req.holding_period,
+        min(req.n_simulations, 2_000), req.mean_block,
+    )
+    return {
+        "historical": historical,
+        "parametric": parametric,
+        "monte_carlo": monte_carlo,
+        "stationary_bootstrap": block,
+    }
 
 
 @router.post("/stress-test")

@@ -8,6 +8,10 @@ the stop wins: conservative for the holder, documented, never silent.
 
 States: watching -> active -> {stopped | target_hit | expired}.
 Terminal states never change. All math is pure; persistence lives in the API.
+
+A return history, when the caller supplies one, is scored by the causal
+Isolation Forest in ``app.models.anomaly``. That flag is a data-quality
+pause, not an entry signal, and it never sends an order.
 """
 from __future__ import annotations
 
@@ -53,7 +57,8 @@ def _beyond(a: float | None, b: float, level: float, side: str) -> bool:
 
 
 def evaluate(monitor: dict[str, Any], spot: float, now_iso: str,
-             oracle: dict[str, Any] | None = None) -> dict[str, Any]:
+             oracle: dict[str, Any] | None = None,
+             return_history: list[float] | None = None) -> dict[str, Any]:
     """Evaluate one check. Returns state, metrics, alerts and caveats."""
     direction = monitor["direction"]
     entry = float(monitor["entry"])
@@ -153,7 +158,7 @@ def evaluate(monitor: dict[str, Any], spot: float, now_iso: str,
         signed = (ref - entry_px) / entry_px
         pnl_pct = round((signed if direction == "long" else -signed) * 100, 4)
 
-    return {
+    out = {
         "state": state, "prev_state": prev_state,
         "spot": spot, "checked_at": now_iso,
         "entered_at": entered_at, "entry_px": entry_px,
@@ -173,3 +178,8 @@ def evaluate(monitor: dict[str, Any], spot: float, now_iso: str,
             "Gap que cruza stop e alvo no mesmo intervalo resolve sempre no stop.",
         ],
     }
+    if return_history is not None:
+        from app.models.anomaly import latest_quality_flag
+
+        out["data_quality"] = latest_quality_flag(return_history)
+    return out

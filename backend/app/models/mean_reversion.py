@@ -2,8 +2,9 @@
 Ornstein–Uhlenbeck / AR(1) mean-reversion scanner.
 
 Half-life from φ in x_t = μ + φ x_{t-1} + ε. Hurst via rescaled range on log-prices.
-ADF(1) on the level. Expanding z-score so a scanner on a date t does not use t+1…T
-moments. This is a ranking tool, not a strategy.
+ADF(1) on the level, plus an ADF+KPSS pre-filter on the returns (``stationarity``).
+Expanding z-score so a scanner on a date t does not use t+1…T moments.
+This is a ranking tool, not a strategy. The pre-filter does not authorise a trade.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import numpy as np
 
 from app.models.cointegration import _adf_tstat
+from app.models.stationarity import mean_reversion_prefilter
 
 
 def _ar1_half_life(log_prices: np.ndarray, end: int | None = None) -> tuple[float, float]:
@@ -87,6 +89,15 @@ def score_series(prices: np.ndarray, ticker: str = "") -> dict:
     hurst = _hurst(log_p)
     adf = _adf_tstat(log_p, lags=1)
     rets = np.diff(prices) / prices[:-1]
+    try:
+        stationarity = mean_reversion_prefilter(np.diff(log_p))
+    except (ValueError, np.linalg.LinAlgError):
+        stationarity = {
+            "verdict": None,
+            "candidate": False,
+            "eligible_for_live_trading": False,
+            "use": "prefilter_only",
+        }
     # Expanding estimates as of the present bar: only data[:T] enters μ, σ, φ.
     z = _expanding_z(log_p)
     tradable_band = 2.0 <= half_life <= 60.0 and adf < -2.86
@@ -100,6 +111,7 @@ def score_series(prices: np.ndarray, ticker: str = "") -> dict:
         "last_price": round(float(prices[-1]), 6),
         "daily_vol": round(float(np.std(rets) * np.sqrt(252)), 4),
         "mean_reverting_candidate": bool(tradable_band),
+        "stationarity": stationarity,
         "n": int(len(prices)),
         "math": (
             "log S_t ≈ μ + φ log S_{t-1} + ε, half-life = −ln 2 / ln φ. "

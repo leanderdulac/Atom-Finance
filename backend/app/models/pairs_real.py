@@ -22,7 +22,7 @@ import requests
 
 from app.models.afml.gate import gate
 from app.models.afml.trials import TrialRegistry
-from app.models.pairs_meta import evaluate_pairs_meta
+from app.models.pairs_meta import _oos_slice, evaluate_pairs_meta
 from app.models.winners_curse import DEFAULT_PERIODS
 
 FAMILY_ID = "pairs_real_gatev_avellaneda"
@@ -114,6 +114,7 @@ _WHAT_BROKE = [
     "ELET3.SA/ELET6.SA retornam 404 no Yahoo (rebrand); o dual-class de utilidade na lista a priori passou a ser CMIG3/CMIG4, antes de qualquer Sharpe.",
     "Custo = 2×(taxa+spread) do nocional bruto das duas pernas; funding de perpétuo fica de fora (série é spot).",
     "EG OOS usa o último 30% da amostra com β reestimado nesse holdout — não é um teste rolante.",
+    "O hedge do paper é Kalman: δ e a variância de observação são escolhidos só no prefixo anterior ao holdout.",
     "DSR ≥ 0,95 autoriza só considerar paper. eligible_for_live_trading permanece false.",
 ]
 
@@ -399,6 +400,7 @@ def run_real_universe(
             y_blob = load_ticker(fixture_dir, spec["y"])
             x_blob = load_ticker(fixture_dir, spec["x"])
             y, x, dates = align_pair(y_blob, x_blob)
+            insample_end = _oos_slice(len(y), OOS_FRAC)
             result = evaluate_pairs_meta(
                 y,
                 x,
@@ -414,6 +416,8 @@ def run_real_universe(
                 apply_gate=False,
                 oos_frac=OOS_FRAC,
                 include_bar_returns=True,
+                hedge="kalman",
+                insample_end=insample_end,
             )
             bar_p = np.asarray(result.get("bar_primary") or np.zeros(len(dates)), dtype=float)
             bar_f = np.asarray(result.get("bar_filtered") or np.zeros(len(dates)), dtype=float)
@@ -452,6 +456,9 @@ def run_real_universe(
                 "net_per_trade_delta": result["net_per_trade_delta"],
                 "signals": result.get("signals"),
                 "cost_model": result.get("cost_model"),
+                "hedge": result.get("hedge"),
+                "kalman": result.get("kalman"),
+                "stationarity_insample": result.get("stationarity_insample"),
             })
 
         n_trials = registry.count(FAMILY_ID)
@@ -557,10 +564,11 @@ def run_real_universe(
         "primary_b3_total_net": round(float(np.sum(b3_primary)), 8) if len(b3_primary) else 0.0,
         "what_broke": list(_WHAT_BROKE),
         "math": (
-            "Mesma receita do relatório sintético: z expanding Gatev/EG, barreiras triplas "
-            "líquidas de custo, RF OOF com PurgedKFold+embargo, DSR Bailey & López de Prado "
-            "com N = todas as (par × variante) registradas. O livro combinado é a média "
-            "calendário dos pares pré-escolhidos — não um campeão cherry-picked."
+            "Hedge Kalman (β a posteriori, spread de inovação). δ e obs_var saem só do "
+            "prefixo anterior ao holdout de 30%. Barreiras triplas líquidas de custo, "
+            "RF OOF com PurgedKFold+embargo, DSR Bailey & López de Prado com N = todas "
+            "as (par × variante) registradas. O livro combinado é a média calendário "
+            "dos pares pré-escolhidos — não um campeão cherry-picked."
         ),
     }
 
@@ -633,8 +641,10 @@ def render_real_report_md(result: dict[str, Any]) -> str:
 
 Pesquisa apenas. `eligible_for_live_trading` é **false**. Nada envia ordem a corretora.
 
-Receita idêntica ao relatório sintético: primário Gatev / Avellaneda–Lee (z expanding),
-rótulo de três barreiras líquido de taxa+spread, meta-rótulo com PurgedKFold + embargo.
+Hedge do paper: Kalman, com δ e variância de observação escolhidos só no prefixo
+anterior ao holdout e depois congelados. Rótulo de três barreiras líquido de
+taxa+spread, meta-rótulo com PurgedKFold + embargo. O pré-filtro ADF+KPSS do
+spread in-sample é diagnóstico; não entra no portão.
 A diferença é a amostra: preços reais, pares escolhidos **antes** de olhar resultado,
 e N = todas as variantes de todos os pares (não só os que "deram certo").
 

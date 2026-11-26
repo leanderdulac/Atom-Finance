@@ -131,7 +131,15 @@ class TestFillsAndCosts:
         bars = _coint_bars(n=400, seed=11, half_life=8.0, resid_vol=3.5)
         out = run_paper_pipeline(
             bars,
-            PipelineConfig(entry_z=1.5, exit_z=0.4, taker_fee_bps=4.0, half_spread_bps=2.0),
+            # Locks the residual-book cost identity. The default hedge is Kalman;
+            # its causal freeze is covered in tests/test_arsenal.py.
+            PipelineConfig(
+                hedge="expanding_ols",
+                entry_z=1.5,
+                exit_z=0.4,
+                taker_fee_bps=4.0,
+                half_spread_bps=2.0,
+            ),
             source="synthetic",
         )
         assert out["eligible_for_live_trading"] is False
@@ -153,6 +161,7 @@ class TestKillSwitch:
         out = run_paper_pipeline(
             bars,
             PipelineConfig(
+                hedge="expanding_ols",
                 entry_z=1.25, exit_z=0.3, max_drawdown=0.0005, taker_fee_bps=8.0,
                 # This test is the flatten, not the cost gate. Default k=2
                 # skips these synthetic entries; see test_trading_costs.
