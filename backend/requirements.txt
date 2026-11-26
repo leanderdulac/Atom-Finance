@@ -1,7 +1,7 @@
 # Core Framework
 fastapi>=0.135.0,<1
 uvicorn[standard]~=0.30.6
-pydantic~=2.9.2
+pydantic~=2.14.3
 
 # Authentication
 PyJWT[crypto]>=2.15.0,<3
