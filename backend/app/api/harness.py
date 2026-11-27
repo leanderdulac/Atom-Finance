@@ -18,7 +18,9 @@ from app.harness.allocator import BranchSignal
 from app.harness.errors import AuditIntegrityError, PaperViolation
 from app.harness.paper import ELIGIBLE_FOR_LIVE_TRADING
 from app.harness.runtime import HarnessRuntime
+from app.harness.tree_study import N_TRIALS, submit_study
 from app.harness.types import ExperimentSpec
+from app.models.deep_forest import BENCHMARK_CONFIG, EnsembleConfig, ResearchPanel, load_b3_research_panel
 
 router = APIRouter()
 
@@ -49,7 +51,9 @@ class RunIn(BaseModel):
 
     def to_spec(self) -> ExperimentSpec:
         formulas = tuple(self.feature_formulas) if self.feature_formulas is not None else tuple(self.feature_names)
-        matrix = None if self.feature_matrix is None else tuple(tuple(float(v) for v in row) for row in self.feature_matrix)
+        matrix = (
+            None if self.feature_matrix is None else tuple(tuple(float(v) for v in row) for row in self.feature_matrix)
+        )
         return ExperimentSpec(
             statement=self.statement,
             family=self.family,
@@ -105,9 +109,48 @@ class BranchIn(BaseModel):
         )
 
 
+class TreeStudyIn(BaseModel):
+    """One pre-registered tree-ensemble book. N is at least the full grid."""
+
+    model_config = ConfigDict(extra="forbid")
+    model: str = Field(min_length=1, max_length=40)
+    mode: str = Field(min_length=1, max_length=40)
+    n_trials: int = Field(default=N_TRIALS, ge=1, le=1_000_000)
+    eligible_for_live_trading: bool = False
+
+    @field_validator("eligible_for_live_trading")
+    @classmethod
+    def paper_only(cls, value: bool) -> bool:
+        if value is not False:
+            raise ValueError("eligible_for_live_trading must remain false")
+        return False
+
+    @field_validator("model")
+    @classmethod
+    def known_model(cls, value: str) -> str:
+        if value not in {"cascade_forest", "mgbdt", "gbdt", "ridge", "equal_weight"}:
+            raise ValueError("unknown model")
+        return value
+
+    @field_validator("mode")
+    @classmethod
+    def known_mode(cls, value: str) -> str:
+        if value not in {"unconstrained", "index_enhancement", "market_neutral"}:
+            raise ValueError("unknown risk-box mode")
+        return value
+
+
 class AllocateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     branches: list[BranchIn] = Field(max_length=32)
+
+
+def _study_panel() -> ResearchPanel:
+    return load_b3_research_panel()
+
+
+def _study_config() -> EnsembleConfig:
+    return BENCHMARK_CONFIG
 
 
 def get_runtime(request: Request) -> HarnessRuntime:
@@ -131,6 +174,27 @@ async def create_run(request: Request, body: RunIn):
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     return outcome.to_dict()
+
+
+@router.post("/studies/tree-ensemble")
+@limiter.limit("6/minute")
+async def create_tree_study(request: Request, body: TreeStudyIn):
+    """Run one causal tree book through the same roster, ledger, and gate."""
+    runtime = get_runtime(request)
+    try:
+        result = submit_study(
+            runtime,
+            _study_panel(),
+            body.model,
+            body.mode,
+            config=_study_config(),
+            n_trials=max(body.n_trials, N_TRIALS),
+        )
+    except PaperViolation as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return result.to_dict()
 
 
 @router.post("/allocate")
