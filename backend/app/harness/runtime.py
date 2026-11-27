@@ -15,6 +15,7 @@ from uuid import uuid4
 from app.harness.adapters import DeterministicResearchModel, ResearchModel
 from app.harness.allocator import AllocationPlan, BranchSignal, allocate_budget
 from app.harness.audit import AuditLedger
+from app.harness.book import assert_book_report
 from app.harness.budget import BudgetKind, BudgetLimits, Debit, ResearchBudget
 from app.harness.causal import probe, run_paper_backtest
 from app.harness.codec import hypothesis_fingerprint
@@ -25,7 +26,7 @@ from app.harness.identity import authorize as require_capability
 from app.harness.loop import ResearchLoop, Terminal
 from app.harness.memory import ResearchMemory
 from app.harness.paper import ELIGIBLE_FOR_LIVE_TRADING
-from app.harness.types import ExperimentSpec, GateDecision, Hypothesis, RunOutcome
+from app.harness.types import BacktestReport, ExperimentSpec, GateDecision, Hypothesis, RunOutcome
 
 _LOOP_ROLES = (
     AgentRole.HYPOTHESIS,
@@ -80,11 +81,20 @@ class HarnessRuntime:
         *,
         agents: Mapping[AgentRole, str] | None = None,
         run_id: str | None = None,
+        report: BacktestReport | None = None,
     ) -> RunOutcome:
-        with self._lock:
-            return self._execute(spec, agents, run_id or str(uuid4()))
+        """Walk one paper candidate.
 
-    def allocate(self, branches: list[BranchSignal] | tuple[BranchSignal, ...], agent_id: str | None = None) -> AllocationPlan:
+        ``report``, when set, is a book the caller already costed. It must
+        match ``spec`` and still passes the same probe and gate. The default
+        path builds the book from ``spec.signal``.
+        """
+        with self._lock:
+            return self._execute(spec, agents, run_id or str(uuid4()), report)
+
+    def allocate(
+        self, branches: list[BranchSignal] | tuple[BranchSignal, ...], agent_id: str | None = None
+    ) -> AllocationPlan:
         with self._lock:
             agent = self.authorize(agent_id or self.agents[AgentRole.ALLOCATOR].agent_id, Capability.ALLOCATE_BUDGET)
             self.authorize(agent.agent_id, Capability.PRUNE_BRANCH)
@@ -114,8 +124,12 @@ class HarnessRuntime:
                 self.budget.remaining(BudgetKind.COMPUTE),
             )
             for item in plan.items:
-                experiment_debit = self.budget.debit(BudgetKind.EXPERIMENT, item.experiments) if item.experiments else None
-                compute_debit = self.budget.debit(BudgetKind.COMPUTE, item.compute_units) if item.compute_units else None
+                experiment_debit = (
+                    self.budget.debit(BudgetKind.EXPERIMENT, item.experiments) if item.experiments else None
+                )
+                compute_debit = (
+                    self.budget.debit(BudgetKind.COMPUTE, item.compute_units) if item.compute_units else None
+                )
                 self._audit(
                     agent,
                     "",
@@ -127,7 +141,13 @@ class HarnessRuntime:
             self.audit.verify()
             return plan
 
-    def _execute(self, spec: ExperimentSpec, agents: Mapping[AgentRole, str] | None, run_id: str) -> RunOutcome:
+    def _execute(
+        self,
+        spec: ExperimentSpec,
+        agents: Mapping[AgentRole, str] | None,
+        run_id: str,
+        attached: BacktestReport | None,
+    ) -> RunOutcome:
         loop = ResearchLoop(run_id)
         fingerprint = ""
         try:
@@ -195,8 +215,8 @@ class HarnessRuntime:
             experiment_debit = self.budget.debit(BudgetKind.EXPERIMENT, 1)
             compute_debit = self.budget.debit(BudgetKind.COMPUTE, spec.compute_units)
             n_trials = max(spec.n_trials, self.memory.count_family(spec.family) + 1)
-            report = with_trials(
-                run_paper_backtest(
+            if attached is None:
+                report = run_paper_backtest(
                     spec.prices,
                     spec.signal,
                     lag=spec.lag,
@@ -206,9 +226,11 @@ class HarnessRuntime:
                     n_trials=n_trials,
                     feature_matrix=spec.feature_matrix,
                     trial_sharpes=spec.trial_sharpes,
-                ),
-                n_trials,
-            )
+                )
+            else:
+                assert_book_report(spec, attached)
+                report = attached
+            report = with_trials(report, n_trials)
             loop.record_backtest(report)
             self._audit(
                 roster[AgentRole.EXPERIMENT],
