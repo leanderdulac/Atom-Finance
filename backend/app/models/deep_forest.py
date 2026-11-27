@@ -18,6 +18,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 from sklearn.ensemble import ExtraTreesRegressor, GradientBoostingRegressor, RandomForestRegressor
@@ -546,11 +547,13 @@ def _forest_block(config: EnsembleConfig, seed: int) -> FitBlock:
         x_block: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
         del train_times
+        # The installed stub types max_features as float. sklearn still accepts "sqrt".
+        sqrt_features = cast(float, "sqrt")
         rf = RandomForestRegressor(
             n_estimators=config.n_estimators,
             max_depth=config.max_depth,
             min_samples_leaf=config.min_samples_leaf,
-            max_features="sqrt",
+            max_features=sqrt_features,
             bootstrap=True,
             random_state=seed,
             n_jobs=1,
@@ -559,7 +562,7 @@ def _forest_block(config: EnsembleConfig, seed: int) -> FitBlock:
             n_estimators=config.n_estimators,
             max_depth=config.max_depth,
             min_samples_leaf=config.min_samples_leaf,
-            max_features="sqrt",
+            max_features=sqrt_features,
             bootstrap=False,
             random_state=seed + 1,
             n_jobs=1,
