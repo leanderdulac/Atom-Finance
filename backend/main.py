@@ -187,6 +187,7 @@ protected.include_router(ai_proxy_router,        prefix="/api/ai",            ta
 
 from app.api.b3_paper_forward import router as b3_paper_router
 from app.api.desk import router as desk_router
+from app.api.harness import router as harness_router
 from app.api.oracle import router as oracle_router
 from app.api.paper_trades import router as paper_trades_router
 from app.api.stat_arb_paper import router as stat_arb_paper_router
@@ -194,6 +195,7 @@ from app.api.stat_arb_paper import router as stat_arb_paper_router
 protected.include_router(b3_paper_router, prefix="/api/b3-paper", tags=["B3 Paper Forward"])
 protected.include_router(paper_trades_router, prefix="/api/paper-trades", tags=["Paper Trading"])
 protected.include_router(desk_router, prefix="/api/desk", tags=["Quant Desk"])
+protected.include_router(harness_router, prefix="/api/harness", tags=["Research Harness"])
 protected.include_router(oracle_router, prefix="/api/oracle", tags=["Oracle"])
 protected.include_router(stat_arb_paper_router, prefix="/api/desk", tags=["Quant Desk"])
 from app.api.client import router as client_router
